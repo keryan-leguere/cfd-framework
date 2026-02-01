@@ -136,9 +136,11 @@ if [[ ! "$CASE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
 fi
 
 export CASE_NAME
+
 sess="$(tmux display-message -p '#S')"
 tmux setenv -t "$sess" CASE_NAME "$CASE_NAME"
 tmux setenv -t "$sess" CONTEXT "DEV"
+tmux setenv -t "$sess" CASE_PATH "$(pwd -P)/$CASE_NAME"
 
 tmux rename-session -t "$sess" "$CASE_NAME" 2>/dev/null || true
 tmux rename-window -t "$CASE_NAME":0 "SETUP" 2>/dev/null || true
@@ -181,6 +183,7 @@ else
     echo "Error: Case directory $BASE_DIR does not exist for layout-only."
     exec bash
   fi
+  cd "$BASE_DIR"
 fi
 
 # ---------- tmux windows ----------

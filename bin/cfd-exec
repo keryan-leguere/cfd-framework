@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-exec — Applique cfd-post + cfd-move à un cas-test depuis le BASE_DIR
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet d'appliquer cfd-post + cfd-move à un cas-test depuis le BASE_DIR.
+#  Il doit être exécuté dans le root de l'étude.
+#
+#  Usage: cfd-exec <LOCAL_CASE_PATH>
+#
+#  Arguments:
+#    LOCAL_CASE_PATH     Chemin vers le cas-test à post-traiter
+#
+#  Options:
+#    -h, --help          Afficher l'aide
+#    -f, --force         Forcer l'exécution même si POST_TRAITEMENT existe
+#
+#  Variables d'environnement requises:
+#    CFD_FRAMEWORK       Chemin vers le framework CFD
+#    CASE_NAME           Nom du cas-test
+#    CASE_PATH           Chemin vers le cas-test source
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vérifier que CFD_FRAMEWORK existe
+if [[ ! -d "$CFD_FRAMEWORK" ]]; then
+  echo "ERREUR: Répertoire CFD_FRAMEWORK introuvable: $CFD_FRAMEWORK" >&2
+  exit 1
+fi
+source "${CFD_FRAMEWORK}/lib/format.sh"
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 1. Fonction d'aide
+# ──────────────────────────────────────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+Usage: cfd-exec <LOCAL_CASE_PATH>
+
+Description:
+  Applique cfd-post et cfd-move à un cas-test depuis le répertoire de base.
+  Ce script doit être exécuté dans le root de l'étude.
+
+Arguments:
+  <LOCAL_CASE_PATH>       Chemin vers le cas-test à post-traiter
+
+Options:
+  -h, --help              Afficher cette aide
+  -f, --force             Forcer l'exécution même si POST_TRAITEMENT existe
+
+Variables d'environnement requises:
+  CFD_FRAMEWORK           Chemin vers le framework CFD
+  CASE_NAME               Nom du cas-test
+  CASE_PATH               Chemin vers le cas-test source
+
+Exemples:
+  cfd-exec /path/to/local/case
+  cfd-exec ./02_PARAMS/Config01
+  cfd-exec ./02_PARAMS/Config01 --force
+EOF
+  exit 0
+}
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 2. Parsing des arguments
+# ──────────────────────────────────────────────────────────────────────────────────────
+LOCAL_CASE_PATH=""
+FORCE_MODE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      ;;
+    -f|--force)
+      FORCE_MODE=true
+      shift
+      ;;
+    -*)
+      die "Option inconnue: $1 (utilisez -h pour l'aide)"
+      ;;
+    *)
+      if [[ -z "$LOCAL_CASE_PATH" ]]; then
+        LOCAL_CASE_PATH="$1"
+      else
+        die "Trop d'arguments positionnels: $1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 3. Validation et résolution des chemins
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Validation de l'argument obligatoire
+if [[ -z "$LOCAL_CASE_PATH" ]]; then
+  die "Argument manquant: <LOCAL_CASE_PATH> requis. Utilisez -h pour l'aide."
+fi
+
+# Vérification de l'existence du répertoire
+if [[ ! -d "$LOCAL_CASE_PATH" ]]; then
+  die "Le répertoire n'existe pas: $LOCAL_CASE_PATH"
+fi
+
+# Validation des variables d'environnement requises
+if [[ -z "${CASE_NAME:-}" ]]; then
+  die "Variable d'environnement CASE_NAME non définie"
+fi
+
+if [[ -z "${CASE_PATH:-}" ]]; then
+  die "Variable d'environnement CASE_PATH non définie"
+fi
+
+# Affichage des paramètres validés
+_result "Configuration validée"
+kv "CFD_FRAMEWORK" "$CFD_FRAMEWORK"
+kv "CASE_NAME" "$CASE_NAME"
+kv "CASE_PATH" "$CASE_PATH"
+kv "LOCAL_CASE_PATH" "$LOCAL_CASE_PATH"
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 4. Vérification de l'existence du post-traitement
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+POST_TRAITEMENT_DIR="$LOCAL_CASE_PATH/POST_TRAITEMENT"
+
+if [[ -d "$POST_TRAITEMENT_DIR" ]]; then
+  if [[ "$FORCE_MODE" == false ]]; then
+    _warn "Le dossier POST_TRAITEMENT existe déjà dans: $LOCAL_CASE_PATH"
+    _info "Utilisez l'option -f ou --force pour forcer l'exécution."
+    exit 0
+  else
+    _warn "Le dossier POST_TRAITEMENT existe déjà, mais mode --force activé"
+    _info "Poursuite de l'exécution..."
+  fi
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 LANCEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+cd "$LOCAL_CASE_PATH" || die "Impossible de se déplacer dans le cas-test: $LOCAL_CASE_PATH"
+
+# --- Post-traitement --- #
+${CFD_FRAMEWORK}/bin/cfd-post
+
+
+# --- Déplacement des résultats --- #
+METADATA_YAML=".metadata.yaml"
+
+if [[ ! -f "$METADATA_YAML" ]]; then
+    die "Fichier $METADATA_YAML introuvable dans $(pwd)"
+fi
+
+CONFIG=$(yq -r ".configuration.nom" "$METADATA_YAML")
+
+if [[ -z "$CONFIG" ]]; then
+    die "Impossible d'extraire le nom de la configuration depuis le fichier $METADATA_YAML"
+fi
+
+DATA_DIR="$CASE_PATH/09_POST_TRAITEMENT/DATA/$CONFIG"
+
+if [[ ! -d "$DATA_DIR" ]]; then
+    mkdir -p "$DATA_DIR"
+fi
+
+${CFD_FRAMEWORK}/bin/cfd-move $DATA_DIR
+
+cd "$CASE_PATH" || die "Impossible de se déplacer dans le cas-test: $CASE_PATH"

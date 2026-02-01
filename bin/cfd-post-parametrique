@@ -1,0 +1,345 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-post-parametrique — Applique cfd-exec à tous les cas-test d'une configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet d'appliquer cfd-exec à tous les cas-test d'une configuration.
+#
+#  Usage: cfd-post-parametrique <CONFIG_NAME_PATH>
+#
+#  Arguments:
+#    CONFIG_NAME_PATH         Nom de la configuration
+#
+#  Options:
+#    -h, --help          Afficher l'aide
+#    -f, --force         Forcer l'exécution même si POST_TRAITEMENT existe
+#    -p, --num-procs    Nombre de processeurs à utiliser
+#
+#  Variables d'environnement requises:
+#    CFD_FRAMEWORK       Chemin vers le framework CFD
+#    CASE_NAME           Nom du cas-test
+#    CASE_PATH           Chemin vers le cas-test source
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vérifier que CFD_FRAMEWORK existe
+if [[ ! -d "$CFD_FRAMEWORK" ]]; then
+  echo "ERREUR: Répertoire CFD_FRAMEWORK introuvable: $CFD_FRAMEWORK" >&2
+  exit 1
+fi
+source "${CFD_FRAMEWORK}/lib/format.sh"
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 1. Fonction d'aide
+# ──────────────────────────────────────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+Usage: cfd-post-parametrique <CONFIG_NAME_PATH> [OPTIONS]
+
+Description:
+  Applique cfd-exec (cfd-post + cfd-move) à tous les cas-test d'une configuration.
+  Supporte le traitement séquentiel ou parallèle via GNU Parallel.
+  Ce script doit être exécuté dans le root de l'étude.
+
+Arguments:
+  <CONFIG_NAME_PATH>      Chemin vers le répertoire de configuration contenant les cas-test
+
+Options:
+  -h, --help              Afficher cette aide
+  -f, --force             Forcer l'exécution même si POST_TRAITEMENT existe
+  -p, --num-procs <N>     Nombre de processeurs à utiliser (défaut: 0 = séquentiel)
+                          0   = Exécution séquentielle (boucle for simple)
+                          N>0 = Exécution parallèle avec GNU Parallel
+
+Variables d'environnement requises:
+  CFD_FRAMEWORK           Chemin vers le framework CFD
+  CASE_NAME               Nom du cas-test
+  CASE_PATH               Chemin vers le cas-test source
+
+Exemples:
+  # Traitement séquentiel
+  cfd-post-parametrique ./02_PARAMS/Config01
+
+  # Traitement parallèle avec 4 processeurs
+  cfd-post-parametrique ./02_PARAMS/Config01 --num-procs 4
+
+  # Mode force avec parallélisation
+  cfd-post-parametrique ./02_PARAMS/Config01 -f -p 8
+
+Notes:
+  - Les logs de chaque cas-test sont stockés dans 09_POST_TRAITEMENT/logs/
+  - En mode parallèle, un fichier joblog détaille l'exécution de chaque job
+EOF
+  exit 0
+}
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 2. Parsing des arguments
+# ──────────────────────────────────────────────────────────────────────────────────────
+CONFIG_NAME_PATH=""
+FORCE_MODE=false
+NUM_PROCS=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      ;;
+    -f|--force)
+      FORCE_MODE=true
+      shift
+      ;;
+    -p|--num-procs)
+      if [[ -z "${2:-}" ]] || [[ "$2" =~ ^- ]]; then
+        die "Option -p/--num-procs nécessite un argument numérique"
+      fi
+      if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        die "Argument invalide pour -p/--num-procs: '$2' (doit être un entier >= 0)"
+      fi
+      NUM_PROCS="$2"
+      shift 2
+      ;;
+    -*)
+      die "Option inconnue: $1 (utilisez -h pour l'aide)"
+      ;;
+    *)
+      if [[ -z "$CONFIG_NAME_PATH" ]]; then
+        CONFIG_NAME_PATH="$1"
+      else
+        die "Trop d'arguments positionnels: $1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+# Vérification de l'argument obligatoire
+if [[ -z "$CONFIG_NAME_PATH" ]]; then
+  die "Argument manquant: CONFIG_NAME_PATH (utilisez -h pour l'aide)"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────────────────
+# 3. Validation et résolution des chemins
+# ──────────────────────────────────────────────────────────────────────────────────────
+
+# Vérification de l'existence du répertoire
+if [[ ! -d "$CONFIG_NAME_PATH" ]]; then
+  die "Le répertoire n'existe pas: $CONFIG_NAME_PATH"
+fi
+
+# Validation des variables d'environnement requises
+if [[ -z "${CASE_NAME:-}" ]]; then
+  die "Variable d'environnement CASE_NAME non définie"
+fi
+
+if [[ -z "${CASE_PATH:-}" ]]; then
+  die "Variable d'environnement CASE_PATH non définie"
+fi
+
+CONFIG_NAME=$(basename "$CONFIG_NAME_PATH")
+
+# Affichage des paramètres validés
+_result "Configuration validée"
+kv "CFD_FRAMEWORK" "$CFD_FRAMEWORK"
+kv "CASE_NAME" "$CASE_NAME"
+kv "CASE_PATH" "$CASE_PATH"
+kv "CONFIG_NAME_PATH" "$CONFIG_NAME_PATH"
+kv "CONFIG_NAME" "$CONFIG_NAME"
+kv "NUM_PROCS" "$NUM_PROCS"
+kv "FORCE_MODE" "$FORCE_MODE"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 PREPARATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Créer le répertoire de logs
+LOG_DIR="$CASE_PATH/09_POST_TRAITEMENT/LOG/$CONFIG_NAME"
+mkdir -p "$LOG_DIR"
+
+if [[ $FORCE_MODE == true ]]; then
+  _warn "Mode --force activé: nettoyage des résultats existants"
+  rm -rf "$CASE_PATH/09_POST_TRAITEMENT/DATA/$CONFIG_NAME/*"
+  rm -f "$LOG_DIR/${CONFIG_NAME}_"*.log
+  rm -f "$LOG_DIR/${CONFIG_NAME}_joblog.txt"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 LANCEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+title_post_processing
+
+# 1. Trouver tous les cas-test de la configuration
+_info "Recherche des cas-test dans $CONFIG_NAME_PATH"
+mapfile -t CAS_TESTS < <(find "$CONFIG_NAME_PATH" -mindepth 1 -maxdepth 1 -not -name ".*" -type d | sort)
+
+if [[ ${#CAS_TESTS[@]} -eq 0 ]]; then
+  die "Aucun cas-test trouvé dans $CONFIG_NAME_PATH"
+fi
+
+_result "Cas-test trouvés: ${#CAS_TESTS[@]}"
+for CAS_TEST in "${CAS_TESTS[@]}"; do
+  _bullet "$(basename "$CAS_TEST")"
+done
+
+separator_eq
+
+# 2. Lancer le post-traitement pour chaque cas-test
+if [[ $NUM_PROCS -eq 0 ]]; then
+  # ─────────────────────────────────────────────────────────────────────────────
+  # MODE SÉQUENTIEL : Boucle for simple
+  # ─────────────────────────────────────────────────────────────────────────────
+  _info "Mode séquentiel activé (NUM_PROCS=0)"
+  
+  SUCCESS_COUNT=0
+  FAILURE_COUNT=0
+  START_TIME=$(date +%s)
+  
+  for idx in "${!CAS_TESTS[@]}"; do
+    CAS_TEST="${CAS_TESTS[$idx]}"
+    LOCAL_CASE_NAME=$(basename "$CAS_TEST")
+    
+    _start "Traitement du cas-test [$((idx+1))/${#CAS_TESTS[@]}]: $LOCAL_CASE_NAME"
+    
+    LOG_FILE="$LOG_DIR/${LOCAL_CASE_NAME}.log"
+    
+    # Construire la commande avec option --force si nécessaire
+    CMD="${CFD_FRAMEWORK}/bin/cfd-exec"
+    [[ $FORCE_MODE == true ]] && CMD="$CMD --force"
+    CMD="$CMD $CAS_TEST"
+    
+    if eval "$CMD" > "$LOG_FILE" 2>&1; then
+      _result "✓ $LOCAL_CASE_NAME terminé avec succès"
+      ((SUCCESS_COUNT++))
+    else
+      _error "✗ $LOCAL_CASE_NAME a échoué (voir: $LOG_FILE)"
+      ((FAILURE_COUNT++))
+    fi
+    
+    separator
+  done
+  
+  END_TIME=$(date +%s)
+  ELAPSED=$((END_TIME - START_TIME))
+  
+else
+  # ─────────────────────────────────────────────────────────────────────────────
+  # MODE PARALLÈLE : GNU Parallel
+  # ─────────────────────────────────────────────────────────────────────────────
+  _info "Mode parallèle activé avec $NUM_PROCS processeurs"
+  
+  # Vérifier que GNU Parallel est disponible
+  if ! command -v parallel &> /dev/null; then
+    die "GNU Parallel n'est pas installé. Installez-le avec: sudo apt-get install parallel"
+  fi
+  
+  # Fichier de joblog pour tracer l'exécution
+  JOBLOG_FILE="$LOG_DIR/joblog.txt"
+  
+  _info "Démarrage du traitement parallèle..."
+  _note "Logs individuels: $LOG_DIR/*.log"
+  _note "Journal d'exécution: $JOBLOG_FILE"
+  
+  separator
+  
+  START_TIME=$(date +%s)
+  
+  # Exporter les variables nécessaires pour parallel
+  export CFD_FRAMEWORK
+  export LOG_DIR
+  export CONFIG_NAME
+  export FORCE_MODE
+  
+  # Fonction wrapper pour cfd-exec avec logging
+  process_case() {
+    local CAS_TEST="$1"
+    local LOCAL_CASE_NAME=$(basename "$CAS_TEST")
+    local LOG_FILE="$LOG_DIR/${LOCAL_CASE_NAME}.log"
+    
+    echo "[START] $(date '+%Y-%m-%d %H:%M:%S') - $LOCAL_CASE_NAME" > "$LOG_FILE"
+    
+    # Construire la commande avec option --force si nécessaire
+    local CMD="${CFD_FRAMEWORK}/bin/cfd-exec"
+    [[ $FORCE_MODE == true ]] && CMD="$CMD --force"
+    CMD="$CMD $CAS_TEST"
+    
+    if eval "$CMD" >> "$LOG_FILE" 2>&1; then
+      echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $LOCAL_CASE_NAME" >> "$LOG_FILE"
+      return 0
+    else
+      echo "[FAILURE] $(date '+%Y-%m-%d %H:%M:%S') - $LOCAL_CASE_NAME" >> "$LOG_FILE"
+      return 1
+    fi
+  }
+  
+  export -f process_case
+  
+  # Lancer GNU Parallel
+  printf "%s\n" "${CAS_TESTS[@]}" | \
+    parallel \
+      --jobs "$NUM_PROCS" \
+      --joblog "$JOBLOG_FILE" \
+      --tag \
+      --line-buffer \
+      --progress \
+      process_case {}
+  
+  PARALLEL_EXIT=$?
+  END_TIME=$(date +%s)
+  ELAPSED=$((END_TIME - START_TIME))
+  
+  separator_eq
+  
+  # Analyser les résultats depuis le joblog
+  if [[ -f "$JOBLOG_FILE" ]]; then
+    # Compter les succès et échecs (exclure la ligne d'en-tête)
+    SUCCESS_COUNT=$(awk 'NR>1 && $7==0 {count++} END {print count+0}' "$JOBLOG_FILE")
+    FAILURE_COUNT=$(awk 'NR>1 && $7!=0 {count++} END {print count+0}' "$JOBLOG_FILE")
+    
+    _info "Analyse des résultats depuis $JOBLOG_FILE"
+    
+    # Afficher les cas en échec s'il y en a
+    if [[ $FAILURE_COUNT -gt 0 ]]; then
+      _warn "Cas-test en échec:"
+      awk 'NR>1 && $7!=0 {print $NF}' "$JOBLOG_FILE" | while read -r cmd; do
+        _cross "$(echo "$cmd" | xargs -n 1 basename)"
+      done
+    fi
+  else
+    _warn "Fichier joblog introuvable, impossible d'analyser les résultats détaillés"
+    SUCCESS_COUNT="N/A"
+    FAILURE_COUNT="N/A"
+  fi
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  📊 RÉSUMÉ FINAL
+# ══════════════════════════════════════════════════════════════════════════════
+
+separator_double
+
+if [[ "$FAILURE_COUNT" == "0" ]]; then
+  _result "Post-traitement terminé avec succès! 🎉"
+elif [[ "$FAILURE_COUNT" == "N/A" ]]; then
+  _warn "Post-traitement terminé (statut indéterminé)"
+else
+  _warn "Post-traitement terminé avec des erreurs"
+fi
+
+kv "Configuration" "$CONFIG_NAME"
+kv "Nombre de cas-test" "${#CAS_TESTS[@]}"
+kv "Succès" "$SUCCESS_COUNT"
+kv "Échecs" "$FAILURE_COUNT"
+kv "Mode d'exécution" "$([ $NUM_PROCS -eq 0 ] && echo 'Séquentiel' || echo "Parallèle ($NUM_PROCS procs)")"
+kv "Durée totale" "${ELAPSED}s"
+kv "Répertoire des logs" "$LOG_DIR"
+
+separator_double
+
+# Code de sortie
+if [[ "$FAILURE_COUNT" == "N/A" ]] || [[ "$FAILURE_COUNT" -gt 0 ]]; then
+  exit 1
+else
+  exit 0
+fi

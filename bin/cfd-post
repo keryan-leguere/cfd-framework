@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-post — Wrapper pour lancer le post-traitement d'un calcul CFD
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet de lancer 10_SCRIPT/POST_TRAITEMENT/BASH/PP.sh depuis n'importe où.
+#  Si PP.sh présent dans le répertoire courant, il sera utilisé en priorité.
+#
+#  Ce script est à utiliser dans le cas-test.
+#  Usage: cfd-post [OPTIONS]
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+set -Euo pipefail
+IFS=$'\n\t'
+
+# ─────────────────────────────────────────────────────────────────────────
+# 0. Charger la bibliothèque de formatage
+# ─────────────────────────────────────────────────────────────────────────
+if [[ -z "${CFD_FRAMEWORK:-}" ]]; then
+  echo "❌ ERREUR : La variable d'environnement CFD_FRAMEWORK n'est pas définie."
+  echo "   Veuillez définir CFD_FRAMEWORK avant d'exécuter ce script."
+  exit 1
+fi
+
+FORMAT_LIB="${CFD_FRAMEWORK}/lib/format.sh"
+if [[ ! -f "$FORMAT_LIB" ]]; then
+  echo "❌ ERREUR : Fichier format.sh introuvable à ${FORMAT_LIB}"
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$FORMAT_LIB"
+
+# ─────────────────────────────────────────────────────────────────────────
+# 1. Validation des variables d'environnement
+# ─────────────────────────────────────────────────────────────────────────
+_info "Validation des variables d'environnement..."
+
+if [[ -z "${CASE_NAME:-}" ]]; then
+die "Variable CASE_NAME non définie (doit être exportée comme CASE_NAME)"
+fi
+
+if [[ -z "${CASE_PATH:-}" ]]; then
+die "Variable CASE_PATH non définie (doit être exportée comme CASE_PATH)"
+fi
+
+_result "Variables d'environnement validées"
+kv "CFD_FRAMEWORK" "$CFD_FRAMEWORK"
+kv "CASE_NAME" "$CASE_NAME"
+kv "CASE_PATH" "$CASE_PATH"
+
+if [[ "$CASE_PATH" == "$(pwd)" ]]; then
+    _error "Le script PP.sh est à utiliser dans le cas-test."
+    _debug "Racine de l'étude detectée: $CASE_PATH"
+    exit 1
+fi
+
+SCRIPT_PATH="$(pwd)/PP.sh"
+if [[ ! -f "$SCRIPT_PATH" ]]; then
+  SCRIPT_PATH="${CASE_PATH}/10_SCRIPT/POST_TRAITEMENT/BASH/PP.sh"
+fi
+
+if [[ ! -f "$SCRIPT_PATH" ]]; then
+  die "Le script PP.sh n'existe pas à $SCRIPT_PATH"
+fi
+
+_result "Script PP.sh trouvé à $SCRIPT_PATH"
+
+# ─────────────────────────────────────────────────────────────────────────
+# 2. Lancement du script PP.sh
+# ─────────────────────────────────────────────────────────────────────────
+exec "${SCRIPT_PATH}" "$@"
