@@ -1,0 +1,48 @@
+# 02_PARAMS/config.yaml
+
+etude:
+  nom: "Validation NACA0012"
+  description: "Étude paramétrique angle d'attaque"
+  date_creation: "2026-01-26"
+  auteur: "KL"
+
+# Adaptateur CFD à utiliser
+adaptateur: "mock"
+
+# Configuration des ressources
+ressources:
+  nb_coeurs: 2
+  memoire: "8GB"
+  temps_max: "24:00:00"
+  partition: "compute"
+
+# Configurations d'étude
+configurations:
+  BASELINE:
+    description: "Configuration de référence"
+    ressources:
+      nb_coeurs: 8
+      memoire: "16GB"
+      temps_max: "24:00:00"
+      partition: "compute"
+    cas:
+      - nom: "CASE_1"
+        parametres:
+          angle_attaque: 0.0
+          reynolds: 6000000.0
+          maillage: "mesh_coarse.cgns"
+          nb_iterations: 10000
+          
+      - nom: "CASE_2"
+        parametres:
+          angle_attaque: 5.0
+          reynolds: 6000000.0
+          maillage: "mesh_coarse.cgns"
+          nb_iterations: 10000
+          
+      - nom: "CASE_3"
+        parametres:
+          angle_attaque: 10.0
+          reynolds: 6000000.0
+          maillage: "mesh_medium.cgns"
+          nb_iterations: 15000

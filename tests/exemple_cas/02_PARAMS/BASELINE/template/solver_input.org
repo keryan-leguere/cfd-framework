@@ -1,0 +1,18 @@
+# CFD Solver Input File
+# Generated from template
+
+# Flow conditions
+angle_of_attack = @angle_attaque@
+reynolds_number = @reynolds@
+mach_number = 0.15
+
+# Mesh
+mesh_file = "@maillage@"
+
+# Solver parameters
+max_iterations = @nb_iterations@
+convergence_tolerance = 1e-6
+
+# Output
+output_frequency = 100
+save_fields = true

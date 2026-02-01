@@ -1,0 +1,61 @@
+# --- OpenFOAM: recursively ignore all results ---
+
+# Time directories (recursive), excluding the canonical input "0" folders
+# Pure integers (1, 2, 10, 200, ...)
+**/[1-9][0-9]*/
+
+# Floats (0.1, 1.0, 3.1415, ...)
+**/[0-9]*.[0-9]*/
+
+# Scientific notation (1e-03, 2E+1, ...)
+**/[0-9]*[eE][+-][0-9]*/
+
+# If you ever keep a time dir literally named "0", un-ignore only the top-level 0/
+!0/
+!0.org/
+!0.orig/
+!0.template/
+
+# Decomposed runs (recursive)
+**/processor*/
+
+# Function object outputs & post-processing (recursive)
+**/postProcessing/
+**/VTK/
+**/graphs/
+**/sets/
+**/surfaces/
+
+# Dynamic code generated at runtime
+**/dynamicCode/
+
+# Mesh artifacts: ignore generated polyMesh everywhere, but keep mesh dictionaries
+# (works for single-region and multi-region like constant/region0/polyMesh)
+**/constant/**/polyMesh/*
+!**/constant/**/polyMesh/blockMeshDict
+!**/constant/**/polyMesh/topoSetDict
+!**/constant/**/polyMesh/snappyHexMeshDict
+!**/constant/**/polyMesh/meshQualityDict
+
+# Caches & intermediate geometry
+**/constant/extendedFeatureEdgeMesh/
+**/constant/triSurfaceCache/
+
+# Keep configuration & inputs (recursive allows multi-region layouts)
+!**/system/**
+!**/constant/**
+!**/constant/triSurface/**
+
+# Logs & editor cruft
+log.*
+*.log
+*.bak
+*.old
+*~
+*.swp
+.DS_Store
+
+# ParaView/OpenFOAM viewer project files
+*.OpenFOAM
+*.foam
+

@@ -1,0 +1,73 @@
+/* Custom styles for CFD Framework documentation */
+
+:root {
+  --cfd-primary: #2196f3;
+  --cfd-secondary: #4caf50;
+  --cfd-warning: #ff9800;
+  --cfd-danger: #f44336;
+}
+
+/* Mermaid diagrams styling */
+.mermaid {
+  text-align: center;
+  margin: 2em 0;
+}
+
+/* Enhanced code blocks */
+.highlight {
+  margin: 1.5em 0;
+}
+
+/* Custom admonition colors */
+.md-typeset .admonition.note {
+  border-color: var(--cfd-primary);
+}
+
+.md-typeset .admonition.tip {
+  border-color: var(--cfd-secondary);
+}
+
+.md-typeset .admonition.warning {
+  border-color: var(--cfd-warning);
+}
+
+.md-typeset .admonition.danger {
+  border-color: var(--cfd-danger);
+}
+
+/* Bilingual content styling */
+.lang-toggle {
+  display: inline-flex;
+  gap: 0.5em;
+  margin-bottom: 1em;
+}
+
+.lang-fr, .lang-en {
+  padding: 0.5em 1em;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.2em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lang-fr:hover, .lang-en:hover {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Table styling */
+.md-typeset table:not([class]) {
+  font-size: 0.9em;
+}
+
+/* Command styling */
+.command-box {
+  background: var(--md-code-bg-color);
+  border-left: 4px solid var(--cfd-primary);
+  padding: 1em;
+  margin: 1.5em 0;
+  border-radius: 0.2em;
+}
+
+.command-box code {
+  background: transparent;
+}

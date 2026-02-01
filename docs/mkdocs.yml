@@ -1,0 +1,163 @@
+site_name: CFD Framework Documentation
+site_description: Framework générique pour études CFD paramétriques / Generic framework for parametric CFD studies
+site_author: KL
+site_url: https://cfd-framework.local
+
+# Repository
+repo_name: CFD_FRAMEWORK
+repo_url: https://github.com/user/CFD_FRAMEWORK
+edit_uri: ""
+
+# Theme configuration
+theme:
+  name: material
+  language: fr
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - toc.integrate
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/rocket-launch
+
+# Extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - admonition
+  - tables
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+# Plugins
+plugins:
+  - search:
+      lang:
+        - fr
+        - en
+  - glightbox
+
+# Extra
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/user/CFD_FRAMEWORK
+  alternate:
+    - name: Français
+      link: /
+      lang: fr
+    - name: English
+      link: /en/
+      lang: en
+
+# Navigation
+nav:
+  - 🏠 Accueil / Home:
+    - index.md
+  
+  - 📖 Guide Utilisateur / User Guide:
+    - guide/installation.md
+    - guide/quickstart.md
+    - guide/workflow.md
+    - guide/configuration.md
+    - guide/faq.md
+  
+  - 🏗️ Architecture:
+    - architecture/overview.md
+    - architecture/structure.md
+    - architecture/adapters.md
+    - architecture/libraries.md
+  
+  - 🚀 Référence CLI:
+    - cli/cfd-creer.md
+    - cli/cfd-run.md
+    - cli/cfd-run-parametrique.md
+    - cli/cfd-archiver.md
+    - cli/cfd-clean-config.md
+  
+  - 📚 API Bash:
+    - api/format.md
+    - api/gestion-config.md
+    - api/substitution-params.md
+    - api/gestion-timestamps.md
+    - api/utils.md
+  
+  - 🔌 Adaptateurs / Adapters:
+    - adapters/overview.md
+    - adapters/openfoam.md
+    - adapters/mock.md
+    - adapters/create-adapter.md
+  
+  - 🔄 Workflows:
+    - workflows/single-case.md
+    - workflows/parametric-study.md
+    - workflows/archiving.md
+    - workflows/post-processing.md
+  
+  - 📋 Exemples / Examples:
+    - examples/basic-case.md
+    - examples/parametric.md
+    - examples/templates.md
+  
+  - 🛠️ Développement / Development:
+    - dev/implementation-plan.md
+    - dev/contributing.md
+    - dev/testing.md
+
+# CSS customization
+extra_css:
+  - stylesheets/extra.css
+
+# Copyright
+copyright: Copyright &copy; 2026 KL - MIT License

@@ -1,0 +1,18 @@
+=== Calcul CFD Mock ===
+Itérations: 100
+Processeurs: 1
+
+Itération 10: Résidu = 5,000000e-01
+Itération 20: Résidu = 3,333333e-01
+Itération 30: Résidu = 2,500000e-01
+Itération 40: Résidu = 2,000000e-01
+Itération 50: Résidu = 1,666667e-01
+Itération 60: Résidu = 1,428571e-01
+Itération 70: Résidu = 1,250000e-01
+Itération 80: Résidu = 1,111111e-01
+Itération 90: Résidu = 1,000000e-01
+Itération 100: Résidu = 9,090909e-02
+
+=== Calcul terminé ===
+Itérations finales: 100
+Résidu final: 9,090909e-02

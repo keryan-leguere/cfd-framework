@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-clean-config — Clean les runs d'une configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet de supprimer tous les runs d'une configuration, à partir
+#  du prefix usuel nom_version_nom_cas_timestamp.
+#
+#  Usage: cfd-clean-config [OPTIONS]
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+set -uo pipefail
+IFS=$'\n\t'
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔧 RÉSOLUTION DE CFD_FRAMEWORK
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Résoudre CFD_FRAMEWORK si non défini
+if [[ -z "${CFD_FRAMEWORK:-}" ]]; then
+  # Essayer depuis le chemin du script
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CFD_FRAMEWORK="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  
+  export CFD_FRAMEWORK
+fi
+
+# Vérifier que CFD_FRAMEWORK existe
+if [[ ! -d "$CFD_FRAMEWORK" ]]; then
+  echo "ERREUR: Répertoire CFD_FRAMEWORK introuvable: $CFD_FRAMEWORK" >&2
+  exit 1
+fi
+
+source "${CFD_FRAMEWORK}/lib/format.sh"
+source "${CFD_FRAMEWORK}/lib/utils.sh"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ❓ FONCTION D'AIDE
+# ══════════════════════════════════════════════════════════════════════════════
+
+usage() {
+  echo ""
+  echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
+  echo "║              🧹 cfd-clean-config — Nettoyage des runs CFD                     ║"
+  echo "╚═══════════════════════════════════════════════════════════════════════════════╝"
+  echo ""
+  printf "%bUSAGE:%b\n" "$BOLD" "$RESET"
+  echo "  $0 [OPTIONS] <SOURCE_DIRECTORY>"
+  echo "  cfd-clean-config [OPTIONS] <SOURCE_DIRECTORY>"
+  echo ""
+  printf "%bDESCRIPTION:%b\n" "$BOLD" "$RESET"
+  echo "  Supprime tous les runs d'une configuration, identifiés par le préfixe"
+  echo "  standard: \${ADAPTATEUR}_V\${VERSION}_\${CASE_NAME}_\${TIMESTAMP}"
+  echo ""
+  printf "%bARGUMENTS:%b\n" "$BOLD" "$RESET"
+  echo "  SOURCE_DIRECTORY        Répertoire contenant les runs à supprimer"
+  echo ""
+  printf "%bOPTIONS:%b\n" "$BOLD" "$RESET"
+  echo "  -h, --help              Afficher cette aide"
+  echo "  -f, --force             Supprimer sans confirmation"
+  echo ""
+  printf "%bVARIABLES D'ENVIRONNEMENT:%b\n" "$BOLD" "$RESET"
+  echo "  CFD_FRAMEWORK           Chemin vers le framework CFD"
+  echo "  ADAPTATEUR              Adaptateur utilisé (défaut: OF)"
+  echo ""
+  printf "%bEXEMPLES:%b\n" "$BOLD" "$RESET"
+  echo "  # Nettoyer tous les runs dans 02_PARAMS/BASELINE"
+  echo "  cfd-clean-config 02_PARAMS/BASELINE"
+  echo ""
+  echo "  # Mode force (sans confirmation)"
+  echo "  cfd-clean-config --force 02_PARAMS/ANGLE_INCIDENCE"
+  echo ""
+  echo "  # Avec adaptateur spécifique"
+  echo "  export ADAPTATEUR=OF"
+  echo "  cfd-clean-config 02_PARAMS/CONFIG_CUSTOM"
+  echo ""
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔧 ARGUMENT PARSING
+# ══════════════════════════════════════════════════════════════════════════════
+
+POSITIONAL_ARGS=()
+FORCE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -f|--force)
+      FORCE=true
+      shift
+      ;;
+    -*)
+      _error "Unknown option: $1"
+      echo "Use -h or --help for help" >&2
+      exit 1
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Positional arguments validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ ${#POSITIONAL_ARGS[@]} -ne 1 ]]; then
+  _error "Expected SOURCE_DIRECTORY"
+  _error "Usage: $0 [options] <SOURCE_DIRECTORY>" >&2
+  usage
+  exit 1
+fi
+
+SOURCE_DIRECTORY="${POSITIONAL_ARGS[0]}"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔌 CHARGEMENT DE L'ADAPTATEUR
+# ══════════════════════════════════════════════════════════════════════════════
+
+ADAPTATEUR="${ADAPTATEUR:-OF}"
+_info "Chargement de l'adaptateur: $ADAPTATEUR"
+
+# Charger l'adaptateur (convention: essayer ${adaptateur}/adaptateur.sh puis ${adaptateur}.sh)
+adaptateur_path="${CFD_FRAMEWORK}/adaptateurs/${ADAPTATEUR}/adaptateur.sh"
+if [[ ! -f "$adaptateur_path" ]]; then
+  adaptateur_path="${CFD_FRAMEWORK}/adaptateurs/${ADAPTATEUR}.sh"
+fi
+
+if [[ ! -f "$adaptateur_path" ]]; then
+  _error "Adaptateur introuvable: $ADAPTATEUR"
+  _error "Chemin recherché: $adaptateur_path"
+  exit 1
+fi
+
+source "$adaptateur_path"
+
+# Vérifier l'installation de l'adaptateur
+if ! adapt_verifier_installation; then
+  _error "Échec de vérification de l'adaptateur $(adapt_nom)"
+  exit 1
+fi
+
+_info "Adaptateur $(adapt_nom) chargé et vérifié"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 LANCEMENT DU WRAPPER
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 1. Lister les cas-tests dans 02_PARAMS/CONFIG/
+declare -a LIST_CASE_TESTS_TO_MOVE=()
+
+LIST_CASE_TESTS_TO_MOVE=($(find "$SOURCE_DIRECTORY" -maxdepth 1 -type d -name "$(adapt_nom)_V$(adapt_version)_*"))
+_info "Liste des cas-tests à supprimer dans $SOURCE_DIRECTORY"
+for CASE_TEST in "${LIST_CASE_TESTS_TO_MOVE[@]}"; do
+     _bullet "$CASE_TEST"
+done
+
+_info "Taille du répertoire: $(util_obtenir_taille "$SOURCE_DIRECTORY")"
+ 
+if [[ ! "${FORCE}" == true ]]; then
+    confirmer "Êtes-vous sûr de vouloir supprimer ces cas-tests ?" o || exit 0
+fi
+
+separator_eq
+
+TOTAL=${#LIST_CASE_TESTS_TO_MOVE[@]}
+CURRENT=0
+
+progres_init "Suppression des cas-tests" "$TOTAL"
+
+for CASE_TEST in "${LIST_CASE_TESTS_TO_MOVE[@]}"; do
+    ((CURRENT++))
+
+    rm -rf "$CASE_TEST"
+
+    progres_update "$CURRENT"
+done
+
+progres_done "Terminé"
+
+boite_result "Cas-tests supprimés"
+
+_check "Taille du répertoire: $(util_obtenir_taille "$SOURCE_DIRECTORY")"
+_check "Liste des fichiers:"
+ls -larth --color=always "$SOURCE_DIRECTORY"
+echo 

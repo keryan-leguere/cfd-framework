@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-run-parametrique — Wrapper pour lancer un calcul CFD paramétrique avec un adaptateur
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet de lancer lancement_parametrique_yaml.sh depuis n'importe où.
+#
+#  Usage: cfd-run-parametrique [OPTIONS]
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔧 RÉSOLUTION DE CFD_FRAMEWORK
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Résoudre CFD_FRAMEWORK si non défini
+if [[ -z "${CFD_FRAMEWORK:-}" ]]; then
+  # Essayer depuis le chemin du script
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CFD_FRAMEWORK="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  
+  export CFD_FRAMEWORK
+fi
+
+# Vérifier que CFD_FRAMEWORK existe
+if [[ ! -d "$CFD_FRAMEWORK" ]]; then
+  echo "ERREUR: Répertoire CFD_FRAMEWORK introuvable: $CFD_FRAMEWORK" >&2
+  exit 1
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 LANCEMENT DU WRAPPER
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Appeler wrapper_commande_lancement.sh avec tous les arguments
+exec "${CFD_FRAMEWORK}/scripts/lancement/lancement_parametrique_yaml.sh" "$@"

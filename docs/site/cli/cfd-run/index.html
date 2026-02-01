@@ -1,0 +1,2850 @@
+<!DOCTYPE html><html lang="fr" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Framework générique pour études CFD paramétriques / Generic framework for parametric CFD studies">
+      
+      
+        <meta name="author" content="KL">
+      
+      
+        <link rel="canonical" href="https://cfd-framework.local/cli/cfd-run/">
+      
+      
+        <link rel="prev" href="../../architecture/overview/">
+      
+      
+        <link rel="next" href="../cfd-archiver/">
+      
+      
+        
+          <link rel="alternate" href="/" hreflang="fr">
+        
+          <link rel="alternate" href="/en/" hreflang="en">
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>cfd-run - CFD Framework Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cfd-run" class="md-skip">
+          Aller au contenu
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="En-tête">
+    <a href="../.." title="CFD Framework Documentation" class="md-header__button md-logo" aria-label="CFD Framework Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39S16.66.269 11 5.93c-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.55.56 1.37.74 2.12.46A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61m-7.07 7.07c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CFD Framework Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              cfd-run
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="blue" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="blue" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Sélectionner la langue">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"></path></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="/" hreflang="fr" class="md-select__link">
+              Français
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="/en/" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Rechercher" placeholder="Rechercher" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Recherche">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Partager" aria-label="Partager" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Effacer" aria-label="Effacer" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initialisation de la recherche
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/user/CFD_FRAMEWORK" title="Aller au dépôt" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    CFD_FRAMEWORK
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Onglets" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  🏠 Accueil / Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/installation/" class="md-tabs__link">
+          
+  
+  
+  📖 Guide Utilisateur / User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  🏗️ Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../cfd-creer.md" class="md-tabs__link">
+          
+  
+  
+  🚀 Référence CLI
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/format/" class="md-tabs__link">
+          
+  
+  
+  📚 API Bash
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../adapters/overview/" class="md-tabs__link">
+          
+  
+  
+  🔌 Adaptateurs / Adapters
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../workflows/single-case.md" class="md-tabs__link">
+          
+  
+  
+  🔄 Workflows
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../examples/basic-case.md" class="md-tabs__link">
+          
+  
+  
+  📋 Exemples / Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../dev/implementation-plan.md" class="md-tabs__link">
+          
+  
+  
+  🛠️ Développement / Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CFD Framework Documentation" class="md-nav__button md-logo" aria-label="CFD Framework Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27zM5.64 12.5l-3.83-1.63 6.1-2.77C7 9.46 6.22 10.93 5.64 12.5M21.61 2.39S16.66.269 11 5.93c-2.19 2.19-3.5 4.6-4.35 6.71-.28.75-.09 1.57.46 2.13l2.13 2.12c.55.56 1.37.74 2.12.46A19.1 19.1 0 0 0 18.07 13c5.66-5.66 3.54-10.61 3.54-10.61m-7.07 7.07c-.78-.78-.78-2.05 0-2.83s2.05-.78 2.83 0c.77.78.78 2.05 0 2.83s-2.05.78-2.83 0m-5.66 7.07-1.41-1.41zM6.24 22l3.64-3.64c-.34-.09-.67-.24-.97-.45L4.83 22zM2 22h1.41l4.77-4.76-1.42-1.41L2 20.59zm0-2.83 4.09-4.08c-.21-.3-.36-.62-.45-.97L2 17.76z"></path></svg>
+
+    </a>
+    CFD Framework Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/user/CFD_FRAMEWORK" title="Aller au dépôt" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    CFD_FRAMEWORK
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1">
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🏠 Accueil / Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🏠 Accueil / Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CFD Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2">
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📖 Guide Utilisateur / User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    📖 Guide Utilisateur / User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Démarrage rapide / Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ - Foire aux questions / Frequently Asked Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3">
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🏗️ Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🏗️ Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture du Framework / Framework Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/structure.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/adapters.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/libraries.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🚀 Référence CLI
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🚀 Référence CLI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cfd-creer.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cfd-run
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cfd-run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table des matières">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table des matières
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#lancement-de-calculs-cfd-cfd-calculation-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🚀 Lancement de calculs CFD / CFD Calculation Launch
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#synopsis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📋 Synopsis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📖 Description
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📖 Description">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#modes-de-fonctionnement-operating-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Modes de fonctionnement / Operating Modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🎯 Options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🎯 Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#options-principales-main-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options principales / Main Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#variables-denvironnement-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌍 Variables d'environnement / Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exemples-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📝 Exemples / Examples
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📝 Exemples / Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exemple-1-execution-sur-place-in-place-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exemple 1 : Exécution sur place / In-place Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exemple-2-copie-horodatee-timestamped-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exemple 2 : Copie horodatée / Timestamped Copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exemple-3-mode-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exemple 3 : Mode dry-run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exemple-4-nom-de-repertoire-personnalise-custom-directory-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exemple 4 : Nom de répertoire personnalisé / Custom Directory Name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-detaille-detailed-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔄 Workflow détaillé / Detailed Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔄 Workflow détaillé / Detailed Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-resolution-de-ladaptateur-adapter-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 : Résolution de l'adaptateur / Adapter Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-preparation-du-repertoire-directory-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 : Préparation du répertoire / Directory Preparation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-elements-copies-copied-elements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 : Éléments copiés / Copied Elements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#format-du-repertoire-horodate-timestamped-directory-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📊 Format du répertoire horodaté / Timestamped Directory Format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fichier-metadatayaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📁 Fichier .metadata.yaml
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adaptateurs-disponibles-available-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔧 Adaptateurs disponibles / Available Adapters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#messages-derreur-courants-common-error-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠️ Messages d'erreur courants / Common Error Messages
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="⚠️ Messages d'erreur courants / Common Error Messages">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#erreur-1-case_name-non-defini-not-defined" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Erreur 1 : CASE_NAME non défini / not defined
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#erreur-2-adaptateur-introuvable-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Erreur 2 : Adaptateur introuvable / not found
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#erreur-3-echec-de-verification-adaptateur-adapter-verification-failed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Erreur 3 : Échec de vérification adaptateur / adapter verification failed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bonnes-pratiques-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💡 Bonnes pratiques / Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="💡 Bonnes pratiques / Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#do-a-faire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ DO / À FAIRE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dont-a-eviter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ❌ DON'T / À ÉVITER
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voir-aussi-see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📖 Voir aussi / See Also
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#script-sous-jacent-underlying-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔍 Script sous-jacent / Underlying Script
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cfd-run-parametrique.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cfd-archiver/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cfd-archiver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cfd-clean-config.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5">
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📚 API Bash
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    📚 API Bash
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    format.sh - Bibliothèque de formatage / Formatting Library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/gestion-config.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/substitution-params.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/gestion-timestamps.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/utils.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6">
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔌 Adaptateurs / Adapters
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🔌 Adaptateurs / Adapters
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adapters/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adaptateurs / Adapters Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adapters/openfoam.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adapters/mock.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adapters/create-adapter.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7">
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🔄 Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🔄 Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/single-case.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/parametric-study.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/archiving.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/post-processing.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8">
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    📋 Exemples / Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    📋 Exemples / Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/basic-case.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/parametric.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/templates.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9">
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    🛠️ Développement / Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    🛠️ Développement / Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/implementation-plan.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/contributing.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/testing.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    None
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="cfd-run">cfd-run<a class="headerlink" href="#cfd-run" title="Permanent link">¶</a></h1>
+<h2 id="lancement-de-calculs-cfd-cfd-calculation-launch">🚀 Lancement de calculs CFD / CFD Calculation Launch<a class="headerlink" href="#lancement-de-calculs-cfd-cfd-calculation-launch" title="Permanent link">¶</a></h2>
+<p>Wrapper générique pour lancer un calcul CFD avec un adaptateur.</p>
+<p>Generic wrapper for launching a CFD calculation with an adapter.</p>
+<hr>
+<h2 id="synopsis">📋 Synopsis<a class="headerlink" href="#synopsis" title="Permanent link">¶</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cfd-run<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</span></code></pre></div>
+<hr>
+<h2 id="description">📖 Description<a class="headerlink" href="#description" title="Permanent link">¶</a></h2>
+<p><code>cfd-run</code> est le point d'entrée principal pour lancer des calculs CFD. Il charge l'adaptateur approprié, prépare les fichiers d'entrée et lance le solveur.</p>
+<p><code>cfd-run</code> is the main entry point for launching CFD calculations. It loads the appropriate adapter, prepares input files, and launches the solver.</p>
+<h3 id="modes-de-fonctionnement-operating-modes">Modes de fonctionnement / Operating Modes<a class="headerlink" href="#modes-de-fonctionnement-operating-modes" title="Permanent link">¶</a></h3>
+<pre class="mermaid"><code>graph TB
+    Start([cfd-run]) --&gt; ModeQ{Mode?}
+
+    ModeQ --&gt;|--in-place| InPlace[Exécution sur place&lt;br/&gt;In-place execution]
+    ModeQ --&gt;|Par défaut&lt;br/&gt;Default| Copy[Copie horodatée&lt;br/&gt;Timestamped copy]
+
+    InPlace --&gt; Prepare[Préparation fichiers&lt;br/&gt;File preparation]
+    Copy --&gt; CreateDir[Créer répertoire&lt;br/&gt;Create directory]
+    CreateDir --&gt; CopyFiles[Copier éléments&lt;br/&gt;Copy elements]
+    CopyFiles --&gt; Prepare
+
+    Prepare --&gt; DryRunQ{--dry-run?}
+    DryRunQ --&gt;|Oui / Yes| Stop([Arrêt / Stop])
+    DryRunQ --&gt;|Non / No| Launch[Lancer solveur&lt;br/&gt;Launch solver]
+
+    Launch --&gt; Done([✅ Terminé / Done])
+
+    style Start fill:#4caf50,stroke:#388e3c,color:#fff
+    style ModeQ fill:#ff9800,stroke:#f57c00,color:#fff
+    style DryRunQ fill:#ff9800,stroke:#f57c00,color:#fff
+    style Done fill:#2196f3,stroke:#1976d2,color:#fff</code></pre>
+<hr>
+<h2 id="options">🎯 Options<a class="headerlink" href="#options" title="Permanent link">¶</a></h2>
+<h3 id="options-principales-main-options">Options principales / Main Options<a class="headerlink" href="#options-principales-main-options" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description FR</th>
+<th>Description EN</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-h, --help</code></td>
+<td>Afficher l'aide</td>
+<td>Display help</td>
+</tr>
+<tr>
+<td><code>--adaptateur &lt;ID&gt;</code></td>
+<td>Adaptateur à utiliser (défaut: <code>$CFD_ADAPTATEUR</code> ou <code>OF</code>)</td>
+<td>Adapter to use (default: <code>$CFD_ADAPTATEUR</code> or <code>OF</code>)</td>
+</tr>
+<tr>
+<td><code>--in-place</code></td>
+<td>Exécuter dans le répertoire actuel</td>
+<td>Execute in current directory</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td>Préparer sans lancer</td>
+<td>Prepare without launching</td>
+</tr>
+<tr>
+<td><code>--name &lt;NOM&gt;</code></td>
+<td>Nom du cas (remplace <code>$CASE_NAME</code>)</td>
+<td>Case name (replaces <code>$CASE_NAME</code>)</td>
+</tr>
+<tr>
+<td><code>--new-dir-name &lt;DIR&gt;</code></td>
+<td>Nom complet du répertoire de calcul</td>
+<td>Full calculation directory name</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="variables-denvironnement-environment-variables">🌍 Variables d'environnement / Environment Variables<a class="headerlink" href="#variables-denvironnement-environment-variables" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+<th>Exemple</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CFD_FRAMEWORK</code></td>
+<td>Chemin vers le framework (requis / required)</td>
+<td><code>/opt/CFD_FRAMEWORK</code></td>
+</tr>
+<tr>
+<td><code>CFD_ADAPTATEUR</code></td>
+<td>Adaptateur par défaut / Default adapter</td>
+<td><code>OF</code>, <code>mock</code></td>
+</tr>
+<tr>
+<td><code>CASE_NAME</code></td>
+<td>Nom du cas (requis si pas <code>--in-place</code> / required if not <code>--in-place</code>)</td>
+<td><code>AIRFOIL_2D</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="exemples-examples">📝 Exemples / Examples<a class="headerlink" href="#exemples-examples" title="Permanent link">¶</a></h2>
+<h3 id="exemple-1-execution-sur-place-in-place-execution">Exemple 1 : Exécution sur place / In-place Execution<a class="headerlink" href="#exemple-1-execution-sur-place-in-place-execution" title="Permanent link">¶</a></h3>
+<p>Exécute le calcul directement dans le répertoire actuel sans créer de copie.</p>
+<p>Executes the calculation directly in the current directory without creating a copy.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>02_PARAMS/BASELINE
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cfd-run<span class="w"> </span>--adaptateur<span class="w"> </span>OF<span class="w"> </span>--in-place
+</span></code></pre></div>
+<p><strong>Résultat / Result:</strong>
+- Pas de copie / No copy
+- Exécution dans <code>02_PARAMS/BASELINE/</code>
+- Fichier <code>.metadata.yaml</code> créé / created</p>
+<hr>
+<h3 id="exemple-2-copie-horodatee-timestamped-copy">Exemple 2 : Copie horodatée / Timestamped Copy<a class="headerlink" href="#exemple-2-copie-horodatee-timestamped-copy" title="Permanent link">¶</a></h3>
+<p>Crée une copie horodatée et lance le calcul.</p>
+<p>Creates a timestamped copy and launches the calculation.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">cd</span><span class="w"> </span>02_PARAMS/BASELINE
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CASE_NAME</span><span class="o">=</span><span class="s2">"TEST"</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>cfd-run<span class="w"> </span>--adaptateur<span class="w"> </span>OF
+</span></code></pre></div>
+<p><strong>Résultat / Result:</strong>
+- Copie créée / Copy created: <code>02_PARAMS/BASELINE/OF_V13_TEST_20260131_143052/</code>
+- Calcul lancé dans la copie / Calculation launched in copy
+- Répertoire source préservé / Source directory preserved</p>
+<hr>
+<h3 id="exemple-3-mode-dry-run">Exemple 3 : Mode dry-run<a class="headerlink" href="#exemple-3-mode-dry-run" title="Permanent link">¶</a></h3>
+<p>Prépare le cas sans lancer le calcul (utile pour debug).</p>
+<p>Prepares the case without launching the calculation (useful for debugging).</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cfd-run<span class="w"> </span>--adaptateur<span class="w"> </span>OF<span class="w"> </span>--name<span class="w"> </span>NACA0012<span class="w"> </span>--dry-run
+</span></code></pre></div>
+<p><strong>Affichage / Output:</strong>
+</p><div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>ℹ️  Chargement de l'adaptateur: OF
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>✅ Adaptateur OpenFOAM chargé et vérifié
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>ℹ️  Création du répertoire: .../OF_V13_NACA0012_20260131_143052
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>✅ Copie terminée : 5 élément(s) copié(s)
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>📝 Mode --dry-run activé: le calcul ne sera pas lancé
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>✅ Cas préparé dans: .../OF_V13_NACA0012_20260131_143052
+</span></code></pre></div><p></p>
+<hr>
+<h3 id="exemple-4-nom-de-repertoire-personnalise-custom-directory-name">Exemple 4 : Nom de répertoire personnalisé / Custom Directory Name<a class="headerlink" href="#exemple-4-nom-de-repertoire-personnalise-custom-directory-name" title="Permanent link">¶</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>cfd-run<span class="w"> </span>--adaptateur<span class="w"> </span>OF<span class="w"> </span>--new-dir-name<span class="w"> </span><span class="s2">"EXPERIMENT_001"</span>
+</span></code></pre></div>
+<p><strong>Résultat / Result:</strong>
+- Répertoire créé / Directory created: <code>02_PARAMS/BASELINE/EXPERIMENT_001/</code>
+- Pas de timestamp ajouté / No timestamp added</p>
+<hr>
+<h2 id="workflow-detaille-detailed-workflow">🔄 Workflow détaillé / Detailed Workflow<a class="headerlink" href="#workflow-detaille-detailed-workflow" title="Permanent link">¶</a></h2>
+<h3 id="phase-1-resolution-de-ladaptateur-adapter-resolution">Phase 1 : Résolution de l'adaptateur / Adapter Resolution<a class="headerlink" href="#phase-1-resolution-de-ladaptateur-adapter-resolution" title="Permanent link">¶</a></h3>
+<pre class="mermaid"><code>graph LR
+    Start([Début / Start]) --&gt; CheckEnv{CFD_ADAPTATEUR&lt;br/&gt;défini?&lt;br/&gt;defined?}
+    CheckEnv --&gt;|Oui / Yes| UseEnv[Utiliser $CFD_ADAPTATEUR]
+    CheckEnv --&gt;|Non / No| CheckOpt{--adaptateur&lt;br/&gt;fourni?&lt;br/&gt;provided?}
+    CheckOpt --&gt;|Oui / Yes| UseOpt[Utiliser option]
+    CheckOpt --&gt;|Non / No| Default[Défaut: OF&lt;br/&gt;Default: OF]
+
+    UseEnv --&gt; Load[Charger adaptateur&lt;br/&gt;Load adapter]
+    UseOpt --&gt; Load
+    Default --&gt; Load
+
+    Load --&gt; Verify{Vérifié?&lt;br/&gt;Verified?}
+    Verify --&gt;|Oui / Yes| Done([✅ OK])
+    Verify --&gt;|Non / No| Error([❌ Erreur / Error])
+
+    style Start fill:#4caf50,stroke:#388e3c,color:#fff
+    style CheckEnv fill:#ff9800,stroke:#f57c00,color:#fff
+    style CheckOpt fill:#ff9800,stroke:#f57c00,color:#fff
+    style Verify fill:#ff9800,stroke:#f57c00,color:#fff
+    style Done fill:#2196f3,stroke:#1976d2,color:#fff
+    style Error fill:#f44336,stroke:#c62828,color:#fff</code></pre>
+<h3 id="phase-2-preparation-du-repertoire-directory-preparation">Phase 2 : Préparation du répertoire / Directory Preparation<a class="headerlink" href="#phase-2-preparation-du-repertoire-directory-preparation" title="Permanent link">¶</a></h3>
+<pre class="mermaid"><code>graph TB
+    Start([Préparation&lt;br/&gt;Preparation]) --&gt; InPlaceQ{--in-place?}
+
+    InPlaceQ --&gt;|Oui / Yes| UseCurrentDir[Utiliser répertoire actuel&lt;br/&gt;Use current directory]
+    InPlaceQ --&gt;|Non / No| CheckCaseName{CASE_NAME&lt;br/&gt;défini?&lt;br/&gt;defined?}
+
+    CheckCaseName --&gt;|Non / No| Error([❌ Erreur / Error])
+    CheckCaseName --&gt;|Oui / Yes| GenerateTS[Générer timestamp&lt;br/&gt;Generate timestamp]
+
+    GenerateTS --&gt; CreateName[Créer nom:&lt;br/&gt;ADAPT_VERSION_NAME_TS]
+    CreateName --&gt; MkDir[Créer répertoire&lt;br/&gt;Create directory]
+    MkDir --&gt; CopyElements[Copier éléments&lt;br/&gt;Copy elements]
+
+    UseCurrentDir --&gt; Done([Répertoire prêt&lt;br/&gt;Directory ready])
+    CopyElements --&gt; Done
+
+    style Start fill:#4caf50,stroke:#388e3c,color:#fff
+    style InPlaceQ fill:#ff9800,stroke:#f57c00,color:#fff
+    style CheckCaseName fill:#ff9800,stroke:#f57c00,color:#fff
+    style Done fill:#2196f3,stroke:#1976d2,color:#fff
+    style Error fill:#f44336,stroke:#c62828,color:#fff</code></pre>
+<h3 id="phase-3-elements-copies-copied-elements">Phase 3 : Éléments copiés / Copied Elements<a class="headerlink" href="#phase-3-elements-copies-copied-elements" title="Permanent link">¶</a></h3>
+<p>Les éléments copiés sont déterminés par <code>adapt_liste_elements_a_copier()</code> de l'adaptateur.</p>
+<p>Elements copied are determined by <code>adapt_liste_elements_a_copier()</code> from the adapter.</p>
+<p><strong>Exemple pour OpenFOAM / Example for OpenFOAM:</strong>
+- <code>constant/</code>
+- <code>system/</code>
+- <code>0/</code> ou <code>0.orig/</code>
+- <code>.metadata.yaml</code>
+- Templates <code>.org</code> (si présents / if present)</p>
+<hr>
+<h2 id="format-du-repertoire-horodate-timestamped-directory-format">📊 Format du répertoire horodaté / Timestamped Directory Format<a class="headerlink" href="#format-du-repertoire-horodate-timestamped-directory-format" title="Permanent link">¶</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Format: ${ADAPTATEUR}_V${VERSION}_${CASE_NAME}_${TIMESTAMP}
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>Exemple: OF_V13_AIRFOIL_20260131_143052
+</span></code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Composant / Component</th>
+<th>Description</th>
+<th>Exemple</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ADAPTATEUR</code></td>
+<td>Nom de l'adaptateur / Adapter name</td>
+<td><code>OF</code></td>
+</tr>
+<tr>
+<td><code>VERSION</code></td>
+<td>Version de l'adaptateur / Adapter version</td>
+<td><code>V13</code></td>
+</tr>
+<tr>
+<td><code>CASE_NAME</code></td>
+<td>Nom du cas / Case name</td>
+<td><code>AIRFOIL</code></td>
+</tr>
+<tr>
+<td><code>TIMESTAMP</code></td>
+<td>Date et heure / Date and time</td>
+<td><code>20260131_143052</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="fichier-metadatayaml">📁 Fichier .metadata.yaml<a class="headerlink" href="#fichier-metadatayaml" title="Permanent link">¶</a></h2>
+<p>Chaque run génère un fichier <code>.metadata.yaml</code> contenant les métadonnées.</p>
+<p>Each run generates a <code>.metadata.yaml</code> file containing metadata.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">cas</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">nom</span><span class="p">:</span><span class="w"> </span><span class="s">"OF_V13_AIRFOIL_20260131_143052"</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">chemin</span><span class="p">:</span><span class="w"> </span><span class="s">"/path/to/02_PARAMS/BASELINE/OF_V13_AIRFOIL_20260131_143052"</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">adaptateur</span><span class="p">:</span><span class="w"> </span><span class="s">"OF"</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="s">"20260131_143052"</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">in_place</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="nt">etude</span><span class="p">:</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">nom</span><span class="p">:</span><span class="w"> </span><span class="s">"AIRFOIL_2D"</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">"Étude</span><span class="nv"> </span><span class="s">profil</span><span class="nv"> </span><span class="s">NACA0012"</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">  </span><span class="nt">auteur</span><span class="p">:</span><span class="w"> </span><span class="s">"KL"</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="nt">configuration</span><span class="p">:</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="nt">nom</span><span class="p">:</span><span class="w"> </span><span class="s">"BASELINE"</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">  </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="s">"Configuration</span><span class="nv"> </span><span class="s">de</span><span class="nv"> </span><span class="s">référence"</span>
+</span></code></pre></div>
+<hr>
+<h2 id="adaptateurs-disponibles-available-adapters">🔧 Adaptateurs disponibles / Available Adapters<a class="headerlink" href="#adaptateurs-disponibles-available-adapters" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Adaptateur</th>
+<th>ID</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OpenFOAM</strong></td>
+<td><code>OF</code></td>
+<td>Solveur open-source CFD</td>
+<td>✅ Stable</td>
+</tr>
+<tr>
+<td><strong>Mock</strong></td>
+<td><code>mock</code></td>
+<td>Adaptateur de test</td>
+<td>✅ Stable</td>
+</tr>
+<tr>
+<td><strong>SU2</strong></td>
+<td><code>su2</code></td>
+<td>Solveur aérodynamique</td>
+<td>🚧 Planifié / Planned</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="messages-derreur-courants-common-error-messages">⚠️ Messages d'erreur courants / Common Error Messages<a class="headerlink" href="#messages-derreur-courants-common-error-messages" title="Permanent link">¶</a></h2>
+<h3 id="erreur-1-case_name-non-defini-not-defined">Erreur 1 : CASE_NAME non défini / not defined<a class="headerlink" href="#erreur-1-case_name-non-defini-not-defined" title="Permanent link">¶</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>❌ CASE_NAME non défini
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>❌ Définissez la variable d'environnement CASE_NAME ou utilisez --name
+</span></code></pre></div>
+<p><strong>Solution:</strong>
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CASE_NAME</span><span class="o">=</span><span class="s2">"MON_CAS"</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1"># ou / or</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>cfd-run<span class="w"> </span>--name<span class="w"> </span>MON_CAS
+</span></code></pre></div><p></p>
+<h3 id="erreur-2-adaptateur-introuvable-not-found">Erreur 2 : Adaptateur introuvable / not found<a class="headerlink" href="#erreur-2-adaptateur-introuvable-not-found" title="Permanent link">¶</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>❌ Adaptateur introuvable: SU2
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>❌ Chemin recherché: .../adaptateurs/SU2.sh
+</span></code></pre></div>
+<p><strong>Solution:</strong>
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Vérifier les adaptateurs disponibles / Check available adapters</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>ls<span class="w"> </span><span class="nv">$CFD_FRAMEWORK</span>/adaptateurs/
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># Utiliser un adaptateur valide / Use a valid adapter</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>cfd-run<span class="w"> </span>--adaptateur<span class="w"> </span>OF
+</span></code></pre></div><p></p>
+<h3 id="erreur-3-echec-de-verification-adaptateur-adapter-verification-failed">Erreur 3 : Échec de vérification adaptateur / adapter verification failed<a class="headerlink" href="#erreur-3-echec-de-verification-adaptateur-adapter-verification-failed" title="Permanent link">¶</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>❌ Échec de vérification de l'adaptateur OpenFOAM
+</span></code></pre></div>
+<p><strong>Solution:</strong>
+</p><div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Vérifier que le solveur est installé / Check that solver is installed</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>which<span class="w"> </span>foamRun
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="nb">source</span><span class="w"> </span>/opt/openfoam/etc/bashrc
+</span></code></pre></div><p></p>
+<hr>
+<h2 id="bonnes-pratiques-best-practices">💡 Bonnes pratiques / Best Practices<a class="headerlink" href="#bonnes-pratiques-best-practices" title="Permanent link">¶</a></h2>
+<h3 id="do-a-faire">✅ DO / À FAIRE<a class="headerlink" href="#do-a-faire" title="Permanent link">¶</a></h3>
+<ul>
+<li>✅ Toujours définir <code>CASE_NAME</code> pour le mode copie / Always define <code>CASE_NAME</code> for copy mode</li>
+<li>✅ Utiliser <code>--dry-run</code> pour vérifier avant lancement / Use <code>--dry-run</code> to check before launching</li>
+<li>✅ Tester avec adaptateur <code>mock</code> d'abord / Test with <code>mock</code> adapter first</li>
+<li>✅ Archiver les runs réussis avec <code>cfd-archiver</code> / Archive successful runs with <code>cfd-archiver</code></li>
+</ul>
+<h3 id="dont-a-eviter">❌ DON'T / À ÉVITER<a class="headerlink" href="#dont-a-eviter" title="Permanent link">¶</a></h3>
+<ul>
+<li>❌ Ne pas utiliser <code>--in-place</code> sur des cas précieux / Don't use <code>--in-place</code> on valuable cases</li>
+<li>❌ Ne pas modifier manuellement les répertoires horodatés / Don't manually modify timestamped directories</li>
+<li>❌ Ne pas commiter les répertoires horodatés / Don't commit timestamped directories</li>
+</ul>
+<hr>
+<h2 id="voir-aussi-see-also">📖 Voir aussi / See Also<a class="headerlink" href="#voir-aussi-see-also" title="Permanent link">¶</a></h2>
+<ul>
+<li><a href="cfd-run-parametrique.md">cfd-run-parametrique</a> - Études paramétriques / Parametric studies</li>
+<li><a href="../cfd-archiver/">cfd-archiver</a> - Archivage des résultats / Results archiving</li>
+<li><a href="../../adapters/overview/">Adaptateurs</a> - Documentation des adaptateurs / Adapter documentation</li>
+<li><a href="../../guide/workflow/">Workflow</a> - Flux de travail complet / Complete workflow</li>
+</ul>
+<hr>
+<h2 id="script-sous-jacent-underlying-script">🔍 Script sous-jacent / Underlying Script<a class="headerlink" href="#script-sous-jacent-underlying-script" title="Permanent link">¶</a></h2>
+<p><code>cfd-run</code> est un wrapper qui appelle:</p>
+<p><code>cfd-run</code> is a wrapper that calls:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="si">${</span><span class="nv">CFD_FRAMEWORK</span><span class="si">}</span>/scripts/lancement/wrapper_commande_lancement.sh
+</span></code></pre></div>
+<p>Consultez le code source pour plus de détails.</p>
+<p>See the source code for more details.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Retour en haut de la page
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright © 2026 KL - MIT License
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/user/CFD_FRAMEWORK" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"></path></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "toc.integrate", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copi\u00e9 dans le presse-papier", "clipboard.copy": "Copier dans le presse-papier", "search.result.more.one": "1 de plus sur cette page", "search.result.more.other": "# de plus sur cette page", "search.result.none": "Aucun document trouv\u00e9", "search.result.one": "1 document trouv\u00e9", "search.result.other": "# documents trouv\u00e9s", "search.result.placeholder": "Taper pour d\u00e9marrer la recherche", "search.result.term.missing": "Non trouv\u00e9", "select.version": "S\u00e9lectionner la version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
