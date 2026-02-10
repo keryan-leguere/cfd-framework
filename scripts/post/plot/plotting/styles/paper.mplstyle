@@ -1,0 +1,81 @@
+# ============================================================
+#  PAPER profile — publication / report (compact, clean)
+#  Old-school pro: framed axes, framed legend, clean look
+# ============================================================
+
+# --- Figure ------------------------------------------------
+figure.figsize:        6, 4
+figure.dpi:            600
+figure.facecolor:      white
+figure.constrained_layout.use: True
+
+# --- Axes (old school pro: all 4 spines, darker frame) -----
+axes.facecolor:        white
+axes.edgecolor:        0.0
+axes.linewidth:        1.0
+axes.grid:             False
+axes.axisbelow:        True
+axes.titlesize:        11
+axes.titleweight:      bold
+axes.titlepad:         8
+axes.labelsize:        10
+axes.labelweight:      normal
+axes.labelpad:         5
+axes.spines.top:       True
+axes.spines.right:     True
+axes.spines.bottom:    True
+axes.spines.left:      True
+
+# --- Grid (off for paper by default) ----------------------
+grid.color:            0.85
+grid.linewidth:        0.5
+grid.alpha:            0.5
+grid.linestyle:        -
+
+# --- Ticks -------------------------------------------------
+xtick.direction:       in
+ytick.direction:       in
+xtick.major.width:     0.8
+ytick.major.width:     0.8
+xtick.major.size:      4
+ytick.major.size:      4
+xtick.minor.visible:   True
+ytick.minor.visible:   True
+xtick.minor.size:      2
+ytick.minor.size:      2
+xtick.labelsize:       9
+ytick.labelsize:       9
+xtick.color:           0.0
+ytick.color:           0.0
+
+# --- Lines & markers ---------------------------------------
+lines.linewidth:       1.4
+lines.markersize:      5.5
+lines.markeredgewidth: 1.2
+
+# Color cycle (professional, distinguishable)
+axes.prop_cycle: cycler('color', ['1f77b4', 'e03a3e', '2ca02c', 'ff7f0e', '9467bd', '8c564b', '17becf', 'bcbd22'])
+
+# --- Legend (framed, old school) ---------------------------
+legend.frameon:        True
+legend.fancybox:       False
+legend.edgecolor:      0.0
+legend.framealpha:     1.0
+legend.facecolor:      white
+legend.fontsize:       8.5
+legend.borderpad:      0.4
+legend.labelspacing:   0.35
+legend.handlelength:   1.5
+legend.handleheight:   0.6
+
+# --- Font --------------------------------------------------
+font.family:           serif
+font.serif:            DejaVu Serif, Times New Roman, Times, serif
+font.size:             10
+
+# --- Savefig -----------------------------------------------
+savefig.dpi:           300
+savefig.bbox:          tight
+savefig.pad_inches:    0.05
+savefig.facecolor:     white
+savefig.transparent:   False
