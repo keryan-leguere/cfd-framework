@@ -9,6 +9,9 @@ figure.dpi:            100
 figure.facecolor:      white
 figure.constrained_layout.use: True
 
+# --- Patches (drives legend frame thickness) ---------------
+patch.linewidth:       1.4
+
 # --- Axes (old school pro: all 4 spines, darker frame) -----
 axes.facecolor:        white
 axes.edgecolor:        0.15
@@ -26,6 +29,7 @@ axes.spines.top:       True
 axes.spines.right:     True
 axes.spines.bottom:    True
 axes.spines.left:      True
+axes.formatter.use_mathtext: True
 
 # --- Grid --------------------------------------------------
 grid.color:            0.85
@@ -58,7 +62,7 @@ axes.prop_cycle: cycler('color', ['1f77b4', 'e03a3e', '2ca02c', 'ff7f0e', '9467b
 # --- Legend (framed, old school) ---------------------------
 legend.frameon:        True
 legend.fancybox:       False
-legend.edgecolor:      0.3
+legend.edgecolor:      0.15
 legend.framealpha:     1.0
 legend.facecolor:      white
 legend.fontsize:       10
@@ -68,9 +72,12 @@ legend.handlelength:   1.8
 legend.handleheight:   0.7
 
 # --- Font --------------------------------------------------
-font.family:           sans-serif
-font.sans-serif:       DejaVu Sans, Arial, Helvetica, sans-serif
+# Body text: TeX Gyre Termes (≈ Times New Roman); titles use TITLE_FONT
+font.family:           serif
+font.serif:            TeX Gyre Termes, Times New Roman, Nimbus Roman, DejaVu Serif, serif
+font.sans-serif:       TeX Gyre Heros, Helvetica, Nimbus Sans, DejaVu Sans, sans-serif
 font.size:             11
+mathtext.fontset:      stix
 
 # --- Savefig -----------------------------------------------
 savefig.dpi:           150
