@@ -448,6 +448,7 @@ def add_textbox(
         Content (supports newlines).
     loc : str
         Anchor position.  One of ``"upper left"``, ``"upper right"``,
+        ``"center left"``, ``"center right"``,
         ``"lower left"``, ``"lower right"``.
     fontsize : float, optional
         Override font size (defaults to ``font.size`` from rcParams).
@@ -461,6 +462,8 @@ def add_textbox(
     _loc_map = {
         "upper left": (0.04, 0.96, "left", "top"),
         "upper right": (0.96, 0.96, "right", "top"),
+        "center left": (0.04, 0.50, "left", "center"),
+        "center right": (0.96, 0.50, "right", "center"),
         "lower left": (0.04, 0.04, "left", "bottom"),
         "lower right": (0.96, 0.04, "right", "bottom"),
     }

@@ -1,0 +1,2 @@
+[console_scripts]
+cfd-perf = cfd_perf.cli.main:main
