@@ -75,6 +75,34 @@ y_sin = np.sin(x)
 y_cos = np.cos(x)
 y_damped = np.exp(-x / 5) * np.sin(2 * x)
 
+for profile in ["notebook", "slides", "paper"]:
+    use_style(profile)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+
+    plot_line(ax1, x, y_sin, label="sin(x)")
+    set_title(ax1, "Panel A")
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("f(x)")
+    ax1.legend()
+
+    plot_line(ax2, x, y_cos, marker="s", label="cos(x)")
+    set_title(ax2, "Panel B")   
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("f(x)")
+    ax2.legend()
+
+    set_suptitle(fig, f"Figure suptitle in {profile}", fontweight="bold", fontsize=14)
+
+    save_figure(fig, f"demo_output/example_{profile}", formats=("png",), declassify=None, report=True)
+    plt.close(fig)
+
+from IPython.display import display, Image as IPImage
+
+print("=== NORMAL ===")
+display(IPImage(filename="demo_output/example_paper.png"))
+exit()
+
 # %% [markdown]
 # ---
 # ## 1. Quickstart — minimal figure

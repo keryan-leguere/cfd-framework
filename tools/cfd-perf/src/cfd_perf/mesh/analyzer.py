@@ -3,12 +3,60 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Union
 
 from cfd_perf.benchmark.models import PilotPoint
 from cfd_perf.mesh.adapters import MeshAdapter, get_adapter
 from cfd_perf.mesh.models import MeshStats, MeshStatsRaw
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 GB_TO_BYTES = 1 << 30
+
+
+def _row_to_raw(row: dict[str, Any]) -> MeshStatsRaw:
+    """Build MeshStatsRaw from a single row (dict)."""
+    cell_dist = row.get("cell_type_distribution")
+    if cell_dist is None:
+        cell_dist = {}
+    elif not isinstance(cell_dist, dict):
+        cell_dist = dict(cell_dist)
+    return MeshStatsRaw(
+        num_cells=int(row["num_cells"]),
+        num_faces=int(row["num_faces"]),
+        cell_type_distribution={k: float(v) for k, v in cell_dist.items()},
+    )
+
+
+def mesh_from_data(
+    data: Union[dict[str, Any], "pd.DataFrame"],
+    *,
+    pilot_baseline: PilotPoint | None = None,
+    user_mem_per_cell_bytes: float | None = None,
+) -> MeshStats:
+    """Build MeshStats from in-memory data (dict or one-row DataFrame). No file I/O."""
+    if isinstance(data, dict):
+        raw = _row_to_raw(data)
+    else:
+        try:
+            import pandas as _pd
+        except ImportError:
+            raise TypeError("data must be a dict or pandas DataFrame (install pandas)") from None
+        if not isinstance(data, _pd.DataFrame):
+            raise TypeError("data must be a dict or pandas DataFrame")
+        if len(data) == 0:
+            raise ValueError("mesh DataFrame must have at least one row")
+        row = data.iloc[0].to_dict()
+        raw = _row_to_raw(row)
+
+    mem_per_cell = _estimate_mem_per_cell(raw, pilot_baseline, user_mem_per_cell_bytes)
+    return MeshStats(
+        num_cells=raw.num_cells,
+        num_faces=raw.num_faces,
+        cell_type_distribution=raw.cell_type_distribution or None,
+        estimated_mem_per_cell_bytes=mem_per_cell,
+    )
 
 
 def _estimate_mem_per_cell(

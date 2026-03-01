@@ -1,11 +1,10 @@
-"""Rich-powered CLI output formatters."""
+"""Rich-powered display helpers for notebooks and scripts."""
 
 from __future__ import annotations
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from cfd_perf.benchmark.models import PilotSeries
 from cfd_perf.mesh.models import MeshStats
@@ -14,10 +13,9 @@ from cfd_perf.optimizer.models import OptimizationResult
 
 console = Console()
 
-GB = 1 << 30
-
 
 def print_mesh_stats(stats: MeshStats) -> None:
+    """Print mesh stats as a Rich table."""
     table = Table(title="Mesh Analysis", show_header=True, header_style="bold cyan")
     table.add_column("Property", style="bold")
     table.add_column("Value", justify="right")
@@ -30,6 +28,7 @@ def print_mesh_stats(stats: MeshStats) -> None:
         table.add_row("Cell types", dist)
 
     if stats.estimated_mem_per_cell_bytes is not None:
+        GB = 1 << 30
         table.add_row("Mem / cell", f"{stats.estimated_mem_per_cell_bytes:,.0f} B")
         total_gb = stats.estimated_mem_per_cell_bytes * stats.num_cells / GB
         table.add_row("Total RAM (est.)", f"{total_gb:.1f} GB")
@@ -40,6 +39,7 @@ def print_mesh_stats(stats: MeshStats) -> None:
 
 
 def print_fit_result(params: ModelParameters, pilot: PilotSeries) -> None:
+    """Print scaling fit and pilot data as Rich tables."""
     table = Table(title="Scaling Model Fit", show_header=True, header_style="bold cyan")
     table.add_column("Property", style="bold")
     table.add_column("Value", justify="right")
@@ -63,6 +63,7 @@ def print_fit_result(params: ModelParameters, pilot: PilotSeries) -> None:
 
 
 def print_optimization_result(result: OptimizationResult) -> None:
+    """Print optimization result (optimal config, accepted/rejected tables)."""
     if result.optimal:
         opt = result.optimal
         mode_label = result.mode.upper()
@@ -130,7 +131,3 @@ def print_optimization_result(result: OptimizationResult) -> None:
         for r in result.rejected:
             rej_table.add_row(str(r.cores), ", ".join(r.reasons))
         console.print(rej_table)
-
-
-def print_export(label: str, path: str) -> None:
-    console.print(f"  [bold cyan]{label:6s}[/bold cyan] -> {path}")

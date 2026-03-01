@@ -39,7 +39,23 @@ except ImportError:
 
 _GREEN = "#009900"
 _RED = "#CC0000"
-_ZONE_ALPHA = 0.14
+_ZONE_ALPHA = 0.18
+_PILOT_MARKER_SIZE = 42
+
+# 1 mois = 30 j, 1 j = 24 h
+def _format_runtime_mdh(hours: float) -> str:
+    """Format runtime as e.g. '2 mois, 15 j, 6.5 h'."""
+    total_h = hours
+    months = int(total_h // (30 * 24))
+    rest = total_h - months * 30 * 24
+    days = int(rest // 24)
+    h = rest - days * 24
+    parts = []
+    if months > 0:
+        parts.append(f"{months} mois")
+    parts.append(f"{days} j")
+    parts.append(f"{h:.1f} h")
+    return ", ".join(parts)
 
 
 def _build_full_arrays(
@@ -96,7 +112,7 @@ def _hline_label(ax: plt.Axes, y_val: float, label: str, x_max: float) -> None:
     ax.axhline(y=y_val, color="C2", linewidth=0.9, linestyle=":", zorder=2)
     ax.text(
         x_max * 0.97, y_val, f"  {label}",
-        ha="right", va="bottom", fontsize=7, color="C2", fontweight="bold", zorder=3,
+        ha="right", va="bottom", fontsize=10, color="black", fontweight="bold", zorder=3,
     )
 
 
@@ -109,7 +125,8 @@ def _plot_with_plotting_lib(
     *,
     title_suffix: str = "",
     show: bool = False,
-) -> Path | None:
+    return_figure: bool = False,
+) -> Path | None | tuple[plt.Figure, np.ndarray]:
     """Render using the ``plotting`` package (professional style)."""
     use_style("paper")
 
@@ -123,8 +140,8 @@ def _plot_with_plotting_lib(
     pilot_nc, pilot_runtime_h, pilot_eff, pilot_rpc = pilot_data
 
     fig, axes = new_figure(1, 3, figsize=(16, 4.8), constrained_layout=False)
-    fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.28)
-    set_suptitle(fig, f"Strong-Scaling Analysis  ({result.mode} mode){title_suffix}", fontsize=12)
+    fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.12)
+    set_suptitle(fig, f"Analyse de scalabilité forte{title_suffix}", fontsize=12)
 
     nc_opt = result.optimal.cores if result.optimal else None
     opt = result.optimal
@@ -145,8 +162,8 @@ def _plot_with_plotting_lib(
         green_span = (boundary, x_max)
 
     def draw_zones(ax: plt.Axes) -> None:
-        ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="accepted")
-        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="rejected")
+        ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="Accepté")
+        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
         ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
 
     # Interpolated target intersection
@@ -155,100 +172,104 @@ def _plot_with_plotting_lib(
         h_eff = target_eff_pct
         h_runtime = float(np.interp(nc_at_target, cores_all, runtime_all))
         h_ram = float(np.interp(nc_at_target, cores_all, rpc_all))
-        lbl_eff = f"target: {target_eff_pct:.0f}%"
-        lbl_rt = f"{h_runtime:.1f} h"
-        lbl_ram = f"{h_ram:.1f} GB"
+        lbl_eff = f"cible : {target_eff_pct:.0f} %"
+        lbl_rt = f"cible : {_format_runtime_mdh(h_runtime)}"
+        lbl_ram = f"{h_ram:.1f} Go"
     elif result.mode == "deadline" and target_deadline_h is not None:
         nc_at_target = np.interp(target_deadline_h, runtime_all[::-1], cores_all[::-1].astype(float))
         h_runtime = target_deadline_h
         h_eff = float(np.interp(nc_at_target, cores_all, eff_all))
         h_ram = float(np.interp(nc_at_target, cores_all, rpc_all))
-        lbl_rt = f"target: {target_deadline_h:.0f} h"
-        lbl_eff = f"{h_eff:.1f}%"
-        lbl_ram = f"{h_ram:.1f} GB"
+        lbl_rt = f"cible : {_format_runtime_mdh(target_deadline_h)}"
+        lbl_eff = f"{h_eff:.1f} %"
+        lbl_ram = f"{h_ram:.1f} Go"
     else:
         h_runtime = h_eff = h_ram = None
         lbl_rt = lbl_eff = lbl_ram = ""
 
     # --- Runtime ---
     ax = axes[0]
-    set_title(ax, "Runtime")
+    set_title(ax, "Durée totale")
     ax.set_xlim(0, x_max)
     draw_zones(ax)
-    plot_line(ax, cores_all, runtime_all, marker="o", label="predicted", markersize=4)
+    plot_line(ax, cores_all, runtime_all, marker="o", label="Prédit", markersize=4)
     ax.scatter(
-        pilot_nc, pilot_runtime_h, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_runtime_h, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         add_reference_lines(ax, vlines=[nc_opt], color="C2", linewidth=1.0, linestyle="--")
         annotate_point(
-            ax, f"opt: {nc_opt} cores\n{opt.runtime_hours:.2f} h",
+            ax, f"opt : {nc_opt} cœurs\n{_format_runtime_mdh(opt.runtime_hours)}",
             xy=(nc_opt, opt.runtime_hours), offset=(40, 25),
         )
     if h_runtime is not None:
         _hline_label(ax, h_runtime, lbl_rt, x_max)
-    ax.set_xlabel("Cores")
-    ax.set_ylabel("Total runtime (h)")
+    ax.set_xlabel("Cœurs")
+    ax.set_ylabel("Durée totale (h)")
     add_textbox(
         ax,
-        f"Cells: {meta.get('num_cells', 0) / 1e6:.0f}M\n"
-        f"Iters: {meta.get('n_iterations', 0):,}\n"
-        f"Beta: {meta.get('beta', '?')}",
+        f"Mailles : {meta.get('num_cells', 0) / 1e6:.0f}M\n"
+        f"Itér. : {meta.get('n_iterations', 0):,}\n"
+        f"β : {meta.get('beta', '?')}",
         loc="center right", fontsize=7,
     )
     apply_oldschool_axes(ax, legend=False)
-    make_legend(ax, loc="upper right", fontsize=7)
+    make_legend(ax, loc="upper right", fontsize=7, title="Légende")
 
     # --- Efficiency ---
     ax = axes[1]
-    set_title(ax, "Parallel efficiency")
+    set_title(ax, "Efficacité parallèle")
     ax.set_xlim(0, x_max)
     draw_zones(ax)
-    plot_line(ax, cores_all, eff_all, marker="s", label="efficiency", markersize=4)
+    plot_line(ax, cores_all, eff_all, marker="s", label="Efficacité", markersize=4)
     ax.scatter(
-        pilot_nc, pilot_eff, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_eff, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         add_reference_lines(ax, vlines=[nc_opt], color="C2", linewidth=1.0, linestyle="--")
         annotate_point(
-            ax, f"opt: {nc_opt} cores\n{opt.efficiency * 100:.1f}%",
+            ax, f"opt : {nc_opt} cœurs\n{opt.efficiency * 100:.1f} %",
             xy=(nc_opt, opt.efficiency * 100), offset=(40, 25),
         )
     if h_eff is not None:
         _hline_label(ax, h_eff, lbl_eff, x_max)
-    ax.set_xlabel("Cores")
-    ax.set_ylabel("Parallel efficiency (%)")
+    ax.set_xlabel("Cœurs")
+    ax.set_ylabel("Efficacité parallèle (%)")
     ax.set_ylim(0, 105)
     ax.yaxis.set_major_locator(mticker.MultipleLocator(10))
     ax.yaxis.set_minor_locator(mticker.MultipleLocator(5))
     apply_oldschool_axes(ax, legend=False)
-    make_legend(ax, loc="upper right", fontsize=7)
+    make_legend(ax, loc="upper right", fontsize=7, title="Légende")
 
     # --- Memory / core ---
     ax = axes[2]
-    set_title(ax, "RAM per core")
+    set_title(ax, "RAM par cœur")
     ax.set_xlim(0, x_max)
     draw_zones(ax)
-    plot_line(ax, cores_all, rpc_all, marker="^", label="RAM / core", markersize=4)
+    plot_line(ax, cores_all, rpc_all, marker="^", label="RAM / Cœur", markersize=4)
     ax.scatter(
-        pilot_nc, pilot_rpc, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_rpc, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         add_reference_lines(ax, vlines=[nc_opt], color="C2", linewidth=1.0, linestyle="--")
         annotate_point(
-            ax, f"opt: {nc_opt} cores\n{opt.ram_per_core_gb:.1f} GB",
+            ax, f"opt : {nc_opt} cœurs\n{opt.ram_per_core_gb:.1f} Go",
             xy=(nc_opt, opt.ram_per_core_gb), offset=(40, 25),
         )
     if h_ram is not None:
         _hline_label(ax, h_ram, lbl_ram, x_max)
-    ax.set_xlabel("Cores")
-    ax.set_ylabel("RAM per core (GB)")
+    ax.set_xlabel("Cœurs")
+    ax.set_ylabel("RAM par cœur (Go)")
     apply_oldschool_axes(ax, legend=False)
-    make_legend(ax, loc="upper right", fontsize=7)
+    make_legend(ax, loc="upper right", fontsize=7, title="Légende")
 
+    if return_figure:
+        if show:
+            plt.show()
+        return (fig, axes)
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         save_figure(fig, str(out.with_suffix("")), formats=("png",), dpi=180, report=False)
@@ -268,7 +289,8 @@ def _plot_vanilla(
     *,
     title_suffix: str = "",
     show: bool = False,
-) -> Path | None:
+    return_figure: bool = False,
+) -> Path | None | tuple[plt.Figure, np.ndarray]:
     """Fallback renderer using vanilla Matplotlib."""
     arrays = _build_full_arrays(result, pilot, mesh, params)
     if arrays is None:
@@ -280,9 +302,9 @@ def _plot_vanilla(
     pilot_nc, pilot_runtime_h, pilot_eff, pilot_rpc = pilot_data
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), constrained_layout=False)
-    fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.28)
+    fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.12)
     fig.suptitle(
-        f"Strong-Scaling Analysis  ({result.mode} mode){title_suffix}",
+        f"Analyse strong-scaling (mode efficacité / deadline){title_suffix}",
         fontsize=12, fontweight="bold",
     )
 
@@ -304,8 +326,8 @@ def _plot_vanilla(
         green_span = (boundary, x_max)
 
     def draw_zones(ax: plt.Axes) -> None:
-        ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="accepted")
-        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="rejected")
+        ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="Accepté")
+        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
         ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
 
     if result.mode == "efficiency" and target_eff_pct is not None:
@@ -313,104 +335,108 @@ def _plot_vanilla(
         h_eff = target_eff_pct
         h_runtime = float(np.interp(nc_at_target, cores_all, runtime_all))
         h_ram = float(np.interp(nc_at_target, cores_all, rpc_all))
-        lbl_eff = f"target: {target_eff_pct:.0f}%"
-        lbl_rt = f"{h_runtime:.1f} h"
-        lbl_ram = f"{h_ram:.1f} GB"
+        lbl_eff = f"cible : {target_eff_pct:.0f} %"
+        lbl_rt = f"cible : {_format_runtime_mdh(h_runtime)}"
+        lbl_ram = f"{h_ram:.1f} Go"
     elif result.mode == "deadline" and target_deadline_h is not None:
         nc_at_target = np.interp(target_deadline_h, runtime_all[::-1], cores_all[::-1].astype(float))
         h_runtime = target_deadline_h
         h_eff = float(np.interp(nc_at_target, cores_all, eff_all))
         h_ram = float(np.interp(nc_at_target, cores_all, rpc_all))
-        lbl_rt = f"target: {target_deadline_h:.0f} h"
-        lbl_eff = f"{h_eff:.1f}%"
-        lbl_ram = f"{h_ram:.1f} GB"
+        lbl_rt = f"cible : {_format_runtime_mdh(target_deadline_h)}"
+        lbl_eff = f"{h_eff:.1f} %"
+        lbl_ram = f"{h_ram:.1f} Go"
     else:
         h_runtime = h_eff = h_ram = None
         lbl_rt = lbl_eff = lbl_ram = ""
 
     # --- Runtime ---
     ax_rt = axes[0]
-    ax_rt.set_title("Runtime")
+    ax_rt.set_title("Durée totale")
     ax_rt.set_xlim(0, x_max)
     draw_zones(ax_rt)
-    ax_rt.plot(cores_all, runtime_all, "o-", color="C0", markersize=4, label="predicted")
+    ax_rt.plot(cores_all, runtime_all, "o-", color="C0", markersize=4, label="Prédit")
     ax_rt.scatter(
-        pilot_nc, pilot_runtime_h, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_runtime_h, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         ax_rt.axvline(nc_opt, color="C2", linestyle="--", linewidth=0.9)
         ax_rt.annotate(
-            f"opt: {nc_opt} cores\n{opt.runtime_hours:.2f} h",
+            f"opt : {nc_opt} cœurs\n{_format_runtime_mdh(opt.runtime_hours)}",
             xy=(nc_opt, opt.runtime_hours), xytext=(40, 25),
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
         )
     if h_runtime is not None:
         _hline_label(ax_rt, h_runtime, lbl_rt, x_max)
-    ax_rt.set_xlabel("Cores")
-    ax_rt.set_ylabel("Total runtime (h)")
+    ax_rt.set_xlabel("Cœurs")
+    ax_rt.set_ylabel("Durée totale (h)")
     ax_rt.text(
         0.96, 0.5,
-        f"Cells: {meta.get('num_cells', 0) / 1e6:.0f}M\n"
-        f"Iters: {meta.get('n_iterations', 0):,}\n"
-        f"Beta: {meta.get('beta', '?')}",
+        f"Mailles : {meta.get('num_cells', 0) / 1e6:.0f}M\n"
+        f"Itér. : {meta.get('n_iterations', 0):,}\n"
+        f"β : {meta.get('beta', '?')}",
         transform=ax_rt.transAxes, ha="right", va="center",
         fontsize=7, bbox={"boxstyle": "round,pad=0.4", "fc": "wheat", "alpha": 0.5},
     )
-    ax_rt.legend(fontsize=7, loc="upper right")
+    ax_rt.legend(fontsize=7, loc="upper right", title="Légende")
 
     # --- Efficiency ---
     ax_eff = axes[1]
-    ax_eff.set_title("Parallel efficiency")
+    ax_eff.set_title("Efficacité parallèle")
     ax_eff.set_xlim(0, x_max)
     draw_zones(ax_eff)
-    ax_eff.plot(cores_all, eff_all, "s-", color="C1", markersize=4, label="efficiency")
+    ax_eff.plot(cores_all, eff_all, "s-", color="C1", markersize=4, label="Efficacité")
     ax_eff.scatter(
-        pilot_nc, pilot_eff, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_eff, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         ax_eff.axvline(nc_opt, color="C2", linestyle="--", linewidth=0.9)
         ax_eff.annotate(
-            f"opt: {nc_opt} cores\n{opt.efficiency * 100:.1f}%",
+            f"opt : {nc_opt} cœurs\n{opt.efficiency * 100:.1f} %",
             xy=(nc_opt, opt.efficiency * 100), xytext=(40, 25),
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
         )
     if h_eff is not None:
         _hline_label(ax_eff, h_eff, lbl_eff, x_max)
-    ax_eff.set_xlabel("Cores")
-    ax_eff.set_ylabel("Parallel efficiency (%)")
+    ax_eff.set_xlabel("Cœurs")
+    ax_eff.set_ylabel("Efficacité parallèle (%)")
     ax_eff.set_ylim(0, 105)
     ax_eff.yaxis.set_major_locator(mticker.MultipleLocator(10))
     ax_eff.yaxis.set_minor_locator(mticker.MultipleLocator(5))
-    ax_eff.legend(fontsize=7, loc="upper right")
+    ax_eff.legend(fontsize=7, loc="upper right", title="Légende")
 
     # --- Memory / core ---
     ax_mem = axes[2]
-    ax_mem.set_title("RAM per core")
+    ax_mem.set_title("RAM par cœur")
     ax_mem.set_xlim(0, x_max)
     draw_zones(ax_mem)
-    ax_mem.plot(cores_all, rpc_all, "^-", color="C3", markersize=4, label="RAM / core")
+    ax_mem.plot(cores_all, rpc_all, "^-", color="C3", markersize=4, label="RAM / Cœur")
     ax_mem.scatter(
-        pilot_nc, pilot_rpc, marker="D", s=70, color="C4",
-        edgecolors="black", linewidths=0.8, zorder=5, label="pilot",
+        pilot_nc, pilot_rpc, marker="D", s=_PILOT_MARKER_SIZE, color="C4",
+        edgecolors="black", linewidths=0.8, zorder=5, label="Pilote",
     )
     if opt:
         ax_mem.axvline(nc_opt, color="C2", linestyle="--", linewidth=0.9)
         ax_mem.annotate(
-            f"opt: {nc_opt} cores\n{opt.ram_per_core_gb:.1f} GB",
+            f"opt : {nc_opt} cœurs\n{opt.ram_per_core_gb:.1f} Go",
             xy=(nc_opt, opt.ram_per_core_gb), xytext=(40, 25),
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
         )
     if h_ram is not None:
         _hline_label(ax_mem, h_ram, lbl_ram, x_max)
-    ax_mem.set_xlabel("Cores")
-    ax_mem.set_ylabel("RAM per core (GB)")
-    ax_mem.legend(fontsize=7, loc="upper right")
+    ax_mem.set_xlabel("Cœurs")
+    ax_mem.set_ylabel("RAM par cœur (Go)")
+    ax_mem.legend(fontsize=7, loc="upper right", title="Légende")
 
+    if return_figure:
+        if show:
+            plt.show()
+        return (fig, axes)
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out, dpi=150)
@@ -430,7 +456,8 @@ def plot_scaling(
     params: ModelParameters | None = None,
     title_suffix: str = "",
     show: bool = False,
-) -> Path | None:
+    return_figure: bool = False,
+) -> Path | None | tuple[plt.Figure, np.ndarray]:
     """Generate a 3-panel scaling figure: runtime, efficiency, memory/core.
 
     When *pilot*, *mesh*, and *params* are provided the figure includes the
@@ -439,6 +466,9 @@ def plot_scaling(
 
     Set *show* to ``True`` for inline display in notebooks (calls
     ``plt.show()`` instead of closing the figure).
+
+    Set *return_figure* to ``True`` to return ``(fig, axes)`` instead of
+    saving to *out*; the caller can then save with custom formats (e.g. SVG).
 
     Falls back to a minimal accepted-only plot when these are ``None``.
     """
@@ -449,8 +479,14 @@ def plot_scaling(
 
     if pilot is not None and mesh is not None and params is not None:
         if _HAS_PLOTTING:
-            return _plot_with_plotting_lib(result, pilot, mesh, params, output, title_suffix=title_suffix, show=show)
-        return _plot_vanilla(result, pilot, mesh, params, output, title_suffix=title_suffix, show=show)
+            return _plot_with_plotting_lib(
+                result, pilot, mesh, params, output,
+                title_suffix=title_suffix, show=show, return_figure=return_figure,
+            )
+        return _plot_vanilla(
+            result, pilot, mesh, params, output,
+            title_suffix=title_suffix, show=show, return_figure=return_figure,
+        )
 
     # Legacy path: no pilot/mesh/params → simple accepted-only plot
     from cfd_perf.models.parameters import ModelParameters as _MP
@@ -476,5 +512,11 @@ def plot_scaling(
         beta_source=str(result.metadata.get("beta_source", "fixed")),
     )
     if _HAS_PLOTTING:
-        return _plot_with_plotting_lib(result, _dummy_pilot, _dummy_mesh, _dummy_params, output, show=show)
-    return _plot_vanilla(result, _dummy_pilot, _dummy_mesh, _dummy_params, output, show=show)
+        return _plot_with_plotting_lib(
+            result, _dummy_pilot, _dummy_mesh, _dummy_params, output,
+            show=show, return_figure=return_figure,
+        )
+    return _plot_vanilla(
+        result, _dummy_pilot, _dummy_mesh, _dummy_params, output,
+        show=show, return_figure=return_figure,
+    )

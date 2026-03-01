@@ -18,10 +18,10 @@ axes.edgecolor:        0.0
 axes.linewidth:        1.0
 axes.grid:             False
 axes.axisbelow:        True
-axes.titlesize:        11
+axes.titlesize:        12
 axes.titleweight:      bold
 axes.titlepad:         8
-axes.labelsize:        10
+axes.labelsize:        12
 axes.labelweight:      normal
 axes.labelpad:         5
 axes.spines.top:       True

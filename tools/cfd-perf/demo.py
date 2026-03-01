@@ -9,7 +9,7 @@
 # 3. Run optimization in **efficiency-driven** and **deadline-driven** modes
 # 4. Inspect candidate tables with Rich
 # 5. Generate professional scaling plots (using the `plotting` library)
-# 6. Export JSON, CSV, PNG, and SLURM snippet
+# 6. Generate scaling figures (PNG only)
 # 
 # **Prerequisites**
 # 
@@ -104,10 +104,8 @@ if PLOTTING_PATH not in sys.path:
 # overhead growth -- note how T/iter flattens out beyond 384 cores.
 
 # %%
-import json
-import tempfile
-
-workdir = Path(tempfile.mkdtemp(prefix="cfd_perf_demo_"))
+out_dir = Path("demo_output")
+out_dir.mkdir(exist_ok=True)
 
 mesh_data = {
     "num_cells": 20_000_000,
@@ -128,24 +126,17 @@ pilot_data = {
         {"cores": 576, "time_per_iter_s": 1.05, "peak_ram_total_gb": 145.0},
     ],
 }
-
-mesh_path = workdir / "mesh.json"
-pilot_path = workdir / "pilot.json"
-mesh_path.write_text(json.dumps(mesh_data, indent=2))
-pilot_path.write_text(json.dumps(pilot_data, indent=2))
-
-print(f"Working directory: {workdir}")
+n_iterations = pilot_data["n_iterations"]
 
 # %% [markdown]
 # ## 2. Analyze mesh
 
 # %%
-from cfd_perf.benchmark.ingest import load_pilot
-from cfd_perf.mesh.analyzer import analyze_mesh
-from cfd_perf.cli.console import print_mesh_stats
+import cfd_perf
+from cfd_perf.io.display import print_mesh_stats
 
-pilot = load_pilot(pilot_path)
-mesh = analyze_mesh(mesh_path, pilot_baseline=pilot.baseline)
+pilot = cfd_perf.pilot_from_data(pilot_data, n_iterations=n_iterations)
+mesh = cfd_perf.mesh_from_data(mesh_data, pilot_baseline=pilot.baseline)
 
 print_mesh_stats(mesh)
 
@@ -157,10 +148,9 @@ print_mesh_stats(mesh)
 # The fit averages this into a single effective beta.
 
 # %%
-from cfd_perf.models.strong_scaling import fit_beta
-from cfd_perf.cli.console import print_fit_result
+from cfd_perf.io.display import print_fit_result
 
-params = fit_beta(pilot)
+params = cfd_perf.fit_beta(pilot)
 print_fit_result(params, pilot)
 
 # %% [markdown]
@@ -170,12 +160,11 @@ print_fit_result(params, pilot)
 
 # %%
 from cfd_perf.constraints.config import HardConstraints
-from cfd_perf.optimizer.selector import optimize
-from cfd_perf.cli.console import print_optimization_result
+from cfd_perf.io.display import print_optimization_result
 
 constraints = HardConstraints(min_cells_per_core=100_000, min_ram_per_core_gb=0.5)
 
-result_eff = optimize(
+result_eff = cfd_perf.optimize(
     mesh, pilot, params,
     mode="efficiency",
     max_efficiency_loss=0.25,
@@ -194,7 +183,7 @@ print_optimization_result(result_eff)
 # so the optimizer must find a solution below that limit.
 
 # %%
-result_dl = optimize(
+result_dl = cfd_perf.optimize(
     mesh, pilot, params,
     mode="deadline",
     deadline_hours=6.0,
@@ -433,53 +422,13 @@ apply_oldschool_axes(ax)
 plt.show()
 
 # %% [markdown]
-# ## 8. Export artifacts
+# ## 8. Scaling figures (output)
 
 # %%
-from cfd_perf.io.exporters import export_json, export_csv
 from cfd_perf.io.plotting import plot_scaling
-from cfd_perf.io.slurm import export_slurm
-from plotting import print_file_report
 
-export_json(result_eff, workdir / "result_efficiency.json")
-export_csv(result_eff,  workdir / "result_efficiency.csv")
-plot_scaling(result_eff, workdir / "scaling_efficiency.png", pilot=pilot, mesh=mesh, params=params)
-export_slurm(result_eff, workdir / "submit_eff.sh", job_name="rans_20M", partition="compute")
-
-export_json(result_dl, workdir / "result_deadline.json")
-export_csv(result_dl,  workdir / "result_deadline.csv")
-plot_scaling(result_dl, workdir / "scaling_deadline.png", pilot=pilot, mesh=mesh, params=params)
-export_slurm(result_dl, workdir / "submit_dl.sh", job_name="rans_20M", partition="compute")
-
-exported = sorted([f for f in workdir.iterdir() if not f.name.startswith(".")])
-print_file_report(exported, title="Exported artifacts")
-
-# %% [markdown]
-# ## 9. SLURM snippets
-
-# %%
-from cfd_perf.io.slurm import render_slurm_snippet
-from rich.console import Console
-from rich.panel import Panel
-from rich.syntax import Syntax
-
-console = Console()
-
-for label, result in [("Efficiency mode", result_eff), ("Deadline mode", result_dl)]:
-    snippet = render_slurm_snippet(result, job_name="rans_20M", partition="compute")
-    console.print(Panel(Syntax(snippet, "bash", theme="monokai"), title=label, border_style="cyan"))
-
-# %% [markdown]
-# ## 10. CLI equivalent
-# 
-# ```bash
-# cfd-perf analyze mesh.json --pilot pilot.json
-# cfd-perf fit pilot.json --beta-auto
-# cfd-perf optimize --mesh mesh.json --pilot pilot.json --max-loss 0.25 --cores-max 1024
-# cfd-perf optimize --mesh mesh.json --pilot pilot.json --deadline 6h   --cores-max 1024
-# cfd-perf plot scaling --input result_efficiency.json --out scaling.png
-# ```
-# 
-# Add `--json` to any command for machine-readable output instead of Rich tables.
+plot_scaling(result_eff, out_dir / "scaling_efficiency.png", pilot=pilot, mesh=mesh, params=params)
+plot_scaling(result_dl, out_dir / "scaling_deadline.png", pilot=pilot, mesh=mesh, params=params)
+print("Figures saved to:", out_dir)
 
 
