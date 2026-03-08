@@ -22,6 +22,9 @@ dev = [
     "mypy",
 ]
 
+[project.scripts]
+cfd-perf = "cfd_perf.cli.main:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
