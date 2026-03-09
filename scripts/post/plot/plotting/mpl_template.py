@@ -17,6 +17,7 @@ Provides:
     annotate_point(ax, ...)       — annotation arrow with consistent styling
     plot_bar(ax, ...)             — bar chart with old-style edge styling
     dual_axis(ax, ...)            — styled twinx secondary Y-axis
+    set_subtitle(ax, text, ...)   — subtitle line below the axes title
     print_file_report(files)      — pretty-print exported file summary (Rich / plain)
 
 Font setup:
@@ -427,6 +428,55 @@ def set_suptitle(fig: Figure, text: str, **kwargs) -> mpl.text.Text:
     """
     kwargs.setdefault("fontfamily", TITLE_FONT)
     return fig.suptitle(text, **kwargs)
+
+
+def set_subtitle(ax, text: str, **kwargs) -> mpl.text.Text:
+    """Place a subtitle line just below the axes title.
+
+    The subtitle uses ``TITLE_FONT`` by default, with a font size one
+    point smaller than the current title.  The main title is
+    automatically shifted upward to avoid overlap.
+
+    Call **after** ``set_title`` (or ``ax.set_title``) so the title
+    font size is already resolved.
+
+    Parameters
+    ----------
+    text : str
+        Subtitle text (e.g. ``"M = 0.3, α = 2°"``).
+    **kwargs
+        Forwarded to ``ax.text`` (``fontsize``, ``color``,
+        ``fontfamily``, …).  ``fontsize`` defaults to the title
+        font size minus one point.
+
+    Returns
+    -------
+    matplotlib.text.Text
+    """
+    from matplotlib.transforms import ScaledTranslation
+
+    title_fontsize = ax.title.get_fontsize()
+    fontsize = kwargs.pop("fontsize", title_fontsize - 1)
+
+    kwargs.setdefault("fontfamily", TITLE_FONT)
+    kwargs.setdefault("color", "0.40")
+
+    pad = ax.title.get_pad()
+    ax.title.set_pad(pad + fontsize + 2)
+
+    trans = ax.transAxes + ScaledTranslation(
+        0, pad / 72.0, ax.figure.dpi_scale_trans
+    )
+    return ax.text(
+        0.5,
+        1.0,
+        text,
+        transform=trans,
+        fontsize=fontsize,
+        ha="center",
+        va="baseline",
+        **kwargs,
+    )
 
 
 def add_textbox(

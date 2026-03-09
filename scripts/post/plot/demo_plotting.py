@@ -37,8 +37,9 @@
 # 17. `annotate_point` — annotation arrow
 # 18. `plot_bar` — bar chart with old-style edges
 # 19. `dual_axis` — styled secondary Y-axis (twinx)
-# 20. **Exhaustive parameter checklist** (uncomment what you need)
-# 21. Copy/paste template function
+# 20. `set_subtitle` — subtitle below the axes title
+# 21. **Exhaustive parameter checklist** (uncomment what you need)
+# 22. Copy/paste template function
 
 # %%
 import matplotlib.pyplot as plt
@@ -61,6 +62,7 @@ from plotting import (
     print_file_report,
     save_figure,
     set_axis_sci,
+    set_subtitle,
     set_suptitle,
     set_title,
     style_context,
@@ -786,7 +788,52 @@ plt.show()
 
 # %% [markdown]
 # ---
-# ## 20. Exhaustive parameter checklist
+# ## 20. `set_subtitle` — subtitle below the axes title
+#
+# Call `set_subtitle(ax, ...)` **after** `set_title(ax, ...)` to place
+# a secondary line below the title (one point smaller by default).
+# Handy for flow conditions, mesh info, or any metadata that belongs
+# next to the title without cluttering the plot area.
+
+# %%
+use_style("notebook")
+
+fig, ax = plt.subplots()
+plot_line(ax, x, y_sin, label="sin(x)")
+plot_line(ax, x, y_cos, marker="s", label="cos(x)")
+ax.set_xlabel("Angle (rad)")
+ax.set_ylabel("Amplitude")
+
+set_title(ax, "Evolution of amplitude vs angle")
+set_subtitle(ax, r"$M = 0.3$, $\alpha = 2°$")
+make_legend(ax)
+plt.show()
+
+# With subplots
+use_style("paper")
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+plot_line(ax1, x, y_sin, label="sin(x)")
+set_title(ax1, "Residual convergence")
+set_subtitle(ax1, "SA turbulence model, CFL = 10")
+ax1.set_xlabel("Iterations")
+ax1.set_ylabel("Residual")
+make_legend(ax1)
+
+plot_line(ax2, x, y_cos, marker="s", label="cos(x)")
+set_title(ax2, "Pressure distribution")
+set_subtitle(ax2, r"$M_\infty = 0.85$, $Re = 6.5 \times 10^6$")
+ax2.set_xlabel("x/c")
+ax2.set_ylabel("$C_p$")
+make_legend(ax2)
+
+set_suptitle(fig, "CFD Post-processing", fontweight="bold")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 21. Exhaustive parameter checklist
 #
 # **One example plot with every useful Matplotlib knob listed as a
 # comment.  Uncomment the lines you need.**
@@ -969,7 +1016,7 @@ plt.show()
 
 # %% [markdown]
 # ---
-# ## 21. Copy/paste template function
+# ## 22. Copy/paste template function
 #
 # Drop this function into your script, adjust the body, call it.
 
@@ -1055,6 +1102,7 @@ fig, ax = make_figure(
 # | `add_reference_lines(ax, hlines=..., vlines=...)` | Horizontal / vertical reference lines |
 # | `apply_oldschool_axes(ax)` | Cosmetic polish (spines, ticks, legend) |
 # | `add_textbox(ax, text, loc=..., ...)` | Anchored metadata text box |
+# | `set_subtitle(ax, text, ...)` | Subtitle line below the axes title (title font − 1 pt) |
 # | `set_axis_sci(ax, axis="y", ...)` | Clean scientific notation on axis |
 # | `annotate_point(ax, text, xy=..., ...)` | Annotation arrow with consistent styling |
 # | `plot_bar(ax, categories, values, ...)` | Bar chart with old-style edge styling |
