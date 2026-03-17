@@ -35,6 +35,7 @@
 | **yq** | ≥ 4.0 | ⚠️ Recommandé | `pip install yq` / `brew install yq` |
 | **rsync** | ≥ 3.0 | ⚠️ Recommandé | `apt install rsync` |
 | **tmux** | ≥ 2.0 | ⚠️ Recommandé | `apt install tmux` |
+| **tmuxifier** | ≥ 0.13 | ⚠️ Recommandé | [github.com/jimeh/tmuxifier](https://github.com/jimeh/tmuxifier) |
 | **GNU Parallel** | - | ❌ Optionnel | `apt install parallel` |
 
 !!! tip "Note sur yq"

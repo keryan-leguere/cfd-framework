@@ -49,8 +49,8 @@ graph LR
     
     Create --> Git[git init]
     Git --> Template[Copier template<br/>Copy template]
-    Template --> Tmux[Session tmux<br/>tmux session]
-    Tmux --> Done([✅ Prêt / Ready])
+    Template --> Tmuxifier[tmuxifier layout<br/>session + windows]
+    Tmuxifier --> Done([✅ Prêt / Ready])
     
     style Cmd fill:#4caf50,stroke:#388e3c,color:#fff
     style Check fill:#ff9800,stroke:#f57c00,color:#fff
@@ -353,11 +353,16 @@ cfd-run --name MON_CAS
 Si `cfd-creer` ne lance pas tmux:
 
 ```bash
-# Installer tmux
+# Installer tmux et tmuxifier
 sudo apt install tmux  # Ubuntu/Debian
 brew install tmux      # macOS
 
-# Ou ne pas utiliser tmux
+# Installer tmuxifier (https://github.com/jimeh/tmuxifier)
+git clone https://github.com/jimeh/tmuxifier.git ~/.tmuxifier
+echo 'export PATH="$HOME/.tmuxifier/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(tmuxifier init -)"' >> ~/.bashrc
+
+# Ou travailler sans tmux
 cd MY_FIRST_CASE
 # Travailler normalement
 ```
