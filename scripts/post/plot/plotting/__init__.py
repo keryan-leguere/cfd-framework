@@ -28,27 +28,75 @@ from .mpl_template import (
     use_style,
 )
 
+# --- 2D scalar field plotting ------------------------------------------------
+from .field2d import (
+    plot_contour,
+    plot_contourf,
+    plot_imshow,
+    plot_pcolormesh,
+)
+
+# --- 2D vector field plotting ------------------------------------------------
+from .vector2d import (
+    compute_speed,
+    plot_quiver,
+    plot_streamplot,
+    subsample_vectors,
+)
+
+# --- Combined 2D plots -------------------------------------------------------
+from .composite2d import (
+    plot_contour_quiver,
+)
+
+# --- Data preparation --------------------------------------------------------
+from .prep import (
+    dataframe_to_grid,
+    extract_slice2d,
+    reshape_structured2d,
+)
+
 __all__ = [
+    # Style / figure lifecycle
     "BODY_FONT",
     "TITLE_FONT",
-    "add_reference_lines",
-    "add_textbox",
-    "annotate_point",
-    "apply_marker_style",
-    "apply_oldschool_axes",
-    "dual_axis",
-    "make_legend",
     "new_figure",
+    "register_fonts",
+    "style_context",
+    "use_style",
+    # 1D plot helpers
+    "apply_marker_style",
     "plot_bar",
     "plot_line",
     "plot_with_band",
-    "print_file_report",
-    "register_fonts",
-    "save_figure",
+    # 2D scalar field
+    "plot_contour",
+    "plot_contourf",
+    "plot_imshow",
+    "plot_pcolormesh",
+    # 2D vector field
+    "compute_speed",
+    "plot_quiver",
+    "plot_streamplot",
+    "subsample_vectors",
+    # 2D composite
+    "plot_contour_quiver",
+    # Data preparation
+    "dataframe_to_grid",
+    "extract_slice2d",
+    "reshape_structured2d",
+    # Axes / annotation helpers
+    "add_reference_lines",
+    "add_textbox",
+    "annotate_point",
+    "apply_oldschool_axes",
+    "dual_axis",
+    "make_legend",
     "set_axis_sci",
     "set_subtitle",
     "set_suptitle",
     "set_title",
-    "style_context",
-    "use_style",
+    # Export
+    "print_file_report",
+    "save_figure",
 ]

@@ -53,19 +53,31 @@ from plotting import (
     annotate_point,
     apply_marker_style,
     apply_oldschool_axes,
+    compute_speed,
+    dataframe_to_grid,
     dual_axis,
+    extract_slice2d,
     make_legend,
     new_figure,
     plot_bar,
+    plot_contour,
+    plot_contour_quiver,
+    plot_contourf,
+    plot_imshow,
     plot_line,
+    plot_pcolormesh,
+    plot_quiver,
+    plot_streamplot,
     plot_with_band,
     print_file_report,
+    reshape_structured2d,
     save_figure,
     set_axis_sci,
     set_subtitle,
     set_suptitle,
     set_title,
     style_context,
+    subsample_vectors,
     use_style,
 )
 
@@ -102,8 +114,6 @@ for profile in ["notebook", "slides", "paper"]:
 from IPython.display import display, Image as IPImage
 
 print("=== NORMAL ===")
-display(IPImage(filename="demo_output/example_paper.png"))
-exit()
 
 # %% [markdown]
 # ---
@@ -1088,6 +1098,296 @@ fig, ax = make_figure(
 
 # %% [markdown]
 # ---
+# ---
+# # Part 2 — 2D Field Visualization
+#
+# The sections below demonstrate the 2D scalar and vector field helpers
+# added to the `plotting/` package.  The same principle holds:
+# **Matplotlib is the real API.**  These helpers add validation,
+# colorbar handling, and CFD-friendly defaults.
+#
+# ---
+# ## 23. Scalar field — `plot_contourf`
+#
+# Filled contours on a Gaussian scalar field.  Coordinates can be
+# 1D vectors **or** 2D meshgrid arrays — the package normalises them.
+
+# %%
+np.random.seed(0)
+x2d = np.linspace(-2, 2, 161)
+y2d = np.linspace(-1.5, 1.5, 121)
+X2d, Y2d = np.meshgrid(x2d, y2d, indexing="xy")
+
+P_field = np.exp(-(X2d**2 + Y2d**2))
+
+use_style("paper")
+fig, ax = plt.subplots()
+cf, cbar = plot_contourf(ax, x2d, y2d, P_field, levels=20, cmap="viridis",
+                         cbar_label="Pressure coefficient")
+set_title(ax, "Filled contour — Gaussian field")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+save_figure(fig, "demo_output/2d_contourf", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 24. Scalar field — `plot_pcolormesh`
+#
+# Pseudocolor mesh — the best default for large structured CFD fields.
+# Supports non-uniform grids and the `rasterized` flag for lighter
+# SVG/PDF export.
+
+# %%
+use_style("notebook")
+fig, ax = plt.subplots()
+qm, cbar = plot_pcolormesh(ax, X2d, Y2d, P_field, cmap="coolwarm",
+                           cbar_label="Pressure")
+set_title(ax, "pcolormesh — 2D meshgrid input")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 25. Scalar field — `plot_imshow`
+#
+# Best for uniformly spaced Cartesian grids.  Always pass `extent`
+# to get physical coordinates.  Uses `origin="lower"` by default.
+
+# %%
+use_style("notebook")
+fig, ax = plt.subplots()
+im, cbar = plot_imshow(ax, P_field,
+                       extent=(x2d.min(), x2d.max(), y2d.min(), y2d.max()),
+                       cmap="inferno", cbar_label="Scalar")
+set_title(ax, "imshow — uniform Cartesian grid")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 26. Contour lines — `plot_contour`
+#
+# Isolines overlaid on a filled contour background.  Pass `colors="k"`
+# for black lines or use a colormap.
+
+# %%
+use_style("paper")
+fig, ax = plt.subplots()
+plot_contourf(ax, x2d, y2d, P_field, levels=20, cmap="viridis", cbar_label="Pressure")
+plot_contour(ax, x2d, y2d, P_field, levels=8, colors="k", linewidths=0.5,
+             aspect=None)
+set_title(ax, "Filled contours + isolines overlay")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 27. Vector field — `plot_quiver`
+#
+# Solid-body rotation field.  Use `stride` to keep the plot readable
+# on dense grids.  `magnitude_color=True` colours arrows by speed.
+
+# %%
+U2d = -Y2d
+V2d = X2d
+
+use_style("notebook")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+plot_quiver(ax1, x2d, y2d, U2d, V2d, stride=8, color="k", scale=30)
+set_title(ax1, "Quiver — black arrows, stride=8")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+plot_quiver(ax2, x2d, y2d, U2d, V2d, stride=6, magnitude_color=True,
+            colorbar=True, cbar_label="|V|", scale=30)
+set_title(ax2, "Quiver — magnitude colouring")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 28. Streamlines — `plot_streamplot`
+#
+# Streamlines show flow topology better than quiver.  Colour by speed
+# or another scalar for extra information.
+
+# %%
+speed = compute_speed(U2d, V2d)
+
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+plot_streamplot(ax1, x2d, y2d, U2d, V2d, density=1.5, color="0.3")
+set_title(ax1, "Streamlines — uniform colour")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+plot_streamplot(ax2, x2d, y2d, U2d, V2d, color=speed, cmap="plasma",
+                density=1.5, colorbar=True, cbar_label="Speed")
+set_title(ax2, "Streamlines — coloured by speed")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 29. Combined — `plot_contour_quiver`
+#
+# Scalar background + quiver overlay in one call.  Use for pressure
+# with velocity direction, temperature with recirculation, etc.
+
+# %%
+use_style("paper")
+fig, ax = plt.subplots(figsize=(8, 5))
+artist, q, cbar = plot_contour_quiver(
+    ax, x2d, y2d, P_field, U2d, V2d,
+    scalar_kind="contourf",
+    levels=24,
+    cmap="coolwarm",
+    cbar_label="Pressure coefficient",
+    quiver_stride=8,
+    quiver_color="k",
+    quiver_scale=30,
+)
+set_title(ax, "Pressure field + velocity vectors")
+set_subtitle(ax, "Solid-body rotation, Gaussian pressure")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+save_figure(fig, "demo_output/2d_contour_quiver", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 30. Data prep — `reshape_structured2d`
+#
+# Reconstruct 2D arrays from flattened `(x, y, value)` exports — common
+# after CSV or text-file extraction from a CFD solver.
+
+# %%
+x_flat = X2d.ravel()
+y_flat = Y2d.ravel()
+p_flat = P_field.ravel()
+u_flat = U2d.ravel()
+
+X_rec, Y_rec, fields = reshape_structured2d(
+    x_flat, y_flat, {"p": p_flat, "u": u_flat}
+)
+print(f"Reconstructed grid: {X_rec.shape}")
+assert np.allclose(fields["p"], P_field)
+print("reshape_structured2d: round-trip validated")
+
+# %% [markdown]
+# ---
+# ## 31. Data prep — `dataframe_to_grid`
+#
+# Pivot a pandas DataFrame into structured 2D arrays.
+
+# %%
+import pandas as pd
+
+df = pd.DataFrame({
+    "x": x_flat,
+    "y": y_flat,
+    "p": p_flat,
+    "u": u_flat,
+    "v": V2d.ravel(),
+})
+
+xg, yg, flds = dataframe_to_grid(df, values=["p", "u", "v"])
+print(f"Grid from DataFrame: xg({len(xg)}), yg({len(yg)}), p{flds['p'].shape}")
+
+use_style("notebook")
+fig, ax = plt.subplots()
+Xg, Yg = np.meshgrid(xg, yg, indexing="xy")
+plot_pcolormesh(ax, Xg, Yg, flds["p"], cmap="viridis", cbar_label="Pressure")
+plot_quiver(ax, Xg, Yg, flds["u"], flds["v"], stride=8, color="k",
+            scale=30, aspect=None)
+set_title(ax, "Field from DataFrame")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 32. 3D slice extraction — `extract_slice2d`
+#
+# Extract a 2D plane from a 3D scalar array and plot it directly.
+# The function returns meshgrid coordinates ready for plotting.
+
+# %%
+x3 = np.linspace(-1, 1, 41)
+y3 = np.linspace(-1, 1, 51)
+z3 = np.linspace(0, 2, 31)
+X3, Y3, Z3 = np.meshgrid(x3, y3, z3, indexing="ij")
+field_3d = np.exp(-(X3**2 + Y3**2 + (Z3 - 1)**2))
+
+H, V, p_slice = extract_slice2d(
+    field_3d, axis="z", coord=1.0, x=x3, y=y3, z=z3,
+)
+print(f"Slice shape: {p_slice.shape}, coord grids: {H.shape}")
+
+use_style("paper")
+fig, ax = plt.subplots()
+plot_pcolormesh(ax, H, V, p_slice, cmap="inferno", cbar_label="Scalar")
+set_title(ax, "2D slice from 3D field (z = 1.0)")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+save_figure(fig, "demo_output/2d_slice", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 33. Diverging colormaps — signed fields
+#
+# Use `TwoSlopeNorm` for fields with a meaningful zero (vorticity,
+# pressure fluctuation).  Fix `vmin`/`vmax` for comparative plots.
+
+# %%
+from matplotlib.colors import TwoSlopeNorm
+
+vorticity = np.sin(2 * np.pi * X2d) * np.cos(2 * np.pi * Y2d)
+
+use_style("paper")
+fig, ax = plt.subplots()
+norm = TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+plot_pcolormesh(ax, x2d, y2d, vorticity, cmap="RdBu_r", norm=norm,
+                cbar_label="Vorticity [1/s]")
+set_title(ax, "Signed field — diverging colormap")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 34. 2D with metadata — `add_textbox` + `set_title`
+#
+# All existing annotation helpers work seamlessly with 2D plots.
+
+# %%
+use_style("paper")
+fig, ax = plt.subplots(figsize=(8, 5))
+plot_contourf(ax, x2d, y2d, P_field, levels=20, cmap="viridis",
+              cbar_label="Pressure coefficient")
+set_title(ax, r"Pressure field — $M_\infty = 0.85$, $Re = 6.5 \times 10^6$")
+add_textbox(ax, "SA turbulence model\nMesh: 12M cells", loc="lower right",
+            fontsize=8)
+ax.set_xlabel("x/c")
+ax.set_ylabel("y/c")
+save_figure(fig, "demo_output/2d_annotated", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
 # ## Function reference
 #
 # | Function | Purpose |
@@ -1107,6 +1407,18 @@ fig, ax = make_figure(
 # | `annotate_point(ax, text, xy=..., ...)` | Annotation arrow with consistent styling |
 # | `plot_bar(ax, categories, values, ...)` | Bar chart with old-style edge styling |
 # | `dual_axis(ax, ylabel=..., color=...)` | Styled secondary Y-axis (twinx) |
+# | `plot_contour(ax, x, y, z, ...)` | 2D contour lines |
+# | `plot_contourf(ax, x, y, z, ...)` | 2D filled contours |
+# | `plot_pcolormesh(ax, x, y, z, ...)` | 2D pseudocolor mesh |
+# | `plot_imshow(ax, z, ...)` | 2D image display (uniform grids) |
+# | `plot_quiver(ax, x, y, u, v, ...)` | 2D quiver (arrow) plot |
+# | `plot_streamplot(ax, x, y, u, v, ...)` | 2D streamlines |
+# | `plot_contour_quiver(ax, x, y, z, u, v, ...)` | Scalar background + quiver overlay |
+# | `compute_speed(u, v)` | Velocity magnitude |
+# | `subsample_vectors(x, y, u, v, ...)` | Downsample vectors for readability |
+# | `reshape_structured2d(x, y, values)` | Flattened export → 2D arrays |
+# | `dataframe_to_grid(df, ...)` | DataFrame → structured 2D arrays |
+# | `extract_slice2d(field, axis=..., ...)` | 3D array → 2D slice |
 # | `save_figure(fig, path, ..., report=True)` | Export + optional Rich summary table |
 # | `print_file_report(files)` | Pretty-print a list of exported files |
 #
