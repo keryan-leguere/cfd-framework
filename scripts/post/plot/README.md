@@ -117,6 +117,33 @@ make_legend(ax)
 make_legend(ax, loc="upper left", ncol=2, title="Curves", frame_linewidth=2.0)
 ```
 
+#### `make_figure_legend(fig, axes=None, *, loc="center right", bbox_to_anchor=(1.02, 0.5), ncol=1, dedupe=True, ...) -> Legend`
+
+Single legend for the whole figure, collecting handles from multiple axes.
+Duplicate labels are removed by default.
+
+```python
+fig, (ax1, ax2) = plt.subplots(1, 2)
+plot_line(ax1, x, y1, label="Exp")
+plot_line(ax2, x, y2, label="CFD")
+fig.tight_layout()
+fig.subplots_adjust(right=0.85)
+make_figure_legend(fig, bbox_to_anchor=(1.02, 0.5))
+```
+
+#### `add_shared_colorbar(fig, mappable, *, axes, location="right", size="3%", pad=0.06, match_axes=True, label=None, ...) -> Colorbar`
+
+Shared colorbar whose height (or width) matches a group of axes.
+
+```python
+fig, (ax1, ax2) = plt.subplots(1, 2)
+cf1, _ = plot_contourf(ax1, x, y, Z1, colorbar=False)
+cf2, _ = plot_contourf(ax2, x, y, Z2, colorbar=False)
+fig.tight_layout()
+fig.subplots_adjust(right=0.88)
+add_shared_colorbar(fig, cf1, axes=[ax1, ax2], label="Pressure [Pa]")
+```
+
 #### `add_textbox(ax, text, *, loc="upper right", fontsize=None, **kwargs) -> Text`
 
 Anchored text box for case metadata. Four corner positions: `"upper left"`,
@@ -272,6 +299,37 @@ provide `extent` for physical coordinates.
 ```python
 im, cbar = plot_imshow(ax, Z, extent=(-1, 1, -1, 1), cbar_label="p [Pa]")
 ```
+
+### Nodal interpolation
+
+When CFD data is defined at **grid nodes** (not cell centers), `pcolormesh`
+renders a blocky per-cell colouring.  The interpolation helpers refine the
+grid with SciPy before plotting, producing smooth visuals.
+
+#### `interpolate_field2d(x, y, z, *, factor=2, method="cubic") -> (xi, yi, zi)`
+
+Refine a structured 2D scalar field onto a denser grid.
+
+- `factor`: refinement multiplier per axis (e.g. `4` quadruples resolution).
+- `method`: `"cubic"` (default, smooth) or `"linear"`.
+
+```python
+xi, yi, zi = interpolate_field2d(x, y, Z, factor=4, method="cubic")
+plot_pcolormesh(ax, xi, yi, zi, cbar_label="Smooth field")
+```
+
+#### `plot_pcolormesh_interp(ax, x, y, z, *, factor=2, method="cubic", ...) -> (QuadMesh, Colorbar | None, (xi, yi, zi))`
+
+One-call interpolation + plotting.  Returns the interpolated grid for reuse.
+
+```python
+qm, cbar, (xi, yi, zi) = plot_pcolormesh_interp(
+    ax, x, y, Z_nodal, factor=4, cmap="inferno", cbar_label="Temperature [K]",
+)
+```
+
+**Performance note**: high `factor` on large grids consumes memory
+proportionally to `factor**2`.  A factor of 2--4 is usually sufficient.
 
 ### Vector field functions
 

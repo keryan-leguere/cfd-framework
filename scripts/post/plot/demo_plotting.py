@@ -49,6 +49,7 @@ from plotting import (
     BODY_FONT,
     TITLE_FONT,
     add_reference_lines,
+    add_shared_colorbar,
     add_textbox,
     annotate_point,
     apply_marker_style,
@@ -57,6 +58,8 @@ from plotting import (
     dataframe_to_grid,
     dual_axis,
     extract_slice2d,
+    interpolate_field2d,
+    make_figure_legend,
     make_legend,
     new_figure,
     plot_bar,
@@ -66,6 +69,7 @@ from plotting import (
     plot_imshow,
     plot_line,
     plot_pcolormesh,
+    plot_pcolormesh_interp,
     plot_quiver,
     plot_streamplot,
     plot_with_band,
@@ -1388,6 +1392,141 @@ plt.show()
 
 # %% [markdown]
 # ---
+# ## 35. Figure-level legend — `make_figure_legend`
+#
+# When multiple subplots share the same series, collect all labels into
+# a single legend placed outside the plot area (e.g. to the right).
+
+# %%
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+plot_line(ax1, x, y_sin, label="sin(x)")
+plot_line(ax1, x, y_cos, marker="s", label="cos(x)")
+set_title(ax1, "Panel A")
+ax1.set_xlabel("x")
+ax1.set_ylabel("f(x)")
+
+plot_line(ax2, x, y_sin, label="sin(x)")
+plot_line(ax2, x, -y_sin, marker="^", label="-sin(x)")
+set_title(ax2, "Panel B")
+ax2.set_xlabel("x")
+ax2.set_ylabel("f(x)")
+
+fig.tight_layout()
+fig.subplots_adjust(right=0.82)
+make_figure_legend(fig, bbox_to_anchor=(1.0, 0.5))
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 36. Shared colorbar — `add_shared_colorbar`
+#
+# For multi-panel 2D plots with the **same** scalar range, disable
+# per-axes colorbars and add one shared colorbar whose height matches
+# the axes group.
+
+# %%
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+
+cf1, _ = plot_contourf(ax1, x2d, y2d, P_field, levels=20,
+                        cmap="viridis", colorbar=False)
+set_title(ax1, "Field A")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+vorticity = np.sin(2 * np.pi * X2d) * np.cos(2 * np.pi * Y2d)
+cf2, _ = plot_contourf(ax2, x2d, y2d, P_field * 0.8, levels=20,
+                        cmap="viridis", colorbar=False)
+set_title(ax2, "Field B (scaled)")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+fig.tight_layout()
+fig.subplots_adjust(right=0.88)
+add_shared_colorbar(fig, cf1, axes=[ax1, ax2], label="Pressure coefficient")
+save_figure(fig, "demo_output/2d_shared_cbar", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 37. Nodal interpolation — `plot_pcolormesh_interp`
+#
+# When data lives at mesh **nodes** (not cell centers), `pcolormesh`
+# draws a blocky per-cell colouring.  `plot_pcolormesh_interp`
+# refines the grid with SciPy before plotting.
+
+# %%
+x_coarse = np.linspace(-2, 2, 21)
+y_coarse = np.linspace(-1.5, 1.5, 16)
+Xc, Yc = np.meshgrid(x_coarse, y_coarse, indexing="xy")
+Z_coarse = np.exp(-(Xc**2 + Yc**2))
+
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+plot_pcolormesh(ax1, x_coarse, y_coarse, Z_coarse, cmap="inferno",
+                cbar_label="Raw nodal (blocky)")
+set_title(ax1, "Before interpolation")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+plot_pcolormesh_interp(ax2, x_coarse, y_coarse, Z_coarse, factor=4,
+                       method="cubic", cmap="inferno",
+                       cbar_label="Interpolated (smooth)")
+set_title(ax2, "After interpolation (factor=4)")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+save_figure(fig, "demo_output/2d_interpolation", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 38. Threshold colouring — mask regions in black
+#
+# Two practical techniques to paint regions where a field is below (or
+# above) a threshold in a solid colour (e.g. black for `IND < 0.9`).
+#
+# **Approach A — masked array + `set_bad`**: mask the values that fail
+# the criterion, then set the colormap's "bad" colour to black.  Masked
+# cells are rendered in that colour.
+#
+# **Approach B — `contourf` overlay**: draw a filled contour that covers
+# the sub-threshold region on top of the main plot.
+
+# %%
+IND = P_field.copy()
+
+threshold = 0.9
+cmap_threshold = plt.cm.viridis.copy()
+cmap_threshold.set_bad(color="black")
+
+IND_masked = np.ma.masked_where(IND < threshold, IND)
+
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+# --- Approach A: masked array + set_bad ---
+plot_pcolormesh(ax1, x2d, y2d, IND_masked, cmap=cmap_threshold,
+                cbar_label="IND", shading="auto")
+set_title(ax1, f"Masked array (IND < {threshold} → black)")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+# --- Approach B: contourf overlay ---
+plot_pcolormesh(ax2, x2d, y2d, IND, cmap="viridis", cbar_label="IND")
+ax2.contourf(X2d, Y2d, IND, levels=[-np.inf, threshold], colors="black")
+set_title(ax2, f"contourf overlay (IND < {threshold} → black)")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+save_figure(fig, "demo_output/2d_threshold", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
 # ## Function reference
 #
 # | Function | Purpose |
@@ -1407,9 +1546,13 @@ plt.show()
 # | `annotate_point(ax, text, xy=..., ...)` | Annotation arrow with consistent styling |
 # | `plot_bar(ax, categories, values, ...)` | Bar chart with old-style edge styling |
 # | `dual_axis(ax, ylabel=..., color=...)` | Styled secondary Y-axis (twinx) |
+# | `make_figure_legend(fig, ...)` | Single legend for multi-axes figures |
+# | `add_shared_colorbar(fig, mappable, ...)` | Shared colorbar matching axes height |
 # | `plot_contour(ax, x, y, z, ...)` | 2D contour lines |
 # | `plot_contourf(ax, x, y, z, ...)` | 2D filled contours |
 # | `plot_pcolormesh(ax, x, y, z, ...)` | 2D pseudocolor mesh |
+# | `plot_pcolormesh_interp(ax, x, y, z, ...)` | Interpolated 2D pseudocolor mesh |
+# | `interpolate_field2d(x, y, z, ...)` | Refine a nodal field (SciPy) |
 # | `plot_imshow(ax, z, ...)` | 2D image display (uniform grids) |
 # | `plot_quiver(ax, x, y, u, v, ...)` | 2D quiver (arrow) plot |
 # | `plot_streamplot(ax, x, y, u, v, ...)` | 2D streamlines |

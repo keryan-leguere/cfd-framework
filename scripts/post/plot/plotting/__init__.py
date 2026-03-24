@@ -7,11 +7,13 @@ from .mpl_template import (
     BODY_FONT,
     TITLE_FONT,
     add_reference_lines,
+    add_shared_colorbar,
     add_textbox,
     annotate_point,
     apply_marker_style,
     apply_oldschool_axes,
     dual_axis,
+    make_figure_legend,
     make_legend,
     new_figure,
     plot_bar,
@@ -30,10 +32,12 @@ from .mpl_template import (
 
 # --- 2D scalar field plotting ------------------------------------------------
 from .field2d import (
+    interpolate_field2d,
     plot_contour,
     plot_contourf,
     plot_imshow,
     plot_pcolormesh,
+    plot_pcolormesh_interp,
 )
 
 # --- 2D vector field plotting ------------------------------------------------
@@ -70,10 +74,12 @@ __all__ = [
     "plot_line",
     "plot_with_band",
     # 2D scalar field
+    "interpolate_field2d",
     "plot_contour",
     "plot_contourf",
     "plot_imshow",
     "plot_pcolormesh",
+    "plot_pcolormesh_interp",
     # 2D vector field
     "compute_speed",
     "plot_quiver",
@@ -87,10 +93,12 @@ __all__ = [
     "reshape_structured2d",
     # Axes / annotation helpers
     "add_reference_lines",
+    "add_shared_colorbar",
     "add_textbox",
     "annotate_point",
     "apply_oldschool_axes",
     "dual_axis",
+    "make_figure_legend",
     "make_legend",
     "set_axis_sci",
     "set_subtitle",

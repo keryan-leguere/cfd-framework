@@ -1,0 +1,142 @@
+"""Tests for figure-level legend and shared colorbar helpers."""
+
+import matplotlib
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+
+from plotting import (
+    add_shared_colorbar,
+    make_figure_legend,
+    plot_contourf,
+    plot_line,
+    use_style,
+)
+
+
+@pytest.fixture(autouse=True)
+def _use_notebook_style():
+    use_style("notebook")
+    yield
+    plt.close("all")
+
+
+@pytest.fixture()
+def twin_line_fig():
+    """Two subplots sharing overlapping line labels."""
+    x = np.linspace(0, 6, 30)
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    plot_line(ax1, x, np.sin(x), label="sin")
+    plot_line(ax1, x, np.cos(x), marker="s", label="cos")
+    plot_line(ax2, x, np.sin(x), label="sin")
+    plot_line(ax2, x, -np.sin(x), marker="^", label="-sin")
+    return fig, (ax1, ax2)
+
+
+@pytest.fixture()
+def twin_contour_fig():
+    """Two filled-contour subplots without per-axes colorbars."""
+    x = np.linspace(-1, 1, 41)
+    y = np.linspace(-1, 1, 31)
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    Z = np.exp(-(X**2 + Y**2))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    cf1, _ = plot_contourf(ax1, x, y, Z, levels=15, colorbar=False)
+    cf2, _ = plot_contourf(ax2, x, y, Z * 0.5, levels=15, colorbar=False)
+    return fig, (ax1, ax2), cf1
+
+
+# -----------------------------------------------------------------------
+# make_figure_legend
+# -----------------------------------------------------------------------
+class TestMakeFigureLegend:
+    def test_returns_legend(self, twin_line_fig):
+        fig, _ = twin_line_fig
+        leg = make_figure_legend(fig)
+        assert leg is not None
+
+    def test_deduplicates_labels(self, twin_line_fig):
+        fig, _ = twin_line_fig
+        leg = make_figure_legend(fig, dedupe=True)
+        texts = [t.get_text() for t in leg.get_texts()]
+        assert texts == ["sin", "cos", "-sin"]
+
+    def test_no_dedupe(self, twin_line_fig):
+        fig, _ = twin_line_fig
+        leg = make_figure_legend(fig, dedupe=False)
+        texts = [t.get_text() for t in leg.get_texts()]
+        assert texts.count("sin") == 2
+
+    def test_subset_axes(self, twin_line_fig):
+        fig, (ax1, _) = twin_line_fig
+        leg = make_figure_legend(fig, axes=[ax1])
+        texts = [t.get_text() for t in leg.get_texts()]
+        assert "sin" in texts
+        assert "-sin" not in texts
+
+    def test_single_ax(self, twin_line_fig):
+        fig, (ax1, _) = twin_line_fig
+        leg = make_figure_legend(fig, axes=ax1)
+        assert len(leg.get_texts()) > 0
+
+    def test_frame_linewidth(self, twin_line_fig):
+        fig, _ = twin_line_fig
+        leg = make_figure_legend(fig, frame_linewidth=3.0)
+        assert leg.get_frame().get_linewidth() == 3.0
+
+    def test_custom_kwargs(self, twin_line_fig):
+        fig, _ = twin_line_fig
+        leg = make_figure_legend(
+            fig, loc="lower center", bbox_to_anchor=(0.5, -0.05), ncol=3,
+        )
+        assert leg is not None
+
+
+# -----------------------------------------------------------------------
+# add_shared_colorbar
+# -----------------------------------------------------------------------
+class TestAddSharedColorbar:
+    def test_returns_colorbar_right(self, twin_contour_fig):
+        fig, (ax1, ax2), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], label="p [Pa]",
+        )
+        assert cbar is not None
+        assert cbar.ax is not None
+
+    def test_returns_colorbar_bottom(self, twin_contour_fig):
+        fig, (ax1, ax2), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        fig.subplots_adjust(bottom=0.25)
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], location="bottom", label="T [K]",
+        )
+        assert cbar is not None
+
+    def test_invalid_location(self, twin_contour_fig):
+        fig, (ax1, ax2), cf = twin_contour_fig
+        with pytest.raises(ValueError, match="location=.*not supported"):
+            add_shared_colorbar(fig, cf, axes=[ax1, ax2], location="top")
+
+    def test_single_axes(self, twin_contour_fig):
+        fig, (ax1, _), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        cbar = add_shared_colorbar(fig, cf, axes=ax1, label="single")
+        assert cbar is not None
+
+    def test_default_axes_all(self, twin_contour_fig):
+        fig, _, cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        cbar = add_shared_colorbar(fig, cf)
+        assert cbar is not None
+
+    def test_match_axes_false(self, twin_contour_fig):
+        fig, (ax1, ax2), cf = twin_contour_fig
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], match_axes=False, label="no match",
+        )
+        assert cbar is not None

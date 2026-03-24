@@ -279,6 +279,171 @@ def make_legend(ax, **kwargs):
     return leg
 
 
+def make_figure_legend(
+    fig: Figure,
+    axes=None,
+    *,
+    loc: str = "center right",
+    bbox_to_anchor: tuple[float, float] = (1.02, 0.5),
+    ncol: int = 1,
+    dedupe: bool = True,
+    frame_linewidth: float | None = None,
+    **kwargs,
+):
+    """Create a single legend for the whole figure, aggregating handles from
+    multiple axes.
+
+    Useful when several subplots share the same series and you want one
+    legend placed outside the plot area (e.g. to the right).
+
+    Parameters
+    ----------
+    fig : Figure
+    axes : Axes or sequence of Axes, optional
+        Axes to collect handles from.  ``None`` means all axes in *fig*.
+    loc : str
+        Legend location string (Matplotlib convention).
+    bbox_to_anchor : tuple
+        Anchor point in figure coordinates.
+    ncol : int
+        Number of columns.
+    dedupe : bool
+        Remove duplicate labels (keeps first occurrence).
+    frame_linewidth : float, optional
+        Legend frame thickness.  Defaults to ``patch.linewidth`` from
+        rcParams (at least 1.2).
+    **kwargs
+        Forwarded to ``fig.legend()``.
+
+    Returns
+    -------
+    Legend
+    """
+    if axes is None:
+        axes = fig.get_axes()
+    elif not hasattr(axes, "__iter__"):
+        axes = [axes]
+
+    handles, labels = [], []
+    seen: set[str] = set()
+    for ax in axes:
+        for h, lbl in zip(*ax.get_legend_handles_labels()):
+            if dedupe and lbl in seen:
+                continue
+            seen.add(lbl)
+            handles.append(h)
+            labels.append(lbl)
+
+    merged = {**_LEGEND_DEFAULTS, **kwargs}
+    leg = fig.legend(
+        handles,
+        labels,
+        loc=loc,
+        bbox_to_anchor=bbox_to_anchor,
+        ncol=ncol,
+        **merged,
+    )
+
+    if frame_linewidth is None:
+        frame_linewidth = mpl.rcParams.get("patch.linewidth", 1.0)
+        frame_linewidth = max(frame_linewidth, 1.2)
+    leg.get_frame().set_linewidth(frame_linewidth)
+
+    edge = kwargs.get("edgecolor")
+    if edge is None:
+        edge = mpl.rcParams.get("legend.edgecolor", "0.15")
+    leg.get_frame().set_edgecolor(edge)
+
+    return leg
+
+
+def add_shared_colorbar(
+    fig: Figure,
+    mappable,
+    *,
+    axes=None,
+    location: str = "right",
+    size: str = "3%",
+    pad: float = 0.06,
+    match_axes: bool = True,
+    label: str | None = None,
+    **kwargs,
+):
+    """Add a single colorbar shared across multiple axes.
+
+    When *match_axes* is ``True`` (default), the colorbar height (or
+    width for horizontal layouts) is computed from the bounding box of
+    the target axes so it aligns visually.
+
+    Parameters
+    ----------
+    fig : Figure
+    mappable : ScalarMappable
+        The artist to attach the colorbar to (e.g. a QuadMesh from
+        ``pcolormesh`` or a ContourSet from ``contourf``).
+    axes : Axes or sequence of Axes, optional
+        Axes the colorbar should span.  ``None`` means all axes.
+    location : str
+        ``"right"`` or ``"bottom"``.
+    size : str
+        Width of the colorbar axis as a percentage string (e.g.
+        ``"3%"``).
+    pad : float
+        Padding between the axes group and the colorbar (in figure
+        fraction).
+    match_axes : bool
+        Resize the colorbar axis to match the vertical (or horizontal)
+        extent of the target axes group.
+    label : str, optional
+        Colorbar label text.
+    **kwargs
+        Forwarded to ``fig.colorbar()``.
+
+    Returns
+    -------
+    Colorbar
+    """
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    if axes is None:
+        axes = fig.get_axes()
+    elif not hasattr(axes, "__iter__"):
+        axes = [axes]
+
+    if match_axes and len(axes) >= 1:
+        fig.canvas.draw_idle()
+        renderer = fig.canvas.get_renderer()
+
+        bboxes = [ax.get_position() for ax in axes]
+
+        if location == "right":
+            x0 = max(b.x1 for b in bboxes) + pad
+            y0 = min(b.y0 for b in bboxes)
+            y1 = max(b.y1 for b in bboxes)
+            pct = float(size.strip().rstrip("%")) / 100.0
+            fig_w = fig.get_figwidth()
+            cax_width = pct * fig_w / fig_w
+            cax = fig.add_axes([x0, y0, cax_width, y1 - y0])
+        elif location == "bottom":
+            x0 = min(b.x0 for b in bboxes)
+            x1 = max(b.x1 for b in bboxes)
+            y0 = min(b.y0 for b in bboxes) - pad
+            pct = float(size.strip().rstrip("%")) / 100.0
+            fig_h = fig.get_figheight()
+            cax_height = pct * fig_h / fig_h
+            cax = fig.add_axes([x0, y0 - cax_height, x1 - x0, cax_height])
+        else:
+            raise ValueError(
+                f"location={location!r} not supported; use 'right' or 'bottom'"
+            )
+        kwargs["cax"] = cax
+
+    cbar = fig.colorbar(mappable, **kwargs)
+    if label:
+        cbar.set_label(label)
+    return cbar
+
+
 # ---------------------------------------------------------------------------
 # Matplotlib-native plot helpers
 # ---------------------------------------------------------------------------

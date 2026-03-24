@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._grid import add_colorbar, normalize_coords
+from ._grid import add_colorbar, ensure_1d_coords, normalize_coords
 
 
 def plot_contour(
@@ -298,3 +298,148 @@ def plot_imshow(
         cbar = add_colorbar(im, ax, cbar_label)
 
     return im, cbar
+
+
+# ---------------------------------------------------------------------------
+# Interpolation helpers (SciPy required)
+# ---------------------------------------------------------------------------
+
+
+def interpolate_field2d(x, y, z, *, factor=2, method="cubic"):
+    """Interpolate a 2D structured scalar field onto a denser grid.
+
+    Useful when nodal CFD data is plotted with ``pcolormesh`` and the
+    per-cell colouring appears blocky.  Interpolation onto a finer grid
+    produces a smooth visual result.
+
+    Parameters
+    ----------
+    x, y : array-like
+        1D coordinate vectors or 2D meshgrid arrays.  Must be
+        monotonic along their respective axis.
+    z : array-like
+        2D scalar field with shape ``(ny, nx)``.
+    factor : int
+        Refinement factor per axis (``2`` doubles the resolution).
+    method : str
+        ``"linear"`` or ``"cubic"`` (default).  ``"cubic"`` uses a
+        ``RectBivariateSpline`` of order 3; ``"linear"`` uses order 1.
+
+    Returns
+    -------
+    xi : ndarray
+        1D refined x coordinates.
+    yi : ndarray
+        1D refined y coordinates.
+    zi : ndarray
+        Interpolated 2D field with shape
+        ``(ny * factor, nx * factor)``.
+
+    Raises
+    ------
+    ImportError
+        If SciPy is not installed.
+    ValueError
+        If coordinates are not monotonic or *method* is unknown.
+    """
+    from scipy.interpolate import RectBivariateSpline
+
+    z = np.asarray(z, dtype=float)
+    if z.ndim != 2:
+        raise ValueError(f"z must be 2D, got shape {z.shape}")
+
+    x1d, y1d = ensure_1d_coords(x, y)
+    ny, nx = z.shape
+
+    if len(x1d) != nx:
+        raise ValueError(
+            f"x has {len(x1d)} elements but z has {nx} columns"
+        )
+    if len(y1d) != ny:
+        raise ValueError(
+            f"y has {len(y1d)} elements but z has {ny} rows"
+        )
+
+    _order_map = {"linear": 1, "cubic": 3}
+    if method not in _order_map:
+        raise ValueError(
+            f"method={method!r} not supported; use 'linear' or 'cubic'"
+        )
+    kx = ky = _order_map[method]
+
+    spline = RectBivariateSpline(y1d, x1d, z, kx=kx, ky=ky)
+
+    xi = np.linspace(x1d[0], x1d[-1], nx * factor)
+    yi = np.linspace(y1d[0], y1d[-1], ny * factor)
+    zi = spline(yi, xi)
+
+    return xi, yi, zi
+
+
+def plot_pcolormesh_interp(
+    ax,
+    x,
+    y,
+    z,
+    *,
+    factor=2,
+    method="cubic",
+    cmap="viridis",
+    shading="auto",
+    colorbar=True,
+    cbar_label=None,
+    vmin=None,
+    vmax=None,
+    norm=None,
+    rasterized=None,
+    aspect="equal",
+    **kwargs,
+):
+    """Interpolate a nodal field then draw it with ``pcolormesh``.
+
+    Combines :func:`interpolate_field2d` and :func:`plot_pcolormesh`
+    into a single call.  Returns the interpolated grid for reuse.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    x, y : array-like
+        1D coordinate vectors or 2D meshgrid arrays.
+    z : array-like
+        2D nodal scalar field.
+    factor : int
+        Interpolation refinement factor per axis.
+    method : str
+        ``"linear"`` or ``"cubic"``.
+    cmap, shading, colorbar, cbar_label, vmin, vmax, norm, rasterized,
+    aspect, **kwargs
+        Forwarded to :func:`plot_pcolormesh`.
+
+    Returns
+    -------
+    qm : QuadMesh
+    cbar : Colorbar or None
+    interp : tuple
+        ``(xi, yi, zi)`` — the refined coordinates and interpolated
+        field, usable for further analysis.
+    """
+    xi, yi, zi = interpolate_field2d(x, y, z, factor=factor, method=method)
+
+    qm, cbar = plot_pcolormesh(
+        ax,
+        xi,
+        yi,
+        zi,
+        cmap=cmap,
+        shading=shading,
+        colorbar=colorbar,
+        cbar_label=cbar_label,
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,
+        rasterized=rasterized,
+        aspect=aspect,
+        **kwargs,
+    )
+
+    return qm, cbar, (xi, yi, zi)
