@@ -140,3 +140,41 @@ class TestAddSharedColorbar:
             fig, cf, axes=[ax1, ax2], match_axes=False, label="no match",
         )
         assert cbar is not None
+
+    def test_colorbar_tight_to_axes(self, twin_contour_fig):
+        """Colorbar should sit close to the rightmost axis."""
+        fig, (ax1, ax2), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        fig.subplots_adjust(right=0.90)
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], label="tight",
+        )
+        axes_right = max(
+            ax.get_position().x1 for ax in [ax1, ax2]
+        )
+        cbar_left = cbar.ax.get_position().x0
+        gap = cbar_left - axes_right
+        assert 0 < gap <= 0.05, f"gap={gap:.4f} is too large"
+
+    def test_colorbar_height_spans_axes(self, twin_contour_fig):
+        """Colorbar axis should span the full height of the subplot group."""
+        fig, (ax1, ax2), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], label="span",
+        )
+        axes_y0 = min(ax.get_position().y0 for ax in [ax1, ax2])
+        axes_y1 = max(ax.get_position().y1 for ax in [ax1, ax2])
+        cbar_pos = cbar.ax.get_position()
+        assert abs(cbar_pos.y0 - axes_y0) < 1e-6
+        assert abs(cbar_pos.y1 - axes_y1) < 1e-6
+
+    def test_colorbar_narrow_width(self, twin_contour_fig):
+        """Default colorbar width should be slim (2% of figure)."""
+        fig, (ax1, ax2), cf = twin_contour_fig
+        fig.set_layout_engine("none")
+        cbar = add_shared_colorbar(
+            fig, cf, axes=[ax1, ax2], label="narrow",
+        )
+        cbar_width = cbar.ax.get_position().width
+        assert cbar_width < 0.04, f"cbar width={cbar_width:.4f} is too wide"

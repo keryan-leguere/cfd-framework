@@ -363,8 +363,8 @@ def add_shared_colorbar(
     *,
     axes=None,
     location: str = "right",
-    size: str = "3%",
-    pad: float = 0.06,
+    size: str = "2%",
+    pad: float = 0.02,
     match_axes: bool = True,
     label: str | None = None,
     **kwargs,
@@ -387,7 +387,7 @@ def add_shared_colorbar(
         ``"right"`` or ``"bottom"``.
     size : str
         Width of the colorbar axis as a percentage string (e.g.
-        ``"3%"``).
+        ``"2%"``).  Interpreted as a fraction of the figure dimension.
     pad : float
         Padding between the axes group and the colorbar (in figure
         fraction).
@@ -403,8 +403,6 @@ def add_shared_colorbar(
     -------
     Colorbar
     """
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-
     if axes is None:
         axes = fig.get_axes()
     elif not hasattr(axes, "__iter__"):
@@ -412,26 +410,20 @@ def add_shared_colorbar(
 
     if match_axes and len(axes) >= 1:
         fig.canvas.draw_idle()
-        renderer = fig.canvas.get_renderer()
 
         bboxes = [ax.get_position() for ax in axes]
+        pct = float(size.strip().rstrip("%")) / 100.0
 
         if location == "right":
             x0 = max(b.x1 for b in bboxes) + pad
             y0 = min(b.y0 for b in bboxes)
             y1 = max(b.y1 for b in bboxes)
-            pct = float(size.strip().rstrip("%")) / 100.0
-            fig_w = fig.get_figwidth()
-            cax_width = pct * fig_w / fig_w
-            cax = fig.add_axes([x0, y0, cax_width, y1 - y0])
+            cax = fig.add_axes([x0, y0, pct, y1 - y0])
         elif location == "bottom":
             x0 = min(b.x0 for b in bboxes)
             x1 = max(b.x1 for b in bboxes)
             y0 = min(b.y0 for b in bboxes) - pad
-            pct = float(size.strip().rstrip("%")) / 100.0
-            fig_h = fig.get_figheight()
-            cax_height = pct * fig_h / fig_h
-            cax = fig.add_axes([x0, y0 - cax_height, x1 - x0, cax_height])
+            cax = fig.add_axes([x0, y0 - pct, x1 - x0, pct])
         else:
             raise ValueError(
                 f"location={location!r} not supported; use 'right' or 'bottom'"

@@ -56,11 +56,13 @@ from plotting import (
     apply_oldschool_axes,
     compute_speed,
     dataframe_to_grid,
+    dataframe_to_masked_grid,
     dual_axis,
     extract_slice2d,
     interpolate_field2d,
     make_figure_legend,
     make_legend,
+    mask_field,
     new_figure,
     plot_bar,
     plot_contour,
@@ -1484,45 +1486,117 @@ plt.show()
 
 # %% [markdown]
 # ---
-# ## 38. Threshold colouring — mask regions in black
+# ## 38. Threshold dead zone — overlay on an existing plot
 #
-# Two practical techniques to paint regions where a field is below (or
-# above) a threshold in a solid colour (e.g. black for `IND < 0.9`).
-#
-# **Approach A — masked array + `set_bad`**: mask the values that fail
-# the criterion, then set the colormap's "bad" colour to black.  Masked
-# cells are rendered in that colour.
-#
-# **Approach B — `contourf` overlay**: draw a filled contour that covers
-# the sub-threshold region on top of the main plot.
+# Plot a scalar field normally (with its own colorbar), then overlay
+# a black dead zone where an indicator `IND < threshold`.  The dead
+# zone is a simple `contourf` call with `colors="black"` on top of
+# whatever was already drawn — no extra colorbar, no interaction with
+# the existing colormap.
 
 # %%
 IND = P_field.copy()
-
 threshold = 0.9
-cmap_threshold = plt.cm.viridis.copy()
-cmap_threshold.set_bad(color="black")
 
-IND_masked = np.ma.masked_where(IND < threshold, IND)
+use_style("paper")
+fig, ax = plt.subplots(figsize=(8, 5))
 
+plot_contourf(ax, x2d, y2d, P_field, levels=20, cmap="coolwarm",
+              cbar_label="Pressure coefficient")
+
+ax.contourf(X2d, Y2d, IND, levels=[-np.inf, threshold], colors="black")
+
+set_title(ax, f"Pressure field + dead zone (IND < {threshold})")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+
+save_figure(fig, "demo_output/2d_threshold", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# ---
+# ## 39. Region filtering with masking — `mask_field` / `dataframe_to_masked_grid`
+#
+# When your DataFrame carries a region indicator such as `IND`, **do not
+# drop rows** to filter.  Instead, pivot the *full* grid and mask excluded
+# regions.  Masked positions become transparent holes in the plot while
+# the structured grid topology stays intact.
+#
+# This section shows two approaches:
+#
+# 1. **`dataframe_to_masked_grid`** — end-to-end from DataFrame.
+# 2. **`mask_field`** — standalone, when you already have 2D arrays.
+
+# %%
+import pandas as pd
+
+x_mg = np.linspace(-2, 2, 81)
+y_mg = np.linspace(-1.5, 1.5, 61)
+Xm, Ym = np.meshgrid(x_mg, y_mg, indexing="xy")
+Pm = np.exp(-(Xm**2 + Ym**2))
+IND_mg = np.where(Xm**2 + Ym**2 < 0.5, 1, 0).astype(float)
+
+df_cfd = pd.DataFrame({
+    "x": Xm.ravel(), "y": Ym.ravel(),
+    "p": Pm.ravel(), "IND": IND_mg.ravel(),
+})
+
+# --- Approach 1: dataframe_to_masked_grid (masked array output) ----------
 use_style("paper")
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-# --- Approach A: masked array + set_bad ---
-plot_pcolormesh(ax1, x2d, y2d, IND_masked, cmap=cmap_threshold,
-                cbar_label="IND", shading="auto")
-set_title(ax1, f"Masked array (IND < {threshold} → black)")
+xg, yg, P_masked = dataframe_to_masked_grid(
+    df_cfd, values="p", mask_column="IND", mask_value=0,
+)
+plot_pcolormesh(ax1, xg, yg, P_masked, cmap="viridis",
+                cbar_label="Pressure (masked array)")
+set_title(ax1, "keep IND==0  →  MaskedArray")
 ax1.set_xlabel("x")
 ax1.set_ylabel("y")
 
-# --- Approach B: contourf overlay ---
-plot_pcolormesh(ax2, x2d, y2d, IND, cmap="viridis", cbar_label="IND")
-ax2.contourf(X2d, Y2d, IND, levels=[-np.inf, threshold], colors="black")
-set_title(ax2, f"contourf overlay (IND < {threshold} → black)")
+# --- Approach 2: mask_field with fill=np.nan on existing 2D arrays -------
+xg2, yg2, fields = dataframe_to_grid(df_cfd, values=["p", "IND"])
+P_nan = mask_field(fields["p"], fields["IND"] != 0, fill=np.nan)
+plot_pcolormesh(ax2, xg2, yg2, P_nan, cmap="viridis",
+                cbar_label="Pressure (NaN fill)")
+set_title(ax2, "mask_field(fill=np.nan)")
 ax2.set_xlabel("x")
 ax2.set_ylabel("y")
 
-save_figure(fig, "demo_output/2d_threshold", formats=("png",), report=True)
+fig.tight_layout()
+save_figure(fig, "demo_output/2d_masked_filtering", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# Both approaches produce the same visual: a Gaussian field with the
+# inner circle removed.  The left panel uses a `MaskedArray` (preferred
+# when you may need the original values later); the right panel uses
+# `NaN` fill (simpler, but irreversible).
+
+# %% [markdown]
+# ---
+# ## 40. Filling masked regions with a colour — `bad_color`
+#
+# By default, masked / `NaN` cells are transparent.  Pass `bad_color`
+# to any scalar plotting function to fill them with a solid colour
+# instead — useful for walls, solid zones, or out-of-domain regions.
+
+# %%
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+
+plot_pcolormesh(ax1, xg, yg, P_masked, cmap="viridis",
+                cbar_label="Pressure", bad_color="black")
+set_title(ax1, "bad_color='black' (solid walls)")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+plot_contourf(ax2, xg, yg, P_masked, levels=20, cmap="coolwarm",
+              cbar_label="Pressure", bad_color="0.3")
+set_title(ax2, "bad_color='0.3' (dark grey)")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+save_figure(fig, "demo_output/2d_bad_color", formats=("png",), report=True)
 plt.show()
 
 # %% [markdown]
@@ -1561,6 +1635,8 @@ plt.show()
 # | `subsample_vectors(x, y, u, v, ...)` | Downsample vectors for readability |
 # | `reshape_structured2d(x, y, values)` | Flattened export → 2D arrays |
 # | `dataframe_to_grid(df, ...)` | DataFrame → structured 2D arrays |
+# | `mask_field(z, condition, ...)` | Mask a 2D field (returns MaskedArray or NaN) |
+# | `dataframe_to_masked_grid(df, ...)` | DataFrame → masked structured 2D arrays |
 # | `extract_slice2d(field, axis=..., ...)` | 3D array → 2D slice |
 # | `save_figure(fig, path, ..., report=True)` | Export + optional Rich summary table |
 # | `print_file_report(files)` | Pretty-print a list of exported files |

@@ -56,7 +56,9 @@ from .composite2d import (
 # --- Data preparation --------------------------------------------------------
 from .prep import (
     dataframe_to_grid,
+    dataframe_to_masked_grid,
     extract_slice2d,
+    mask_field,
     reshape_structured2d,
 )
 
@@ -89,7 +91,9 @@ __all__ = [
     "plot_contour_quiver",
     # Data preparation
     "dataframe_to_grid",
+    "dataframe_to_masked_grid",
     "extract_slice2d",
+    "mask_field",
     "reshape_structured2d",
     # Axes / annotation helpers
     "add_reference_lines",

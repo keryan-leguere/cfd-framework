@@ -114,6 +114,35 @@ class TestEnsure1dCoords:
 # add_colorbar
 # ---------------------------------------------------------------------------
 
+class TestMaskedArrayPreservation:
+    """normalize_coords must not strip np.ma.MaskedArray masks."""
+
+    def test_masked_z_preserved_1d(self):
+        x = np.arange(5, dtype=float)
+        y = np.arange(3, dtype=float)
+        z = np.ma.masked_where(
+            np.ones((3, 5)) > 0.5,
+            np.ones((3, 5)),
+        )
+        _, _, Z = normalize_coords(x, y, z)
+        assert isinstance(Z, np.ma.MaskedArray)
+        assert Z.mask.any()
+
+    def test_masked_z_preserved_2d(self):
+        X, Y = np.meshgrid(np.arange(5.0), np.arange(3.0), indexing="xy")
+        z = np.ma.array(np.ones((3, 5)), mask=X > 2)
+        _, _, Z = normalize_coords(X, Y, z)
+        assert isinstance(Z, np.ma.MaskedArray)
+        assert Z.mask.sum() == (X > 2).sum()
+
+    def test_plain_z_stays_plain(self):
+        x = np.arange(5, dtype=float)
+        y = np.arange(3, dtype=float)
+        z = np.ones((3, 5))
+        _, _, Z = normalize_coords(x, y, z)
+        assert not isinstance(Z, np.ma.MaskedArray)
+
+
 class TestAddColorbar:
     def test_creates_colorbar(self):
         import matplotlib

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ._grid import add_colorbar, ensure_1d_coords, normalize_coords
+from ._grid import add_colorbar, ensure_1d_coords, normalize_coords, prepare_cmap
 
 
 def plot_contour(
@@ -27,6 +27,7 @@ def plot_contour(
     vmin=None,
     vmax=None,
     norm=None,
+    bad_color=None,
     aspect="equal",
     **kwargs,
 ):
@@ -56,6 +57,8 @@ def plot_contour(
         Clipping limits for the color mapping.
     norm : matplotlib.colors.Normalize, optional
         Explicit normalization instance.
+    bad_color : str or color, optional
+        Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
     aspect : str, float, or None
         Axes aspect ratio (default ``"equal"``).
     **kwargs
@@ -72,7 +75,9 @@ def plot_contour(
     if colors is not None:
         kw["colors"] = colors
     if cmap is not None:
-        kw["cmap"] = cmap
+        kw["cmap"] = prepare_cmap(cmap, bad_color)
+    elif bad_color is not None:
+        kw["cmap"] = prepare_cmap("viridis", bad_color)
     if vmin is not None:
         kw["vmin"] = vmin
     if vmax is not None:
@@ -106,6 +111,7 @@ def plot_contourf(
     vmax=None,
     norm=None,
     extend="neither",
+    bad_color=None,
     aspect="equal",
     **kwargs,
 ):
@@ -128,6 +134,8 @@ def plot_contourf(
     extend : str
         Extend colorbar beyond data range (``"neither"``, ``"both"``,
         ``"min"``, ``"max"``).
+    bad_color : str or color, optional
+        Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
     aspect : str, float, or None
     **kwargs
         Forwarded to ``ax.contourf``.
@@ -139,7 +147,7 @@ def plot_contourf(
     """
     X, Y, Z = normalize_coords(x, y, z)
 
-    kw = dict(levels=levels, cmap=cmap, extend=extend, **kwargs)
+    kw = dict(levels=levels, cmap=prepare_cmap(cmap, bad_color), extend=extend, **kwargs)
     if vmin is not None:
         kw["vmin"] = vmin
     if vmax is not None:
@@ -173,6 +181,7 @@ def plot_pcolormesh(
     vmax=None,
     norm=None,
     rasterized=None,
+    bad_color=None,
     aspect="equal",
     **kwargs,
 ):
@@ -196,6 +205,8 @@ def plot_pcolormesh(
     norm : Normalize, optional
     rasterized : bool, optional
         Rasterize the mesh for lighter vector output (SVG/PDF).
+    bad_color : str or color, optional
+        Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
     aspect : str, float, or None
     **kwargs
         Forwarded to ``ax.pcolormesh``.
@@ -207,7 +218,7 @@ def plot_pcolormesh(
     """
     X, Y, Z = normalize_coords(x, y, z)
 
-    kw = dict(cmap=cmap, shading=shading, **kwargs)
+    kw = dict(cmap=prepare_cmap(cmap, bad_color), shading=shading, **kwargs)
     if vmin is not None:
         kw["vmin"] = vmin
     if vmax is not None:
@@ -241,6 +252,7 @@ def plot_imshow(
     vmin=None,
     vmax=None,
     norm=None,
+    bad_color=None,
     aspect="equal",
     interpolation="nearest",
     **kwargs,
@@ -264,6 +276,8 @@ def plot_imshow(
     cbar_label : str, optional
     vmin, vmax : float, optional
     norm : Normalize, optional
+    bad_color : str or color, optional
+        Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
     aspect : str, float, or None
     interpolation : str
     **kwargs
@@ -278,7 +292,7 @@ def plot_imshow(
     if z.ndim != 2:
         raise ValueError(f"z must be 2D, got shape {z.shape}")
 
-    kw = dict(origin=origin, cmap=cmap, interpolation=interpolation, **kwargs)
+    kw = dict(origin=origin, cmap=prepare_cmap(cmap, bad_color), interpolation=interpolation, **kwargs)
     if extent is not None:
         kw["extent"] = extent
     if vmin is not None:
@@ -392,6 +406,7 @@ def plot_pcolormesh_interp(
     vmax=None,
     norm=None,
     rasterized=None,
+    bad_color=None,
     aspect="equal",
     **kwargs,
 ):
@@ -412,7 +427,7 @@ def plot_pcolormesh_interp(
     method : str
         ``"linear"`` or ``"cubic"``.
     cmap, shading, colorbar, cbar_label, vmin, vmax, norm, rasterized,
-    aspect, **kwargs
+    bad_color, aspect, **kwargs
         Forwarded to :func:`plot_pcolormesh`.
 
     Returns
@@ -438,6 +453,7 @@ def plot_pcolormesh_interp(
         vmax=vmax,
         norm=norm,
         rasterized=rasterized,
+        bad_color=bad_color,
         aspect=aspect,
         **kwargs,
     )

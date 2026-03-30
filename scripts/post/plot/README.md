@@ -131,16 +131,18 @@ fig.subplots_adjust(right=0.85)
 make_figure_legend(fig, bbox_to_anchor=(1.02, 0.5))
 ```
 
-#### `add_shared_colorbar(fig, mappable, *, axes, location="right", size="3%", pad=0.06, match_axes=True, label=None, ...) -> Colorbar`
+#### `add_shared_colorbar(fig, mappable, *, axes, location="right", size="2%", pad=0.02, match_axes=True, label=None, ...) -> Colorbar`
 
 Shared colorbar whose height (or width) matches a group of axes.
+The default `size` and `pad` are deliberately tight so the colorbar sits
+close to the subplots without a large gap.
 
 ```python
 fig, (ax1, ax2) = plt.subplots(1, 2)
 cf1, _ = plot_contourf(ax1, x, y, Z1, colorbar=False)
 cf2, _ = plot_contourf(ax2, x, y, Z2, colorbar=False)
 fig.tight_layout()
-fig.subplots_adjust(right=0.88)
+fig.subplots_adjust(right=0.90)
 add_shared_colorbar(fig, cf1, axes=[ax1, ax2], label="Pressure [Pa]")
 ```
 
@@ -266,6 +268,10 @@ save_figure(fig, "output/field_2d", formats=("png",), report=True)
 All scalar field functions accept **either** 1D coordinate vectors
 `x(nx,)`, `y(ny,)` **or** 2D meshgrid arrays `X(ny, nx)`, `Y(ny, nx)`,
 plus a 2D scalar field `z(ny, nx)`.  They return `(artist, colorbar)`.
+
+All accept an optional `bad_color` parameter (e.g. `bad_color="black"`)
+that fills masked or `NaN` cells with a solid colour instead of leaving
+them transparent.
 
 #### `plot_contour(ax, x, y, z, *, levels=15, ...) -> (QuadContourSet, Colorbar | None)`
 
@@ -400,6 +406,41 @@ xg, yg, p = dataframe_to_grid(df, values="p")
 xg, yg, fields = dataframe_to_grid(df, values=["p", "u", "v"])
 ```
 
+#### `mask_field(z, condition, *, fill=None) -> MaskedArray | ndarray`
+
+Mask a 2D field where *condition* is `True`.  Use when you already have
+structured 2D arrays and want to hide certain regions (solid zones, cells
+where `IND != 0`, etc.).
+
+- Default: returns a `numpy.ma.MaskedArray`.
+- Pass `fill=np.nan` to get a plain `ndarray` with `NaN` in excluded positions.
+
+```python
+IND = fields["IND"]
+P_fluid = mask_field(fields["p"], IND != 0)           # masked array
+P_fluid = mask_field(fields["p"], IND != 0, fill=np.nan)  # NaN variant
+plot_pcolormesh(ax, xg, yg, P_fluid, cbar_label="Pressure [Pa]")
+```
+
+#### `dataframe_to_masked_grid(df, *, x="x", y="y", values=None, mask_column, mask_value, keep=True, fill=None) -> (xg, yg, fields)`
+
+One-call workflow: pivot a DataFrame to a structured grid **and** mask
+regions based on a filter column, preserving the full grid topology.
+
+```python
+xg, yg, P = dataframe_to_masked_grid(
+    df, values="p", mask_column="IND", mask_value=0,
+)
+plot_pcolormesh(ax, xg, yg, P, cbar_label="Pressure [Pa]")
+```
+
+| Parameter      | Description                                                  |
+|----------------|--------------------------------------------------------------|
+| `mask_column`  | Column used for filtering (e.g. `"IND"`)                     |
+| `mask_value`   | Value to compare against                                     |
+| `keep`         | `True` keeps rows matching `mask_value`, masks the rest      |
+| `fill`         | `None` for masked arrays, `np.nan` for NaN-filled ndarrays   |
+
 #### `extract_slice2d(field, *, axis, index=None, coord=None, x=None, y=None, z=None) -> (c1, c2, slice2d)`
 
 Extract a 2D plane from a 3D array.
@@ -409,7 +450,102 @@ H, V, p_slice = extract_slice2d(pressure_3d, axis="x", coord=0.5, x=x, y=y, z=z)
 plot_pcolormesh(ax, H, V, p_slice, cbar_label="p [Pa]")
 ```
 
+### Region filtering (masking)
+
+CFD datasets often carry an indicator column (`IND`, `zone`, `cellType`)
+that marks fluid vs. solid regions.  A common first reaction is to drop
+unwanted rows:
+
+```python
+df_fluid = df[df["IND"] == 0]      # DANGER: breaks the structured grid
+```
+
+This **destroys the rectangular lattice** — the surviving `(x, y)` pairs
+no longer form a complete grid, `pivot()` produces `NaN` gaps, and the
+plotting functions cannot reconstruct a proper mesh.
+
+**Preferred approach: keep the full grid, mask excluded regions.**
+
+```python
+from plotting import dataframe_to_masked_grid, plot_pcolormesh
+
+xg, yg, P = dataframe_to_masked_grid(
+    df, values="p", mask_column="IND", mask_value=0,   # keep IND==0
+)
+plot_pcolormesh(ax, xg, yg, P, cbar_label="Pressure [Pa]")
+```
+
+Masked positions are never drawn — the figure shows holes where
+`IND != 0`, while the full coordinate grid is preserved.
+
+**Filling masked regions with a solid colour (e.g. black for walls):**
+
+Pass `bad_color` to any scalar plotting function.  Masked / `NaN` cells
+are drawn in that colour instead of being left transparent:
+
+```python
+plot_pcolormesh(ax, xg, yg, P, cbar_label="Pressure [Pa]", bad_color="black")
+```
+
+**Mask vs NaN — when to use each:**
+
+| Method          | Returns             | Best for                                     |
+|-----------------|---------------------|----------------------------------------------|
+| `fill=None`     | `MaskedArray`       | General use; Matplotlib skips masked cells    |
+| `fill=np.nan`   | plain `ndarray`     | Simple workflows; `NaN` cells are blank       |
+
+Both produce the same visual result with `pcolormesh` and `contourf`.
+Masked arrays are more explicit and preserve the original data underneath
+the mask; `NaN` is simpler but irreversible.
+
+**When masking is not enough — truly unstructured data:**
+
+If, after filtering, the surviving points genuinely do not sit on any
+rectangular lattice (e.g. an unstructured finite-element mesh), masking
+will not help.  In that case use Matplotlib's triangulation directly:
+
+```python
+import matplotlib.tri as mtri
+tri = mtri.Triangulation(x_flat, y_flat)
+ax.tricontourf(tri, value_flat, levels=30, cmap="viridis")
+```
+
 ### Data organization guide
+
+#### Node-based vs cell-based data
+
+CFD solvers store fields at either **mesh nodes** (vertices) or **cell
+centers**.  The distinction matters for plotting:
+
+| Location      | Description                                          | Rendering                                                     |
+|---------------|------------------------------------------------------|---------------------------------------------------------------|
+| **Nodes**     | One value per grid vertex                            | `pcolormesh` colors *cells* between nodes — can look blocky.  Use `plot_pcolormesh_interp` or `contourf` for smooth visuals. |
+| **Cell centers** | One value per mesh cell                           | `pcolormesh` maps one quad per value — natural 1:1 mapping.   |
+
+When your data is defined at **nodes** and looks blocky with `pcolormesh`,
+refine the grid before plotting:
+
+```python
+qm, cbar, _ = plot_pcolormesh_interp(ax, x, y, Z_nodal, factor=4)
+```
+
+Or use `contourf`, which always computes smooth isolines regardless of the
+data location.
+
+#### How Matplotlib renders 2D scalar fields
+
+Each plotting function works differently under the hood:
+
+| Function         | What it draws                                                            |
+|------------------|--------------------------------------------------------------------------|
+| `pcolormesh`     | One coloured **quadrilateral** per cell.  Colour = scalar value mapped through the colormap. Fast, exact, but visually "blocky" on coarse grids. |
+| `imshow`         | One coloured **pixel** per array element on a uniform raster.  Supports pixel-level interpolation (`bilinear`, `bicubic`, ...) for smooth appearance. |
+| `contourf`       | Computes **iso-value curves** from the scalar field, then fills the regions between successive levels with solid colour. Always smooth, even on coarse grids. |
+| `contour`        | Same iso-value algorithm as `contourf`, but draws **lines** instead of filling. |
+| `tricontourf`    | Like `contourf`, but operates on a **Delaunay triangulation** of scattered `(x, y)` points. Use for genuinely unstructured data. |
+
+All functions map scalar values to colours via a **colormap** + normalization
+(`vmin`/`vmax` or a `Normalize` instance).
 
 #### Structured Cartesian grid
 
@@ -449,7 +585,7 @@ ax.tricontourf(tri, value_flat, levels=30, cmap="viridis")
 
 #### From pandas DataFrame
 
-Typical CFD table: columns `x`, `y`, `u`, `v`, `p`.
+**Complete grid (no filtering):**
 
 ```python
 xg, yg, fields = dataframe_to_grid(df, values=["p", "u", "v"])
@@ -458,11 +594,22 @@ plot_pcolormesh(ax, X, Y, fields["p"], cbar_label="Pressure")
 plot_quiver(ax, X, Y, fields["u"], fields["v"], stride=5, color="k", aspect=None)
 ```
 
+**Filtered by region indicator (e.g. keep only `IND == 0`):**
+
+```python
+xg, yg, P = dataframe_to_masked_grid(
+    df, values="p", mask_column="IND", mask_value=0,
+)
+plot_pcolormesh(ax, xg, yg, P, cbar_label="Pressure [Pa]")
+```
+
 Pitfalls:
 
 - `pivot()` fails on duplicate `(x, y)` rows — clean the data first.
-- Missing grid points become `NaN` — use masking or triangulation.
+- Missing grid points become `NaN` — use `mask_field` or `dataframe_to_masked_grid`.
 - Always verify that `u`, `v`, and scalar fields share the same grid.
+- **Never drop rows** to filter by region — use masking instead
+  (see *Region filtering* above).
 
 #### Vector fields
 

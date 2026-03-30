@@ -67,6 +67,14 @@ class TestPlotContourf:
         assert cf is not None
         plt.close(fig)
 
+    def test_bad_color(self, gaussian_field):
+        x, y, X, Y, Z = gaussian_field
+        Z_masked = np.ma.masked_where(X**2 + Y**2 < 0.3, Z)
+        fig, ax = plt.subplots()
+        cf, _ = plot_contourf(ax, x, y, Z_masked, bad_color="black")
+        assert cf is not None
+        plt.close(fig)
+
 
 class TestPlotPcolormesh:
     def test_default(self, gaussian_field):
@@ -100,6 +108,16 @@ class TestPlotPcolormesh:
         qm, _ = plot_pcolormesh(ax, x, y, Z, shading="auto")
         plt.close(fig)
 
+    def test_bad_color(self, gaussian_field):
+        x, y, X, Y, Z = gaussian_field
+        Z_masked = np.ma.masked_where(X > 0.5, Z)
+        fig, ax = plt.subplots()
+        qm, _ = plot_pcolormesh(ax, x, y, Z_masked, bad_color="black")
+        cmap_used = qm.get_cmap()
+        bad_rgba = cmap_used(np.ma.masked)
+        assert bad_rgba == (0.0, 0.0, 0.0, 1.0)
+        plt.close(fig)
+
 
 class TestPlotImshow:
     def test_default(self, gaussian_field):
@@ -129,4 +147,15 @@ class TestPlotImshow:
         _, _, _, _, Z = gaussian_field
         fig, ax = plt.subplots()
         im, _ = plot_imshow(ax, Z, aspect=None)
+        plt.close(fig)
+
+    def test_bad_color(self, gaussian_field):
+        _, _, _, _, Z = gaussian_field
+        Z_nan = Z.copy()
+        Z_nan[5:10, 5:10] = np.nan
+        fig, ax = plt.subplots()
+        im, _ = plot_imshow(ax, Z_nan, bad_color="red")
+        cmap_used = im.get_cmap()
+        bad_rgba = cmap_used(np.ma.masked)
+        assert bad_rgba == (1.0, 0.0, 0.0, 1.0)
         plt.close(fig)

@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from plotting import dataframe_to_grid, extract_slice2d, reshape_structured2d
+from plotting import (
+    dataframe_to_grid,
+    dataframe_to_masked_grid,
+    extract_slice2d,
+    mask_field,
+    reshape_structured2d,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +117,156 @@ class TestDataframeToGrid:
         np.testing.assert_array_equal(xg, [1.0, 2.0])
         np.testing.assert_array_equal(yg, [0.0, 1.0])
         np.testing.assert_array_equal(v, [[1.0, 2.0], [3.0, 4.0]])
+
+
+# ---------------------------------------------------------------------------
+# mask_field
+# ---------------------------------------------------------------------------
+
+class TestMaskField:
+    def test_returns_masked_array_by_default(self):
+        z = np.arange(12, dtype=float).reshape(3, 4)
+        condition = z > 8
+        out = mask_field(z, condition)
+        assert isinstance(out, np.ma.MaskedArray)
+        assert out.mask.sum() == (z > 8).sum()
+        np.testing.assert_array_equal(out.data[~out.mask], z[~condition])
+
+    def test_fill_returns_plain_array(self):
+        z = np.ones((3, 4))
+        condition = np.zeros((3, 4), dtype=bool)
+        condition[0, 0] = True
+        out = mask_field(z, condition, fill=np.nan)
+        assert not isinstance(out, np.ma.MaskedArray)
+        assert np.isnan(out[0, 0])
+        assert out[1, 1] == 1.0
+
+    def test_shape_mismatch(self):
+        with pytest.raises(ValueError, match="shape"):
+            mask_field(np.ones((3, 4)), np.ones((2, 4), dtype=bool))
+
+    def test_no_masked_positions(self):
+        z = np.ones((2, 3))
+        out = mask_field(z, np.zeros((2, 3), dtype=bool))
+        assert isinstance(out, np.ma.MaskedArray)
+        assert not out.mask.any()
+
+
+# ---------------------------------------------------------------------------
+# dataframe_to_masked_grid
+# ---------------------------------------------------------------------------
+
+class TestDataframeToMaskedGrid:
+    def _make_df_with_ind(self):
+        """5x3 grid with IND=0 for fluid, IND=1 for solid."""
+        x = np.arange(5, dtype=float)
+        y = np.arange(3, dtype=float)
+        X, Y = np.meshgrid(x, y, indexing="xy")
+        P = X + Y
+        IND = np.zeros_like(P)
+        IND[X > 3] = 1.0
+        return pd.DataFrame({
+            "x": X.ravel(), "y": Y.ravel(),
+            "p": P.ravel(), "IND": IND.ravel(),
+        }), X, Y, P, IND
+
+    def test_keep_mask_default(self):
+        df, X, Y, P, IND = self._make_df_with_ind()
+        xg, yg, p = dataframe_to_masked_grid(
+            df, values="p", mask_column="IND", mask_value=0,
+        )
+        assert isinstance(p, np.ma.MaskedArray)
+        n_solid = (IND != 0).sum()
+        assert p.mask.sum() == n_solid
+        np.testing.assert_array_equal(p.data[~p.mask], P[IND == 0])
+
+    def test_keep_false(self):
+        df, _, _, P, IND = self._make_df_with_ind()
+        xg, yg, p = dataframe_to_masked_grid(
+            df, values="p", mask_column="IND", mask_value=1, keep=False,
+        )
+        assert isinstance(p, np.ma.MaskedArray)
+        n_solid = (IND == 1).sum()
+        assert p.mask.sum() == n_solid
+
+    def test_fill_nan(self):
+        df, _, _, _, IND = self._make_df_with_ind()
+        xg, yg, p = dataframe_to_masked_grid(
+            df, values="p", mask_column="IND", mask_value=0,
+            fill=np.nan,
+        )
+        assert not isinstance(p, np.ma.MaskedArray)
+        assert np.isnan(p[IND != 0]).all()
+        assert not np.isnan(p[IND == 0]).any()
+
+    def test_multiple_fields(self):
+        df, _, _, _, _ = self._make_df_with_ind()
+        df["u"] = df["x"] * 2
+        xg, yg, flds = dataframe_to_masked_grid(
+            df, values=["p", "u"], mask_column="IND", mask_value=0,
+        )
+        assert "p" in flds and "u" in flds
+        assert isinstance(flds["p"], np.ma.MaskedArray)
+        assert isinstance(flds["u"], np.ma.MaskedArray)
+        assert flds["p"].mask.sum() == flds["u"].mask.sum()
+
+    def test_auto_values_excludes_mask_column(self):
+        df, _, _, _, _ = self._make_df_with_ind()
+        xg, yg, flds = dataframe_to_masked_grid(
+            df, mask_column="IND", mask_value=0,
+        )
+        assert "p" in flds
+        assert "IND" not in flds
+
+    def test_grid_topology_preserved(self):
+        """Full grid dimensions are kept even when many cells are masked."""
+        df, X, Y, _, _ = self._make_df_with_ind()
+        xg, yg, p = dataframe_to_masked_grid(
+            df, values="p", mask_column="IND", mask_value=0,
+        )
+        assert len(xg) == 5
+        assert len(yg) == 3
+        assert p.shape == (3, 5)
+
+
+# ---------------------------------------------------------------------------
+# Masked plotting integration
+# ---------------------------------------------------------------------------
+
+class TestMaskedPlotting:
+    """Masked arrays should flow through the plotting pipeline."""
+
+    def test_pcolormesh_with_masked_field(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from plotting import plot_pcolormesh
+
+        x = np.linspace(0, 1, 11)
+        y = np.linspace(0, 1, 8)
+        X, Y = np.meshgrid(x, y, indexing="xy")
+        Z = np.ma.masked_where(X > 0.7, np.sin(X) * np.cos(Y))
+
+        fig, ax = plt.subplots()
+        qm, cbar = plot_pcolormesh(ax, x, y, Z, cbar_label="masked")
+        assert qm is not None
+        plt.close(fig)
+
+    def test_contourf_with_masked_field(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from plotting import plot_contourf
+
+        x = np.linspace(-1, 1, 41)
+        y = np.linspace(-1, 1, 31)
+        X, Y = np.meshgrid(x, y, indexing="xy")
+        Z = np.ma.masked_where(X**2 + Y**2 > 0.8, np.exp(-(X**2 + Y**2)))
+
+        fig, ax = plt.subplots()
+        cf, cbar = plot_contourf(ax, x, y, Z, cbar_label="masked")
+        assert cf is not None
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

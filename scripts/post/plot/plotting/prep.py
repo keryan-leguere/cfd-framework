@@ -150,6 +150,121 @@ def dataframe_to_grid(df, *, x="x", y="y", values=None, sort=True):
     return xg, yg, fields
 
 
+def mask_field(z, condition, *, fill=None):
+    """Mask a 2D field where *condition* is ``True``.
+
+    Use this when you already have structured 2D arrays and want to
+    hide certain regions (e.g. solid zones, cells where ``IND != 0``).
+
+    Parameters
+    ----------
+    z : array-like
+        2D scalar field with shape ``(ny, nx)``.
+    condition : array-like of bool
+        Boolean array with the same shape as *z*.  ``True`` marks
+        positions to **exclude** (mask out / hide).
+    fill : float, optional
+        If given, return a plain ``ndarray`` with excluded positions
+        replaced by *fill* (typically ``np.nan``).  If ``None``
+        (default), return a ``numpy.ma.MaskedArray``.
+
+    Returns
+    -------
+    z_out : MaskedArray or ndarray
+        Masked (or NaN-filled) copy of *z*.
+    """
+    z = np.asarray(z, dtype=float)
+    condition = np.asarray(condition, dtype=bool)
+    if z.shape != condition.shape:
+        raise ValueError(
+            f"z shape {z.shape} != condition shape {condition.shape}"
+        )
+    if fill is not None:
+        out = z.copy()
+        out[condition] = fill
+        return out
+    return np.ma.masked_where(condition, z)
+
+
+def dataframe_to_masked_grid(
+    df,
+    *,
+    x="x",
+    y="y",
+    values=None,
+    mask_column,
+    mask_value,
+    keep=True,
+    fill=None,
+    sort=True,
+):
+    """Pivot a DataFrame to structured 2D arrays with region masking.
+
+    Builds the full structured grid from *all* rows (so the lattice
+    topology is preserved), then masks scalar fields where the filter
+    column does or does not equal *mask_value*.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Must contain columns named by *x*, *y*, and *mask_column*.
+    x, y : str
+        Column names for coordinates.
+    values : str or list of str, optional
+        Scalar column(s) to pivot.  If ``None``, all columns except
+        *x*, *y*, and *mask_column* are included.
+    mask_column : str
+        Column used for filtering (e.g. ``"IND"``).
+    mask_value
+        Value to compare against in *mask_column*.
+    keep : bool
+        If ``True`` (default), **keep** rows where
+        ``mask_column == mask_value`` and mask the rest.
+        If ``False``, **exclude** rows where
+        ``mask_column == mask_value``.
+    fill : float, optional
+        If given, excluded positions are filled with *fill* (e.g.
+        ``np.nan``) and plain ``ndarray`` objects are returned.  If
+        ``None`` (default), ``numpy.ma.MaskedArray`` objects are
+        returned.
+    sort : bool
+        Sort coordinates before pivoting.
+
+    Returns
+    -------
+    xg : ndarray
+        1D sorted x coordinates (full grid).
+    yg : ndarray
+        1D sorted y coordinates (full grid).
+    fields : MaskedArray/ndarray or dict thereof
+        2D masked (or NaN-filled) field(s) with shape ``(ny, nx)``.
+    """
+    if values is None:
+        exclude = {x, y, mask_column}
+        values = [c for c in df.columns if c not in exclude]
+    single = isinstance(values, str)
+    if single:
+        values = [values]
+
+    xg, yg, raw_fields = dataframe_to_grid(
+        df, x=x, y=y, values=[mask_column, *values], sort=sort,
+    )
+
+    indicator = raw_fields[mask_column]
+    if keep:
+        condition = indicator != mask_value
+    else:
+        condition = indicator == mask_value
+
+    masked = {}
+    for col in values:
+        masked[col] = mask_field(raw_fields[col], condition, fill=fill)
+
+    if single:
+        return xg, yg, masked[values[0]]
+    return xg, yg, masked
+
+
 def extract_slice2d(
     field,
     *,
