@@ -12,6 +12,36 @@ import numpy as np
 from ._grid import add_colorbar, ensure_1d_coords, normalize_coords, prepare_cmap
 
 
+def _draw_mask_outline(ax, X, Y, mask, *, color="k", linewidths=1.0,
+                       level=0.5, zorder=None):
+    """Overlay a contour line along the boundary of a boolean/numeric mask.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    X, Y : ndarray
+        2D coordinate arrays (already normalized).
+    mask : array-like
+        2D boolean or numeric field with the same shape as *X*.
+        ``True`` (or 1) marks the **visible** (fluid) region.
+    color : str or color
+    linewidths : float
+    level : float
+        Iso-value used to trace the boundary (0.5 for boolean masks).
+    zorder : float, optional
+        Drawing order for the contour line.
+    """
+    mask_float = np.asarray(mask, dtype=float)
+    if mask_float.shape != X.shape:
+        raise ValueError(
+            f"mask_outline shape {mask_float.shape} != field shape {X.shape}"
+        )
+    kw = dict(levels=[level], colors=[color], linewidths=[linewidths])
+    if zorder is not None:
+        kw["zorder"] = zorder
+    ax.contour(X, Y, mask_float, **kw)
+
+
 def plot_contour(
     ax,
     x,
@@ -112,6 +142,11 @@ def plot_contourf(
     norm=None,
     extend="neither",
     bad_color=None,
+    mask_outline=None,
+    mask_outline_color="k",
+    mask_outline_width=1.0,
+    mask_outline_level=0.5,
+    mask_outline_zorder=None,
     aspect="equal",
     **kwargs,
 ):
@@ -136,6 +171,18 @@ def plot_contourf(
         ``"min"``, ``"max"``).
     bad_color : str or color, optional
         Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
+    mask_outline : array-like, optional
+        2D boolean or numeric mask with the same shape as *z*.
+        ``True`` / 1 marks the **visible** (fluid) region.  When
+        given, a contour line is drawn along the boundary.
+    mask_outline_color : str or color
+        Line colour for the mask boundary (default ``"k"``).
+    mask_outline_width : float
+        Line width for the mask boundary (default ``1.0``).
+    mask_outline_level : float
+        Iso-value used to trace the boundary (default ``0.5``).
+    mask_outline_zorder : float, optional
+        Drawing order for the boundary line.
     aspect : str, float, or None
     **kwargs
         Forwarded to ``ax.contourf``.
@@ -156,6 +203,15 @@ def plot_contourf(
         kw["norm"] = norm
 
     cf = ax.contourf(X, Y, Z, **kw)
+
+    if mask_outline is not None:
+        _draw_mask_outline(
+            ax, X, Y, mask_outline,
+            color=mask_outline_color,
+            linewidths=mask_outline_width,
+            level=mask_outline_level,
+            zorder=mask_outline_zorder,
+        )
 
     if aspect is not None:
         ax.set_aspect(aspect)
@@ -182,6 +238,11 @@ def plot_pcolormesh(
     norm=None,
     rasterized=None,
     bad_color=None,
+    mask_outline=None,
+    mask_outline_color="k",
+    mask_outline_width=1.0,
+    mask_outline_level=0.5,
+    mask_outline_zorder=None,
     aspect="equal",
     **kwargs,
 ):
@@ -207,6 +268,18 @@ def plot_pcolormesh(
         Rasterize the mesh for lighter vector output (SVG/PDF).
     bad_color : str or color, optional
         Colour used for masked / ``NaN`` cells (e.g. ``"black"``).
+    mask_outline : array-like, optional
+        2D boolean or numeric mask with the same shape as *z*.
+        ``True`` / 1 marks the **visible** (fluid) region.  When
+        given, a contour line is drawn along the boundary.
+    mask_outline_color : str or color
+        Line colour for the mask boundary (default ``"k"``).
+    mask_outline_width : float
+        Line width for the mask boundary (default ``1.0``).
+    mask_outline_level : float
+        Iso-value used to trace the boundary (default ``0.5``).
+    mask_outline_zorder : float, optional
+        Drawing order for the boundary line.
     aspect : str, float, or None
     **kwargs
         Forwarded to ``ax.pcolormesh``.
@@ -229,6 +302,15 @@ def plot_pcolormesh(
         kw["rasterized"] = rasterized
 
     qm = ax.pcolormesh(X, Y, Z, **kw)
+
+    if mask_outline is not None:
+        _draw_mask_outline(
+            ax, X, Y, mask_outline,
+            color=mask_outline_color,
+            linewidths=mask_outline_width,
+            level=mask_outline_level,
+            zorder=mask_outline_zorder,
+        )
 
     if aspect is not None:
         ax.set_aspect(aspect)

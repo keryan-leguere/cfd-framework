@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from plotting import plot_contour, plot_contourf, plot_imshow, plot_pcolormesh
+from plotting.field2d import _draw_mask_outline
 
 
 @pytest.fixture()
@@ -158,4 +159,75 @@ class TestPlotImshow:
         cmap_used = im.get_cmap()
         bad_rgba = cmap_used(np.ma.masked)
         assert bad_rgba == (1.0, 0.0, 0.0, 1.0)
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Mask outline overlay
+# ---------------------------------------------------------------------------
+
+class TestMaskOutline:
+    """Tests for the mask_outline overlay on plot_pcolormesh / plot_contourf."""
+
+    @pytest.fixture()
+    def masked_field(self):
+        """Gaussian field with a circular solid region (IND=1)."""
+        x = np.linspace(-1, 1, 41)
+        y = np.linspace(-1, 1, 31)
+        X, Y = np.meshgrid(x, y, indexing="xy")
+        Z = np.exp(-(X**2 + Y**2))
+        IND = (X**2 + Y**2 < 0.3).astype(float)
+        fluid_mask = IND == 0
+        Z_nan = Z.copy()
+        Z_nan[~fluid_mask] = np.nan
+        return x, y, X, Y, Z_nan, fluid_mask
+
+    def test_pcolormesh_with_outline(self, masked_field):
+        x, y, _, _, Z_nan, fluid_mask = masked_field
+        fig, ax = plt.subplots()
+        qm, cbar = plot_pcolormesh(
+            ax, x, y, Z_nan,
+            mask_outline=fluid_mask,
+            mask_outline_color="k",
+        )
+        assert qm is not None
+        contour_sets = [c for c in ax.collections
+                        if hasattr(c, "get_paths") and c is not qm]
+        assert len(contour_sets) > 0
+        plt.close(fig)
+
+    def test_contourf_with_outline(self, masked_field):
+        x, y, _, _, Z_nan, fluid_mask = masked_field
+        fig, ax = plt.subplots()
+        cf, cbar = plot_contourf(
+            ax, x, y, Z_nan,
+            mask_outline=fluid_mask,
+            mask_outline_width=2.0,
+        )
+        assert cf is not None
+        plt.close(fig)
+
+    def test_outline_shape_mismatch(self, masked_field):
+        x, y, _, _, Z_nan, _ = masked_field
+        wrong_shape = np.ones((5, 5), dtype=bool)
+        fig, ax = plt.subplots()
+        with pytest.raises(ValueError, match="mask_outline shape"):
+            plot_pcolormesh(ax, x, y, Z_nan, mask_outline=wrong_shape)
+        plt.close(fig)
+
+    def test_no_outline_by_default(self, masked_field):
+        """When mask_outline is None (default), no extra artists appear."""
+        x, y, _, _, Z_nan, _ = masked_field
+        fig, ax = plt.subplots()
+        qm, _ = plot_pcolormesh(ax, x, y, Z_nan)
+        n_collections = len(ax.collections)
+        assert n_collections == 1
+        plt.close(fig)
+
+    def test_draw_mask_outline_directly(self, masked_field):
+        """The internal helper draws a contour on existing axes."""
+        _, _, X, Y, _, fluid_mask = masked_field
+        fig, ax = plt.subplots()
+        _draw_mask_outline(ax, X, Y, fluid_mask, color="red", linewidths=2.0)
+        assert len(ax.collections) > 0
         plt.close(fig)

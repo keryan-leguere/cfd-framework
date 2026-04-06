@@ -1601,6 +1601,48 @@ plt.show()
 
 # %% [markdown]
 # ---
+# ## 41. Outlining the fluid-solid boundary — `mask_outline`
+#
+# Masking hides the solid region; `bad_color` fills it.  To **draw a
+# black line along the interface** without altering the colour fill,
+# pass the original indicator mask via `mask_outline`.  The boundary
+# is traced with `ax.contour` at the 0.5 iso-level of a float version
+# of the mask, so it works with both `MaskedArray` and `NaN` workflows.
+
+# %%
+use_style("paper")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+
+fluid_mask = IND_mg == 0
+
+plot_pcolormesh(ax1, xg, yg, P_masked, cmap="viridis",
+                cbar_label="Pressure", bad_color="lightgrey",
+                mask_outline=fluid_mask, mask_outline_color="k",
+                mask_outline_width=1.5)
+set_title(ax1, "pcolormesh + mask_outline")
+ax1.set_xlabel("x")
+ax1.set_ylabel("y")
+
+plot_contourf(ax2, xg, yg, P_masked, levels=20, cmap="coolwarm",
+              cbar_label="Pressure", bad_color="lightgrey",
+              mask_outline=fluid_mask, mask_outline_color="k",
+              mask_outline_width=1.5)
+set_title(ax2, "contourf + mask_outline")
+ax2.set_xlabel("x")
+ax2.set_ylabel("y")
+
+save_figure(fig, "demo_output/2d_mask_outline", formats=("png",), report=True)
+plt.show()
+
+# %% [markdown]
+# The left panel uses `plot_pcolormesh` and the right `plot_contourf`.
+# In both cases the solid region is filled light grey (`bad_color`) and
+# the fluid-solid interface is cleanly delineated with a black contour.
+# You can customise `mask_outline_width`, `mask_outline_color`, and
+# `mask_outline_zorder` as needed.
+
+# %% [markdown]
+# ---
 # ## Function reference
 #
 # | Function | Purpose |

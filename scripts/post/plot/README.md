@@ -498,6 +498,38 @@ Both produce the same visual result with `pcolormesh` and `contourf`.
 Masked arrays are more explicit and preserve the original data underneath
 the mask; `NaN` is simpler but irreversible.
 
+**Drawing a boundary line around the masked region:**
+
+Masking and `bad_color` control *visibility*; `mask_outline` draws a
+**contour line along the fluid-solid interface**.  Pass the original
+boolean mask (not the NaN-filled scalar) so the boundary is traced
+cleanly:
+
+```python
+fluid_mask = fields["IND"] == 0
+P_nan = mask_field(fields["p"], ~fluid_mask, fill=np.nan)
+
+plot_pcolormesh(
+    ax, xg, yg, P_nan,
+    cmap="viridis",
+    bad_color="lightgrey",
+    mask_outline=fluid_mask,
+    mask_outline_color="k",
+    mask_outline_width=1.5,
+)
+```
+
+| Parameter              | Default  | Description                                      |
+|------------------------|----------|--------------------------------------------------|
+| `mask_outline`         | `None`   | 2D boolean/numeric mask; `True`/1 = visible      |
+| `mask_outline_color`   | `"k"`    | Line colour                                      |
+| `mask_outline_width`   | `1.0`    | Line width                                       |
+| `mask_outline_level`   | `0.5`    | Iso-value for the contour (rarely needs changing) |
+| `mask_outline_zorder`  | `None`   | Drawing order                                    |
+
+`mask_outline` is supported by `plot_pcolormesh`, `plot_contourf`, and
+`plot_contour_quiver`.
+
 **When masking is not enough — truly unstructured data:**
 
 If, after filtering, the surviving points genuinely do not sit on any

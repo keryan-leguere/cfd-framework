@@ -25,6 +25,11 @@ def plot_contour_quiver(
     quiver_stride=4,
     quiver_color="k",
     quiver_scale=None,
+    mask_outline=None,
+    mask_outline_color="k",
+    mask_outline_width=1.0,
+    mask_outline_level=0.5,
+    mask_outline_zorder=None,
     aspect="equal",
     **kwargs,
 ):
@@ -49,6 +54,12 @@ def plot_contour_quiver(
         Subsample step for arrows.
     quiver_color : str
     quiver_scale : float, optional
+    mask_outline : array-like, optional
+        2D boolean or numeric mask (``True`` = visible / fluid).
+        Draws a boundary contour on the scalar background.
+    mask_outline_color, mask_outline_width, mask_outline_level,
+    mask_outline_zorder
+        Forwarded to the scalar plotting function's mask outline.
     aspect : str, float, or None
     **kwargs
         Forwarded to the scalar plotting function.
@@ -80,6 +91,13 @@ def plot_contour_quiver(
     )
     if scalar_kind != "pcolormesh":
         scalar_kw["levels"] = levels
+
+    if mask_outline is not None and scalar_kind != "contour":
+        scalar_kw["mask_outline"] = mask_outline
+        scalar_kw["mask_outline_color"] = mask_outline_color
+        scalar_kw["mask_outline_width"] = mask_outline_width
+        scalar_kw["mask_outline_level"] = mask_outline_level
+        scalar_kw["mask_outline_zorder"] = mask_outline_zorder
 
     artist, cbar = plot_scalar(ax, x, y, z, **scalar_kw)
 
