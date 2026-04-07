@@ -5,6 +5,7 @@ Summary: CPU scaling estimator for steady RANS CFD simulations
 License: MIT
 Requires-Python: >=3.12
 Requires-Dist: numpy
+Requires-Dist: pandas
 Requires-Dist: matplotlib
 Requires-Dist: rich
 Provides-Extra: dev

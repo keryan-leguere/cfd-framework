@@ -1,4 +1,4 @@
-"""Core-count selection logic: efficiency-driven or deadline-driven."""
+"""Core-count selection logic: efficiency-driven, deadline-driven, or min-runtime."""
 
 from __future__ import annotations
 
@@ -29,14 +29,22 @@ def optimize(
     pilot: PilotSeries,
     params: ModelParameters,
     *,
-    mode: Literal["efficiency", "deadline"],
+    mode: Literal["efficiency", "deadline", "min_runtime"],
     max_efficiency_loss: float | None = None,
     deadline_hours: float | None = None,
     cores_max: int = DEFAULT_CORES_MAX,
     constraints: HardConstraints | None = None,
     stride: int | None = None,
 ) -> OptimizationResult:
-    """Run the full optimization pipeline and return structured results."""
+    """Run the full optimization pipeline and return structured results.
+
+    Modes
+    -----
+    - ``"efficiency"``: largest core count within *max_efficiency_loss*.
+    - ``"deadline"``: smallest core count finishing within *deadline_hours*.
+    - ``"min_runtime"``: feasible core count with the lowest predicted
+      total runtime (useful when the scaling curve has a minimum).
+    """
     if mode == "efficiency" and max_efficiency_loss is None:
         raise ValueError("max_efficiency_loss is required in efficiency mode")
     if mode == "deadline" and deadline_hours is None:
@@ -74,13 +82,20 @@ def optimize(
     if accepted:
         if mode == "efficiency":
             optimal = max(accepted, key=lambda c: c.cores)
-        else:
+        elif mode == "deadline":
             optimal = min(accepted, key=lambda c: c.cores)
+        else:
+            optimal = min(accepted, key=lambda c: c.runtime_hours)
+
+    min_runtime_candidate: CandidateConfig | None = None
+    if accepted:
+        min_runtime_candidate = min(accepted, key=lambda c: c.runtime_hours)
 
     metadata: dict[str, str | float | int] = {
         "mode": mode,
         "beta": params.beta,
         "beta_source": params.beta_source,
+        "model_kind": params.model_kind,
         "nc0": nc0,
         "t0_s": t0,
         "n_iterations": n_iter,
@@ -99,4 +114,5 @@ def optimize(
         accepted=tuple(accepted),
         rejected=tuple(rejected),
         metadata=metadata,
+        min_runtime_candidate=min_runtime_candidate,
     )

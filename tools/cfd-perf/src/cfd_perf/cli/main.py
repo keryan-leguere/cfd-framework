@@ -41,6 +41,7 @@ _CELL_TYPES = frozenset({"hex", "prism", "tet", "pyramid", "poly", "wedge"})
 
 _DEFAULTS: dict[str, object] = {
     "mode": "efficiency",
+    "scaling_model": "auto",
     "max_efficiency_loss": 0.3,
     "cores_max": 512,
     "stride": 32,
@@ -92,7 +93,7 @@ def parse_input(filepath: str | Path) -> dict:
                 cell_dist[key] = float(val)
             elif key == "n_iterations":
                 config["n_iterations"] = int(val)
-            elif key in ("mode",):
+            elif key in ("mode", "scaling_model"):
                 config[key] = val
             elif key in ("max_efficiency_loss", "min_ram_per_core_gb", "deadline_hours"):
                 config[key] = float(val)
@@ -145,7 +146,8 @@ def main(argv: list[str] | None = None) -> None:
 
     pilot = cfd_perf.pilot_from_data(pilot_df, n_iterations=n_iterations)
     mesh = cfd_perf.mesh_from_data(mesh_data, pilot_baseline=pilot.baseline)
-    params = cfd_perf.fit_beta(pilot)
+    model_hint = str(config.get("scaling_model", "auto"))
+    params = cfd_perf.fit_scaling_model(pilot, model_hint=model_hint)  # type: ignore[arg-type]
     print_fit_result(params, pilot)
 
     constraints = HardConstraints(

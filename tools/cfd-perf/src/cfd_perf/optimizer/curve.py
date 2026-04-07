@@ -13,16 +13,19 @@ def build_candidate(
     nc: int,
     nc0: int,
     t0: float,
-    beta: float,
+    params: ModelParameters,
     n_iterations: int,
     mesh: MeshStats,
 ) -> CandidateConfig:
-    """Compute all predicted metrics for a single core count."""
-    t = ss.time_per_iter(nc, nc0, t0, beta)
-    s = ss.speedup(nc, nc0, t0, beta)
-    e = ss.efficiency(nc, nc0, t0, beta)
-    el = ss.efficiency_loss(nc, nc0, t0, beta)
-    rt = ss.total_runtime_hours(nc, nc0, t0, beta, n_iterations)
+    """Compute all predicted metrics for a single core count.
+
+    Uses whichever model (beta or empirical) is encoded in *params*.
+    """
+    t = ss.predict_time_per_iter(nc, nc0, t0, params)
+    s = t0 / t
+    e = s / (nc / nc0)
+    el = 1.0 - e
+    rt = t * n_iterations / 3600.0
 
     ram_total = mem_model.total_ram_gb(mesh)
     rpc = mem_model.ram_per_core_gb(mesh, nc)
@@ -49,7 +52,7 @@ def build_scaling_curve(
 ) -> list[CandidateConfig]:
     """Build candidates for every core count in *nc_range*."""
     return [
-        build_candidate(nc, nc0, t0, params.beta, n_iterations, mesh)
+        build_candidate(nc, nc0, t0, params, n_iterations, mesh)
         for nc in nc_range
         if nc > 0
     ]

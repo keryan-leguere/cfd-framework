@@ -118,3 +118,64 @@ class TestPlotScaling:
     def test_empty_returns_none(self) -> None:
         result = OptimizationResult(mode="deadline", optimal=None, accepted=(), rejected=())
         assert plot_scaling(result) is None
+
+    def test_min_runtime_mode(self, tmp_path: Path) -> None:
+        candidates = tuple(
+            CandidateConfig(
+                cores=nc,
+                time_per_iter_s=1.0 / (nc / 64),
+                runtime_hours=5000.0 / (nc / 64) / 3600,
+                speedup=nc / 64,
+                efficiency=1.0 - 0.001 * (nc - 64),
+                efficiency_loss=0.001 * (nc - 64),
+                ram_total_gb=32.0,
+                ram_per_core_gb=32.0 / nc,
+            )
+            for nc in range(64, 257, 64)
+        )
+        result = OptimizationResult(
+            mode="min_runtime",
+            optimal=candidates[-1],
+            accepted=candidates,
+            rejected=(),
+            metadata={"num_cells": 2_000_000, "n_iterations": 5000, "beta": 0.25, "model_kind": "beta"},
+            min_runtime_candidate=candidates[-1],
+        )
+        out = tmp_path / "scaling_mr.png"
+        path = plot_scaling(
+            result, out,
+            pilot=_make_pilot(), mesh=_make_mesh(), params=_make_params(),
+        )
+        assert path is not None
+        assert path.exists()
+
+    def test_min_runtime_marker_when_different(self, tmp_path: Path) -> None:
+        """When min_runtime_candidate differs from optimal, both should render."""
+        candidates = tuple(
+            CandidateConfig(
+                cores=nc,
+                time_per_iter_s=1.0 / (nc / 64),
+                runtime_hours=5000.0 / (nc / 64) / 3600,
+                speedup=nc / 64,
+                efficiency=1.0 - 0.001 * (nc - 64),
+                efficiency_loss=0.001 * (nc - 64),
+                ram_total_gb=32.0,
+                ram_per_core_gb=32.0 / nc,
+            )
+            for nc in range(64, 257, 64)
+        )
+        result = OptimizationResult(
+            mode="efficiency",
+            optimal=candidates[-1],
+            accepted=candidates,
+            rejected=(RejectedConfig(cores=320, reasons=("efficiency_loss",)),),
+            metadata={"max_efficiency_loss": 0.25, "num_cells": 2_000_000, "n_iterations": 5000, "beta": 0.25},
+            min_runtime_candidate=candidates[1],
+        )
+        out = tmp_path / "scaling_dual.png"
+        path = plot_scaling(
+            result, out,
+            pilot=_make_pilot(), mesh=_make_mesh(), params=_make_params(),
+        )
+        assert path is not None
+        assert path.exists()

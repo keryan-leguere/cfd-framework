@@ -32,8 +32,9 @@ class RejectedConfig:
 class OptimizationResult:
     """Full result of the optimization pipeline."""
 
-    mode: Literal["efficiency", "deadline"]
+    mode: Literal["efficiency", "deadline", "min_runtime"]
     optimal: CandidateConfig | None
     accepted: tuple[CandidateConfig, ...]
     rejected: tuple[RejectedConfig, ...]
     metadata: dict[str, Any] = field(default_factory=dict)
+    min_runtime_candidate: CandidateConfig | None = None

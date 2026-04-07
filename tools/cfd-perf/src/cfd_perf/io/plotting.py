@@ -39,10 +39,17 @@ except ImportError:
 
 _GREEN = "#009900"
 _RED = "#CC0000"
+_BLUE = "#0066CC"
 _ZONE_ALPHA = 0.18
 _PILOT_MARKER_SIZE = 42
 
-# 1 mois = 30 j, 1 j = 24 h
+_MODE_LABELS = {
+    "efficiency": "efficacité",
+    "deadline": "deadline",
+    "min_runtime": "durée min.",
+}
+
+
 def _format_runtime_mdh(hours: float) -> str:
     """Format runtime as e.g. '2 mois, 15 j, 6.5 h'."""
     total_h = hours
@@ -116,6 +123,43 @@ def _hline_label(ax: plt.Axes, y_val: float, label: str, x_max: float) -> None:
     )
 
 
+def _compute_zones(
+    result: OptimizationResult,
+    accepted_cores: list[int],
+    rejected_cores: list[int],
+    x_max: float,
+) -> tuple[tuple[float, float], tuple[float, float], float]:
+    """Return (green_span, red_span, boundary) for the zone overlay."""
+    if result.mode == "efficiency":
+        boundary = max(accepted_cores) if accepted_cores else (min(rejected_cores) if rejected_cores else 0)
+        return (0, boundary), (boundary, x_max), float(boundary)
+    elif result.mode == "deadline":
+        boundary = min(accepted_cores) if accepted_cores else (max(rejected_cores) if rejected_cores else x_max)
+        return (boundary, x_max), (0, boundary), float(boundary)
+    else:
+        green_span = (0.0, x_max)
+        red_span = (0.0, 0.0)
+        boundary = 0.0
+        if rejected_cores:
+            boundary = max(accepted_cores) if accepted_cores else (min(rejected_cores) if rejected_cores else 0)
+            green_span = (0, boundary)
+            red_span = (boundary, x_max)
+        return green_span, red_span, boundary
+
+
+def _textbox_content(meta: dict) -> str:
+    """Build the metadata text for the runtime panel textbox."""
+    model_kind = meta.get("model_kind", "beta")
+    lines = [
+        f"Mailles : {meta.get('num_cells', 0) / 1e6:.0f}M",
+        f"Itér. : {meta.get('n_iterations', 0):,}",
+        f"Modèle : {model_kind}",
+    ]
+    if model_kind == "beta":
+        lines.append(f"β : {meta.get('beta', '?')}")
+    return "\n".join(lines)
+
+
 def _plot_with_plotting_lib(
     result: OptimizationResult,
     pilot: PilotSeries,
@@ -141,30 +185,26 @@ def _plot_with_plotting_lib(
 
     fig, axes = new_figure(1, 3, figsize=(16, 4.8), constrained_layout=False)
     fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.12)
-    set_suptitle(fig, f"Analyse de scalabilité forte{title_suffix}", fontsize=12)
+    mode_label = _MODE_LABELS.get(result.mode, result.mode)
+    set_suptitle(fig, f"Analyse de scalabilité forte  (mode {mode_label}){title_suffix}", fontsize=12)
 
     nc_opt = result.optimal.cores if result.optimal else None
     opt = result.optimal
+    mrc = result.min_runtime_candidate
     meta = result.metadata
     x_max = float(cores_all.max()) * 1.05
 
     target_eff_pct = (1.0 - meta["max_efficiency_loss"]) * 100 if "max_efficiency_loss" in meta else None
     target_deadline_h = meta.get("deadline_hours")
 
-    # Zone spans
-    if result.mode == "efficiency":
-        boundary = max(accepted_cores) if accepted_cores else (min(rejected_cores) if rejected_cores else 0)
-        green_span = (0, boundary)
-        red_span = (boundary, x_max)
-    else:
-        boundary = min(accepted_cores) if accepted_cores else (max(rejected_cores) if rejected_cores else x_max)
-        red_span = (0, boundary)
-        green_span = (boundary, x_max)
+    green_span, red_span, boundary = _compute_zones(result, accepted_cores, rejected_cores, x_max)
 
     def draw_zones(ax: plt.Axes) -> None:
         ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="Accepté")
-        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
-        ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
+        if red_span[1] > red_span[0]:
+            ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
+        if boundary > 0:
+            ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
 
     # Interpolated target intersection
     if result.mode == "efficiency" and target_eff_pct is not None:
@@ -203,17 +243,17 @@ def _plot_with_plotting_lib(
             ax, f"opt : {nc_opt} cœurs\n{_format_runtime_mdh(opt.runtime_hours)}",
             xy=(nc_opt, opt.runtime_hours), offset=(40, 25),
         )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        add_reference_lines(ax, vlines=[mrc.cores], color=_BLUE, linewidth=1.0, linestyle="--")
+        annotate_point(
+            ax, f"min : {mrc.cores} cœurs\n{_format_runtime_mdh(mrc.runtime_hours)}",
+            xy=(mrc.cores, mrc.runtime_hours), offset=(-60, -30),
+        )
     if h_runtime is not None:
         _hline_label(ax, h_runtime, lbl_rt, x_max)
     ax.set_xlabel("Cœurs")
     ax.set_ylabel("Durée totale (h)")
-    add_textbox(
-        ax,
-        f"Mailles : {meta.get('num_cells', 0) / 1e6:.0f}M\n"
-        f"Itér. : {meta.get('n_iterations', 0):,}\n"
-        f"β : {meta.get('beta', '?')}",
-        loc="center right", fontsize=7,
-    )
+    add_textbox(ax, _textbox_content(meta), loc="center right", fontsize=7)
     apply_oldschool_axes(ax, legend=False)
     make_legend(ax, loc="upper right", fontsize=7, title="Légende")
 
@@ -232,6 +272,12 @@ def _plot_with_plotting_lib(
         annotate_point(
             ax, f"opt : {nc_opt} cœurs\n{opt.efficiency * 100:.1f} %",
             xy=(nc_opt, opt.efficiency * 100), offset=(40, 25),
+        )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        add_reference_lines(ax, vlines=[mrc.cores], color=_BLUE, linewidth=1.0, linestyle="--")
+        annotate_point(
+            ax, f"min : {mrc.cores} cœurs\n{mrc.efficiency * 100:.1f} %",
+            xy=(mrc.cores, mrc.efficiency * 100), offset=(-60, -30),
         )
     if h_eff is not None:
         _hline_label(ax, h_eff, lbl_eff, x_max)
@@ -258,6 +304,12 @@ def _plot_with_plotting_lib(
         annotate_point(
             ax, f"opt : {nc_opt} cœurs\n{opt.ram_per_core_gb:.1f} Go",
             xy=(nc_opt, opt.ram_per_core_gb), offset=(40, 25),
+        )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        add_reference_lines(ax, vlines=[mrc.cores], color=_BLUE, linewidth=1.0, linestyle="--")
+        annotate_point(
+            ax, f"min : {mrc.cores} cœurs\n{mrc.ram_per_core_gb:.1f} Go",
+            xy=(mrc.cores, mrc.ram_per_core_gb), offset=(-60, -30),
         )
     if h_ram is not None:
         _hline_label(ax, h_ram, lbl_ram, x_max)
@@ -303,32 +355,29 @@ def _plot_vanilla(
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), constrained_layout=False)
     fig.subplots_adjust(left=0.06, right=0.98, top=0.82, bottom=0.14, wspace=0.12)
+    mode_label = _MODE_LABELS.get(result.mode, result.mode)
     fig.suptitle(
-        f"Analyse strong-scaling (mode efficacité / deadline){title_suffix}",
+        f"Analyse strong-scaling  (mode {mode_label}){title_suffix}",
         fontsize=12, fontweight="bold",
     )
 
     nc_opt = result.optimal.cores if result.optimal else None
     opt = result.optimal
+    mrc = result.min_runtime_candidate
     meta = result.metadata
     x_max = float(cores_all.max()) * 1.05
 
     target_eff_pct = (1.0 - meta["max_efficiency_loss"]) * 100 if "max_efficiency_loss" in meta else None
     target_deadline_h = meta.get("deadline_hours")
 
-    if result.mode == "efficiency":
-        boundary = max(accepted_cores) if accepted_cores else (min(rejected_cores) if rejected_cores else 0)
-        green_span = (0, boundary)
-        red_span = (boundary, x_max)
-    else:
-        boundary = min(accepted_cores) if accepted_cores else (max(rejected_cores) if rejected_cores else x_max)
-        red_span = (0, boundary)
-        green_span = (boundary, x_max)
+    green_span, red_span, boundary = _compute_zones(result, accepted_cores, rejected_cores, x_max)
 
     def draw_zones(ax: plt.Axes) -> None:
         ax.axvspan(*green_span, alpha=_ZONE_ALPHA, color=_GREEN, zorder=0, label="Accepté")
-        ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
-        ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
+        if red_span[1] > red_span[0]:
+            ax.axvspan(*red_span, alpha=_ZONE_ALPHA, color=_RED, zorder=0, label="Rejeté")
+        if boundary > 0:
+            ax.axvline(x=boundary, color="0.15", linewidth=1.8, linestyle="-", zorder=1)
 
     if result.mode == "efficiency" and target_eff_pct is not None:
         nc_at_target = np.interp(target_eff_pct, eff_all[::-1], cores_all[::-1].astype(float))
@@ -368,15 +417,20 @@ def _plot_vanilla(
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
         )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        ax_rt.axvline(mrc.cores, color=_BLUE, linestyle="--", linewidth=0.9)
+        ax_rt.annotate(
+            f"min : {mrc.cores} cœurs\n{_format_runtime_mdh(mrc.runtime_hours)}",
+            xy=(mrc.cores, mrc.runtime_hours), xytext=(-60, -30),
+            textcoords="offset points", fontsize=7,
+            arrowprops={"arrowstyle": "->", "color": _BLUE},
+        )
     if h_runtime is not None:
         _hline_label(ax_rt, h_runtime, lbl_rt, x_max)
     ax_rt.set_xlabel("Cœurs")
     ax_rt.set_ylabel("Durée totale (h)")
     ax_rt.text(
-        0.96, 0.5,
-        f"Mailles : {meta.get('num_cells', 0) / 1e6:.0f}M\n"
-        f"Itér. : {meta.get('n_iterations', 0):,}\n"
-        f"β : {meta.get('beta', '?')}",
+        0.96, 0.5, _textbox_content(meta),
         transform=ax_rt.transAxes, ha="right", va="center",
         fontsize=7, bbox={"boxstyle": "round,pad=0.4", "fc": "wheat", "alpha": 0.5},
     )
@@ -399,6 +453,14 @@ def _plot_vanilla(
             xy=(nc_opt, opt.efficiency * 100), xytext=(40, 25),
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
+        )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        ax_eff.axvline(mrc.cores, color=_BLUE, linestyle="--", linewidth=0.9)
+        ax_eff.annotate(
+            f"min : {mrc.cores} cœurs\n{mrc.efficiency * 100:.1f} %",
+            xy=(mrc.cores, mrc.efficiency * 100), xytext=(-60, -30),
+            textcoords="offset points", fontsize=7,
+            arrowprops={"arrowstyle": "->", "color": _BLUE},
         )
     if h_eff is not None:
         _hline_label(ax_eff, h_eff, lbl_eff, x_max)
@@ -426,6 +488,14 @@ def _plot_vanilla(
             xy=(nc_opt, opt.ram_per_core_gb), xytext=(40, 25),
             textcoords="offset points", fontsize=7,
             arrowprops={"arrowstyle": "->", "color": "0.4"},
+        )
+    if mrc is not None and (opt is None or mrc.cores != opt.cores):
+        ax_mem.axvline(mrc.cores, color=_BLUE, linestyle="--", linewidth=0.9)
+        ax_mem.annotate(
+            f"min : {mrc.cores} cœurs\n{mrc.ram_per_core_gb:.1f} Go",
+            xy=(mrc.cores, mrc.ram_per_core_gb), xytext=(-60, -30),
+            textcoords="offset points", fontsize=7,
+            arrowprops={"arrowstyle": "->", "color": _BLUE},
         )
     if h_ram is not None:
         _hline_label(ax_mem, h_ram, lbl_ram, x_max)
@@ -488,7 +558,7 @@ def plot_scaling(
             title_suffix=title_suffix, show=show, return_figure=return_figure,
         )
 
-    # Legacy path: no pilot/mesh/params → simple accepted-only plot
+    # Legacy path: no pilot/mesh/params -> simple accepted-only plot
     from cfd_perf.models.parameters import ModelParameters as _MP
 
     _dummy_pilot = PilotSeries(

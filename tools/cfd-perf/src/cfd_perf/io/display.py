@@ -44,8 +44,12 @@ def print_fit_result(params: ModelParameters, pilot: PilotSeries) -> None:
     table.add_column("Property", style="bold")
     table.add_column("Value", justify="right")
 
+    table.add_row("Model", params.model_kind)
     table.add_row("Beta", f"{params.beta:.6f}")
     table.add_row("Source", params.beta_source)
+    if params.empirical_coeffs is not None:
+        a, b, c = params.empirical_coeffs
+        table.add_row("Empirical coeffs", f"a={a:.6f}  b={b:.6f}  c={c:.6f}")
     table.add_row("Baseline cores", str(pilot.baseline_cores))
     table.add_row("Baseline T/iter", f"{pilot.baseline_time_per_iter_s:.3f} s")
     table.add_row("Iterations", f"{pilot.n_iterations:,}")
@@ -119,6 +123,16 @@ def print_optimization_result(result: OptimizationResult) -> None:
             )
 
         console.print(table)
+
+    mrc = result.min_runtime_candidate
+    if mrc is not None and result.optimal is not None and mrc.cores != result.optimal.cores:
+        console.print(Panel(
+            f"[bold]Cores:[/bold]           {mrc.cores}\n"
+            f"[bold]Total runtime:[/bold]   {mrc.runtime_hours:.2f} h\n"
+            f"[bold]Time / iter:[/bold]     {mrc.time_per_iter_s:.3f} s",
+            title="Minimum Runtime Point",
+            border_style="blue",
+        ))
 
     if result.rejected:
         rej_table = Table(

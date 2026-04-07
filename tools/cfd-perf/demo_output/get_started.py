@@ -80,7 +80,7 @@ from cfd_perf.constraints.config import HardConstraints
 
 pilot = cfd_perf.pilot_from_data(pilot_df, n_iterations=n_iterations)
 mesh = cfd_perf.mesh_from_data(mesh_data, pilot_baseline=pilot.baseline)
-params = cfd_perf.fit_beta(pilot)
+params = cfd_perf.fit_scaling_model(pilot)
 print_fit_result(params, pilot)
 
 constraints = HardConstraints(min_cells_per_core=100_000, min_ram_per_core_gb=0.5)
