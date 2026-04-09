@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: cfd-stats
+Version: 0.1.0
+Summary: Automatic convergence analysis and statistics for CFD time-series
+License: MIT
+Requires-Python: >=3.12
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: scipy
+Requires-Dist: rich
+Requires-Dist: typer
+Requires-Dist: pyyaml
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mypy; extra == "dev"

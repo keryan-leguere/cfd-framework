@@ -1,0 +1,12 @@
+numpy
+pandas
+scipy
+rich
+typer
+pyyaml
+
+[dev]
+pytest
+pytest-cov
+ruff
+mypy

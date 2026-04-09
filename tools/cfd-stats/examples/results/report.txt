@@ -1,0 +1,41 @@
+============================================================
+CFD Statistics Report
+============================================================
+
+Overall regime     : periodic
+All converged      : False
+Quality score      : 62.6
+Recommendation     : Periodic regime detected but quality is low. Consider running more iterations.
+
+------------------------------------------------------------
+  Cl
+------------------------------------------------------------
+  Regime           : periodic
+  Quality score    : 66.42
+  Transient end    : 500
+  Cauchy criterion : 0.0537504
+  Is converged     : False
+  Mean             : 0.523580323260038
+  Std              : 0.010973132939732464
+
+------------------------------------------------------------
+  Cd
+------------------------------------------------------------
+  Regime           : converged
+  Quality score    : 55.32
+  Transient end    : 1375
+  Cauchy criterion : 0.41386987
+  Is converged     : False
+  Mean             : 0.012000715273454495
+  Std              : 1.1193657413964515e-05
+
+------------------------------------------------------------
+  Cm
+------------------------------------------------------------
+  Regime           : periodic
+  Quality score    : 66.06
+  Transient end    : 500
+  Cauchy criterion : 0.07037917
+  Is converged     : False
+  Mean             : -0.07999721347245395
+  Std              : 0.0021288925283919277

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------
+# cfd-stats  --  CLI wrapper for the cfd_stats analysis tool
+#
+# Usage:  cfd-stats <command> [options]
+#
+# Commands:
+#   analyze   Run full analysis on a .pickle file
+#   compare   Compare statistics across families
+#   report    Generate formatted reports (txt/json/html)
+#
+# Examples:
+#   cfd-stats analyze data.pickle --family AIRFOIL -o results/
+#   cfd-stats compare data.pickle --families "WALL,AIRFOIL,TOTAL"
+#   cfd-stats analyze data.pickle --list-families
+# ---------------------------------------------------------------
+set -euo pipefail
+
+exec python -m cfd_stats.cli "$@"
