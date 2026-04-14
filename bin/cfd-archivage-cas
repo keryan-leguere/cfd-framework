@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════════
+#  cfd-archivage-cas — Wrapper pour archiver un cas CFD complet en .tar.xz
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  Ce script permet de lancer archivage_cas.sh depuis n'importe où pour
+#  archiver un cas CFD complet via un espace de staging sécurisé.
+#
+#  Usage: cfd-archivage-cas [OPTIONS] --solutions-volumiques <keep|remove> <CAS>
+#
+#  Auteur : KL
+#  Licence : MIT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔧 RÉSOLUTION DE CFD_FRAMEWORK
+# ══════════════════════════════════════════════════════════════════════════════
+
+if [[ -z "${CFD_FRAMEWORK:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CFD_FRAMEWORK="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  export CFD_FRAMEWORK
+fi
+
+if [[ ! -d "$CFD_FRAMEWORK" ]]; then
+  echo "ERREUR: Répertoire CFD_FRAMEWORK introuvable: $CFD_FRAMEWORK" >&2
+  exit 1
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🚀 LANCEMENT DU SCRIPT D'ARCHIVAGE
+# ══════════════════════════════════════════════════════════════════════════════
+
+exec "${CFD_FRAMEWORK}/scripts/archivage/archivage_cas.sh" "$@"

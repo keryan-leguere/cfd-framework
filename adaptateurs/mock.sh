@@ -266,8 +266,18 @@ adapt_nettoyer() {
     _info "Nettoyage des fichiers temporaires mock..."
   fi
   
-  # Supprimer les fichiers temporaires si nécessaire
-  # Pour mock, on garde tout par défaut
+  return 0
+}
+
+adapt_clean() {
+  local rep_exec="$1"
+  command -v _info &>/dev/null && _info "adapt_clean (mock) : noop"
+  return 0
+}
+
+adapt_rm() {
+  local rep_exec="$1"
+  command -v _info &>/dev/null && _info "adapt_rm (mock) : noop"
   return 0
 }
 

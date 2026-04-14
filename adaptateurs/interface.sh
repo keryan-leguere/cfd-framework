@@ -107,6 +107,18 @@ adapt_nettoyer() {
   adapt_non_impl "adapt_nettoyer"
 }
 
+# Archivage : nettoyage en conservant la dernière solution volumique
+adapt_clean() {
+  local rep_exec="$1"
+  adapt_non_impl "adapt_clean"
+}
+
+# Archivage : suppression de toutes les solutions volumiques (garde le minimum pour relance)
+adapt_rm() {
+  local rep_exec="$1"
+  adapt_non_impl "adapt_rm"
+}
+
 # Liste des éléments à copier (pour wrapper)
 adapt_liste_elements_a_copier() {
   adapt_non_impl "adapt_liste_elements_a_copier"

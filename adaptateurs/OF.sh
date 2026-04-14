@@ -287,3 +287,48 @@ adapt_nettoyer() {
   
   return 0
 }
+
+adapt_clean() {
+  local rep_exec="$1"
+  [[ -d "$rep_exec" ]] || return 1
+  cd "$rep_exec" || return 1
+
+  command -v _info &>/dev/null && _info "adapt_clean: conservation de la dernière solution volumique"
+
+  rm -rf processor* dynamicCode 2>/dev/null || true
+
+  # Identifier les répertoires de temps (numériques, hors 0/)
+  local -a time_dirs=()
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && time_dirs+=("$d")
+  done < <(find . -maxdepth 1 -type d -regex './[1-9][0-9]*\(\.[0-9]*\)?' | sed 's|^\./||' | sort -n)
+
+  if [[ ${#time_dirs[@]} -gt 1 ]]; then
+    local last="${time_dirs[-1]}"
+    for d in "${time_dirs[@]}"; do
+      [[ "$d" == "$last" ]] && continue
+      rm -rf "$d"
+    done
+    command -v _info &>/dev/null && _info "Conservé : 0/ et $last"
+  fi
+
+  return 0
+}
+
+adapt_rm() {
+  local rep_exec="$1"
+  [[ -d "$rep_exec" ]] || return 1
+  cd "$rep_exec" || return 1
+
+  command -v _info &>/dev/null && _info "adapt_rm: suppression de toutes les solutions volumiques"
+
+  rm -rf processor* dynamicCode 2>/dev/null || true
+
+  # Supprimer tous les répertoires de temps sauf 0/
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && rm -rf "$d"
+  done < <(find . -maxdepth 1 -type d -regex './[1-9][0-9]*\(\.[0-9]*\)?' | sed 's|^\./||')
+
+  command -v _info &>/dev/null && _info "Conservé : 0/, constant/, system/"
+  return 0
+}
