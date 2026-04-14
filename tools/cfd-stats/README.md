@@ -105,7 +105,7 @@ pytest -v
 cfd-stats/
 ├── pyproject.toml
 ├── src/cfd_stats/
-│   ├── cli.py                # Typer CLI
+│   ├── cli.py                # argparse CLI
 │   ├── config.py             # AnalysisConfig dataclass + YAML
 │   ├── core/
 │   │   ├── convergence.py    # ConvergenceAnalyzer

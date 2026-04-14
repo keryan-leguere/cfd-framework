@@ -1,2 +1,2 @@
 [console_scripts]
-cfd-stats = cfd_stats.cli:app
+cfd-stats = cfd_stats.cli:main

@@ -8,7 +8,6 @@ Requires-Dist: numpy
 Requires-Dist: pandas
 Requires-Dist: scipy
 Requires-Dist: rich
-Requires-Dist: typer
 Requires-Dist: pyyaml
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"

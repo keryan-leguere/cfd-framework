@@ -13,7 +13,6 @@ dependencies = [
     "pandas",
     "scipy",
     "rich",
-    "typer",
     "pyyaml",
 ]
 
@@ -26,7 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-cfd-stats = "cfd_stats.cli:app"
+cfd-stats = "cfd_stats.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -16,4 +16,4 @@
 # ---------------------------------------------------------------
 set -euo pipefail
 
-exec python -m cfd_stats.cli "$@"
+exec "${PYTHON:-python3}" -m cfd_stats.cli "$@"

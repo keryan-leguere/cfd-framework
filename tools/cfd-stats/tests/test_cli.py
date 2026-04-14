@@ -8,11 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from typer.testing import CliRunner
 
-from cfd_stats.cli import app
-
-runner = CliRunner()
+from cfd_stats.cli import main
 
 
 @pytest.fixture()
@@ -30,28 +27,27 @@ def pickle_file(tmp_path: Path, rng: np.random.Generator) -> Path:
 
 class TestAnalyze:
     def test_basic_run(self, pickle_file: Path, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["analyze", str(pickle_file), "-o", str(tmp_path / "out")])
-        assert result.exit_code == 0, result.output
+        exit_code = main(["analyze", str(pickle_file), "-o", str(tmp_path / "out"), "--no-plots"])
+        assert exit_code == 0
 
     def test_json_output(self, pickle_file: Path, tmp_path: Path) -> None:
         out = tmp_path / "out"
-        result = runner.invoke(app, ["analyze", str(pickle_file), "-o", str(out), "-f", "json"])
-        assert result.exit_code == 0, result.output
+        exit_code = main(["analyze", str(pickle_file), "-o", str(out), "-f", "json", "--no-plots"])
+        assert exit_code == 0
         assert (out / "report.json").exists()
 
     def test_missing_file(self, tmp_path: Path) -> None:
-        result = runner.invoke(app, ["analyze", str(tmp_path / "missing.pickle")])
-        assert result.exit_code != 0
+        exit_code = main(["analyze", str(tmp_path / "missing.pickle"), "--no-plots"])
+        assert exit_code != 0
 
 
 class TestReport:
     def test_all_formats(self, pickle_file: Path, tmp_path: Path) -> None:
         out = tmp_path / "reports"
-        result = runner.invoke(
-            app,
+        exit_code = main(
             ["report", str(pickle_file), "-o", str(out), "-f", "txt", "-f", "json", "-f", "html"],
         )
-        assert result.exit_code == 0, result.output
+        assert exit_code == 0
         assert (out / "report.txt").exists()
         assert (out / "report.json").exists()
         assert (out / "report.html").exists()
