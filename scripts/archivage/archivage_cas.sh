@@ -42,6 +42,7 @@ fi
 
 source "${CFD_FRAMEWORK}/lib/format.sh"
 source "${CFD_FRAMEWORK}/lib/utils.sh"
+source "${CFD_FRAMEWORK}/lib/compress_function.sh"
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  📐 RÈGLES DE CONSERVATION PAR ZONE
@@ -65,30 +66,7 @@ archive_prune_maillage() {
     "*.html"              # rapports
     "*.stp"               # CAO STEP
   )
-
-  # Construire la liste des fichiers/dossiers à conserver
-  local -a keep_list=()
-  for pattern in "${keep_patterns[@]}"; do
-    while IFS= read -r item; do
-      [[ -n "$item" ]] && keep_list+=("$item")
-    done < <(find "$dir" -maxdepth 1 -name "$pattern" 2>/dev/null)
-  done
-
-  # Supprimer tout ce qui n'est pas dans la liste de conservation
-  while IFS= read -r item; do
-    local base
-    base="$(basename "$item")"
-    local keep=false
-    for kept in "${keep_list[@]}"; do
-      [[ "$item" == "$kept" ]] && { keep=true; break; }
-    done
-    if [[ "$keep" == false ]]; then
-      rm -rf "$item"
-      _debug "Supprimé : $base"
-    else
-      _check "Conservé : $base"
-    fi
-  done < <(find "$dir" -maxdepth 1 -mindepth 1 2>/dev/null)
+  archive_prune_keep_patterns "$dir" "${keep_patterns[@]}"
 }
 
 archive_prune_decomposition() {
@@ -100,28 +78,54 @@ archive_prune_decomposition() {
   local -a keep_patterns=(
     "job.data*"
   )
+  archive_prune_keep_patterns "$dir" "${keep_patterns[@]}"
+}
 
+archive_prune_keep_patterns() {
+  local dir="$1"
+  shift
+  local -a keep_patterns=("$@")
   local -a keep_list=()
+
+  if [[ ${#keep_patterns[@]} -eq 0 ]]; then
+    _warn "Aucun pattern de conservation défini pour $dir — élagage ignoré"
+    return 0
+  fi
+
+  # Recherche récursive des éléments à conserver.
+  local find_expr=()
+  local pattern
   for pattern in "${keep_patterns[@]}"; do
-    while IFS= read -r item; do
-      [[ -n "$item" ]] && keep_list+=("$item")
-    done < <(find "$dir" -maxdepth 1 -name "$pattern" 2>/dev/null)
+    find_expr+=( -name "$pattern" -o )
   done
+  unset 'find_expr[${#find_expr[@]}-1]'
 
   while IFS= read -r item; do
+    [[ -n "$item" ]] && keep_list+=("$item")
+  done < <(find "$dir" -mindepth 1 \( "${find_expr[@]}" \) 2>/dev/null)
+
+  if [[ ${#keep_list[@]} -eq 0 ]]; then
+    _warn "Aucun élément ne correspond aux patterns de conservation dans $dir — élagage ignoré"
+    return 0
+  fi
+
+  # Nettoyage des éléments qui ne sont ni conservés, ni ancêtres/descendants d'un conservé.
+  while IFS= read -r item; do
     local base
-    base="$(basename "$item")"
     local keep=false
+    base="$(basename "$item")"
     for kept in "${keep_list[@]}"; do
-      [[ "$item" == "$kept" ]] && { keep=true; break; }
+      if [[ "$item" == "$kept" || "$item" == "$kept"/* || "$kept" == "$item"/* ]]; then
+        keep=true
+        break
+      fi
     done
+
     if [[ "$keep" == false ]]; then
       rm -rf "$item"
       _debug "Supprimé : $base"
-    else
-      _check "Conservé : $base"
     fi
-  done < <(find "$dir" -maxdepth 1 -mindepth 1 2>/dev/null)
+  done < <(find "$dir" -depth -mindepth 1 2>/dev/null)
 }
 
 archive_process_params() {
@@ -148,10 +152,22 @@ archive_process_params() {
       ((run_count++))
       _bullet "[$config_name] $run_name → adapt_${mode/keep/clean}"
 
+      local saved_info=""
+      if declare -F _info >/dev/null 2>&1; then
+        saved_info="$(declare -f _info)"
+      fi
+      _info() { :; }
+
       case "$mode" in
         keep)   adapt_clean "$run_dir" ;;
         remove) adapt_rm    "$run_dir" ;;
       esac
+
+      if [[ -n "$saved_info" ]]; then
+        eval "$saved_info"
+      else
+        unset -f _info >/dev/null 2>&1 || true
+      fi
     done < <(find "$config_dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
   done < <(find "$dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
 
@@ -327,6 +343,24 @@ fi
 
 COPY_JOBS="${COPY_JOBS:-$(nproc 2>/dev/null || echo 4)}"
 
+archive_get_size_bytes() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    du --apparent-size -sb "$path" 2>/dev/null | awk '{print $1}'
+    return 0
+  fi
+  stat -c%s "$path" 2>/dev/null || echo 0
+}
+
+archive_human_size() {
+  local bytes="$1"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec-i --suffix=B "$bytes"
+  else
+    echo "${bytes} B"
+  fi
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  🔌 CHARGEMENT DE L'ADAPTATEUR
 # ══════════════════════════════════════════════════════════════════════════════
@@ -360,7 +394,8 @@ titre_archivage
 h1 "Configuration de l'archivage"
 
 kv "Cas source"         "$SOURCE_CAS"
-kv "Taille source"      "$(util_obtenir_taille "$SOURCE_CAS")"
+source_size_bytes="$(archive_get_size_bytes "$SOURCE_CAS")"
+kv "Taille source"      "$(archive_human_size "$source_size_bytes") ($source_size_bytes bytes)"
 kv "Archive de sortie"  "$OUTPUT_FILE"
 kv "Solutions vol."     "$SOL_VOLUMIQUES"
 kv "Adaptateur"         "$(adapt_nom) v$(adapt_version)"
@@ -404,7 +439,7 @@ parallel_copy() {
   (
     cd "$src"
     find . -type d -print0 | ( cd "$dst" && xargs -0 mkdir -p )
-    find . ! -type d -print0 | xargs -0 -P "$jobs" -n 100 \
+    find . ! -type d -print0 | xargs -0 -P "$jobs" -n 10 \
       cp -a --parents -t "$dst"
   )
 }
@@ -419,7 +454,8 @@ else
     _wait "Copie parallèle du cas vers le staging (${COPY_JOBS} jobs) …"
     parallel_copy "$SOURCE_CAS" "$STAGING_CAS" "$COPY_JOBS"
   fi
-  _result "Copie terminée ($(util_obtenir_taille "$STAGING_CAS"))"
+  staging_size_bytes="$(archive_get_size_bytes "$STAGING_CAS")"
+  _result "Copie terminée ($(archive_human_size "$staging_size_bytes"), $staging_size_bytes bytes)"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -441,7 +477,8 @@ else
   archive_prune_decomposition "${STAGING_CAS}/03_DECOMPOSITION"
 
   separator
-  _result "Élagage terminé — taille staging : $(util_obtenir_taille "$STAGING_CAS")"
+  staging_size_bytes="$(archive_get_size_bytes "$STAGING_CAS")"
+  _result "Élagage terminé — taille staging : $(archive_human_size "$staging_size_bytes") ($staging_size_bytes bytes)"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -484,15 +521,25 @@ else
   if [[ "$NO_COMPRESS" == true ]]; then
     tar -cf "$OUTPUT_FILE" -C "$STAGING_ROOT" "$CAS_NAME"
   else
-    tar -cf - -C "$STAGING_ROOT" "$CAS_NAME" | xz -9 -T"${XZ_THREADS}" > "$OUTPUT_FILE"
+    compress_input="${STAGING_ROOT}/${CAS_NAME}"
+    rm -f "${compress_input}.tar.xz"
+    (
+      cd "$STAGING_ROOT"
+      compress_KL "$CAS_NAME"
+    )
+    generated_archive="${compress_input}.tar.xz"
+    [[ -f "$generated_archive" ]] || die "Échec de compression via compress_KL : archive absente"
+    mv "$generated_archive" "$OUTPUT_FILE"
   fi
 
   local_end=$(date +%s)
   local_elapsed=$(( local_end - local_start ))
 
   _result "Archive créée : $OUTPUT_FILE"
-  kv "Taille archive" "$(util_obtenir_taille "$OUTPUT_FILE")"
-  kv "Taille source"  "$(util_obtenir_taille "$SOURCE_CAS")"
+  archive_size_bytes="$(archive_get_size_bytes "$OUTPUT_FILE")"
+  source_size_bytes="$(archive_get_size_bytes "$SOURCE_CAS")"
+  kv "Taille archive" "$(archive_human_size "$archive_size_bytes") ($archive_size_bytes bytes)"
+  kv "Taille source"  "$(archive_human_size "$source_size_bytes") ($source_size_bytes bytes)"
   kv "Durée"          "$(format_eta "$local_elapsed")"
 fi
 
@@ -510,8 +557,10 @@ else
   tableau_init "Propriété" "Valeur"
   tableau_add "Cas source"     "$SOURCE_CAS"
   tableau_add "Archive"        "$OUTPUT_FILE"
-  tableau_add "Taille source"  "$(util_obtenir_taille "$SOURCE_CAS")"
-  tableau_add "Taille archive" "$(util_obtenir_taille "$OUTPUT_FILE")"
+  source_size_bytes="$(archive_get_size_bytes "$SOURCE_CAS")"
+  archive_size_bytes="$(archive_get_size_bytes "$OUTPUT_FILE")"
+  tableau_add "Taille source"  "$(archive_human_size "$source_size_bytes") ($source_size_bytes bytes)"
+  tableau_add "Taille archive" "$(archive_human_size "$archive_size_bytes") ($archive_size_bytes bytes)"
   tableau_add "Solutions vol."  "$SOL_VOLUMIQUES"
   [[ -n "$HOOK_SCRIPT" ]] && tableau_add "Hook" "$HOOK_SCRIPT"
   tableau_print "Récapitulatif d'archivage"

@@ -118,11 +118,11 @@ EOFSLURM
         else
             echo "✗ No idle nodes available in 'essai' queue"
             echo "Falling back to local compression (16 threads)..."
-            _compress_local "$input_folder" "$output_file" 16
+            _compress_local "$input_folder" "$output_file" 32
         fi
     else
         echo "SLURM not available. Using local compression (16 threads)..."
-        _compress_local "$input_folder" "$output_file" 16
+        _compress_local "$input_folder" "$output_file" 32
     fi
 }
 
