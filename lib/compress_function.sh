@@ -3,7 +3,7 @@
 # Optimized tar+xz compression function with SLURM support
 # Add this to your ~/.bashrc
 
-compress() {
+compress_KL() {
     # Usage check
     if [ $# -eq 0 ]; then
         echo "Usage: compress <folder_name/>"
@@ -45,7 +45,7 @@ compress() {
         # Check available nodes in 'essai' partition
         local available_nodes=$(sinfo -p essai -h -o "%a %D" | grep idle | awk '{print $2}')
         
-        if [ -n "$available_nodes" ] && [ "$available_nodes" -gt 0 ]; then
+        if [ -n "$available_nodes" ] && [ "$available_nodes" -gt 10 ]; then
             echo "✓ $available_nodes idle node(s) available in 'essai' queue"
             echo "Submitting compression job to SLURM..."
             
@@ -153,18 +153,34 @@ _compress_local() {
     echo "End: $(date)"
     
     if [ $exit_code -eq 0 ]; then
-        local size=$(du -h "$output" | cut -f1)
-        local original_size=$(du -sh "$folder" | cut -f1)
+        # Keep all calculations in bytes for consistent results with ls/stat.
+        # Use apparent size for directories to avoid filesystem block-size effects.
+        local orig_bytes
+        local comp_bytes
+        orig_bytes=$(du --apparent-size -sb "$folder" 2>/dev/null | awk '{print $1}')
+        if [ -z "$orig_bytes" ]; then
+            orig_bytes=$(du -sb "$folder" 2>/dev/null | awk '{print $1}')
+        fi
+        comp_bytes=$(stat -c%s "$output")
+
+        local original_size="$orig_bytes B"
+        local size="$comp_bytes B"
+        if command -v numfmt &> /dev/null; then
+            original_size=$(numfmt --to=iec-i --suffix=B "$orig_bytes")
+            size=$(numfmt --to=iec-i --suffix=B "$comp_bytes")
+        fi
+
         echo "✓ Compression successful!"
-        echo "Original size: $original_size"
-        echo "Compressed size: $size"
-        
-        # Calculate compression ratio if possible
-        if command -v bc &> /dev/null; then
-            local orig_bytes=$(du -sb "$folder" | cut -f1)
-            local comp_bytes=$(stat -c%s "$output")
-            local ratio=$(echo "scale=2; 100 - ($comp_bytes * 100 / $orig_bytes)" | bc)
-            echo "Compression ratio: ${ratio}%"
+        echo "Original size (apparent): $original_size ($orig_bytes bytes)"
+        echo "Compressed size: $size ($comp_bytes bytes)"
+
+        if [ "$orig_bytes" -gt 0 ]; then
+            local ratio
+            local saved
+            ratio=$(awk -v o="$orig_bytes" -v c="$comp_bytes" 'BEGIN { printf "%.2f", (c * 100) / o }')
+            saved=$(awk -v o="$orig_bytes" -v c="$comp_bytes" 'BEGIN { printf "%.2f", ((o - c) * 100) / o }')
+            echo "Compression ratio (compressed/original): ${ratio}%"
+            echo "Space saved: ${saved}%"
         fi
     else
         echo "✗ Compression failed!"
@@ -187,21 +203,33 @@ complete -F _compress_autocomplete compress
 # ============================================
 
 # Decompress function
-decompress() {
+decompress_KL() {
     if [ $# -eq 0 ]; then
-        echo "Usage: decompress <archive.tar.xz>"
+        echo "Usage: decompress <archive.tar.xz> [threads]"
         return 1
     fi
     
     local archive="$1"
+    local threads="${2:-$(nproc)}"
     
     if [ ! -f "$archive" ]; then
         echo "Error: Archive '$archive' not found"
         return 1
     fi
     
-    echo "Decompressing $archive..."
-    tar -xvf "$archive"
+    if [[ ! "$threads" =~ ^[0-9]+$ ]] || [ "$threads" -lt 1 ]; then
+        echo "Error: threads must be a positive integer"
+        return 1
+    fi
+
+    echo "Decompressing $archive with $threads thread(s)..."
+
+    # Use multithreaded xz decompression when possible.
+    if [[ "$archive" == *.xz || "$archive" == *.txz ]]; then
+        tar -xvf "$archive" --use-compress-program="xz -d -T$threads"
+    else
+        tar -xvf "$archive"
+    fi
 }
 
 # Check compression job status
@@ -243,8 +271,8 @@ compress <folder/>
     - Falls back to local compression with 16 threads if no node available
     - Output: folder.tar.xz
 
-decompress <archive.tar.xz>
-    Decompress a tar.xz archive
+decompress <archive.tar.xz> [threads]
+    Decompress an archive (uses parallel xz for .xz/.txz)
 
 compress_status [job_id]
     Check status of compression jobs
@@ -265,6 +293,7 @@ Examples:
     compress results/simulation_01/
     compress_status 123456
     decompress data.tar.xz
+    decompress data.tar.xz 16
 
 EOF
 }

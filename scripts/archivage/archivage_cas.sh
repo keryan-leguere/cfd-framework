@@ -4,7 +4,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 #  Archive un cas CFD complet via un espace de staging sécurisé :
-#    1. Copie le cas vers un répertoire temporaire (staging)
+#    1. Copie le cas vers un staging local (même répertoire, copie parallèle)
 #    2. Applique les règles de conservation/suppression par zone
 #    3. Exécute adapt_clean ou adapt_rm dans chaque run de 02_PARAMS
 #    4. Exécute un hook bash optionnel pour les nettoyages au cas par cas
@@ -187,9 +187,10 @@ $(printf "%bARGUMENTS POSITIONNELS:%b" "$BOLD" "$RESET")
 $(printf "%bOPTIONS:%b" "$BOLD" "$RESET")
   -h, --help                 Afficher cette aide
   -o, --output <FICHIER>     Chemin de l'archive de sortie (défaut: CAS.tar.xz)
-  --staging-dir <DIR>        Répertoire de staging (défaut: mktemp -d)
+  --staging-dir <DIR>        Répertoire de staging (défaut: .cfd-staging-CAS-PID/ local)
   --hook <SCRIPT>            Script bash complémentaire exécuté dans le staging
   --threads <N>              Nombre de threads xz (défaut: 0 = auto)
+  --copy-jobs <N>            Nombre de copies parallèles (défaut: nproc)
   --dry-run                  Afficher les actions sans les exécuter
   --no-compress              Créer un .tar sans compression xz
 
@@ -205,9 +206,9 @@ $(printf "%bEXEMPLES:%b" "$BOLD" "$RESET")
   cfd-archivage-cas --solutions-volumiques remove \\
       --hook ./pre_archive.sh /data/projets/AILE_DELTA
 
-  # Staging explicite et sortie personnalisée
+  # Staging explicite, copie séquentielle et sortie personnalisée
   cfd-archivage-cas --solutions-volumiques keep \\
-      --staging-dir /scratch/staging \\
+      --staging-dir /scratch/staging --copy-jobs 1 \\
       --output /archives/AILE_DELTA_2026.tar.xz \\
       /data/projets/AILE_DELTA
 
@@ -223,6 +224,7 @@ OUTPUT_FILE=""
 STAGING_DIR=""
 HOOK_SCRIPT=""
 XZ_THREADS="0"
+COPY_JOBS=""
 DRY_RUN=false
 NO_COMPRESS=false
 
@@ -257,6 +259,11 @@ while [[ $# -gt 0 ]]; do
     --threads)
       [[ $# -ge 2 ]] || die "Option --threads requiert un nombre"
       XZ_THREADS="$2"
+      shift 2
+      ;;
+    --copy-jobs)
+      [[ $# -ge 2 ]] || die "Option --copy-jobs requiert un nombre"
+      COPY_JOBS="$2"
       shift 2
       ;;
     --dry-run)
@@ -318,6 +325,8 @@ if [[ -n "$HOOK_SCRIPT" && ! -x "$HOOK_SCRIPT" ]]; then
   die "Script hook non exécutable : $HOOK_SCRIPT (chmod +x ?)"
 fi
 
+COPY_JOBS="${COPY_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  🔌 CHARGEMENT DE L'ADAPTATEUR
 # ══════════════════════════════════════════════════════════════════════════════
@@ -356,6 +365,7 @@ kv "Archive de sortie"  "$OUTPUT_FILE"
 kv "Solutions vol."     "$SOL_VOLUMIQUES"
 kv "Adaptateur"         "$(adapt_nom) v$(adapt_version)"
 kv "Threads xz"         "$XZ_THREADS"
+kv "Copy jobs"          "$COPY_JOBS"
 [[ -n "$HOOK_SCRIPT" ]] && kv "Hook" "$HOOK_SCRIPT"
 [[ -n "$STAGING_DIR" ]] && kv "Staging explicite" "$STAGING_DIR"
 [[ "$DRY_RUN" == true ]] && boite_warn "MODE DRY-RUN — aucune modification ne sera effectuée"
@@ -372,7 +382,8 @@ if [[ -n "$STAGING_DIR" ]]; then
   STAGING_ROOT="$STAGING_DIR"
   mkdir -p "$STAGING_ROOT"
 else
-  STAGING_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/cfd-archivage-XXXXXX")"
+  STAGING_ROOT="$(dirname "$SOURCE_CAS")/.cfd-staging-${CAS_NAME}-$$"
+  mkdir -p "$STAGING_ROOT"
 fi
 
 STAGING_CAS="${STAGING_ROOT}/${CAS_NAME}"
@@ -387,11 +398,27 @@ trap cleanup_staging EXIT
 
 _info "Staging : $STAGING_ROOT"
 
+parallel_copy() {
+  local src="$1" dst="$2" jobs="$3"
+  mkdir -p "$dst"
+  (
+    cd "$src"
+    find . -type d -print0 | ( cd "$dst" && xargs -0 mkdir -p )
+    find . ! -type d -print0 | xargs -0 -P "$jobs" -n 100 \
+      cp -a --parents -t "$dst"
+  )
+}
+
 if [[ "$DRY_RUN" == true ]]; then
   _note "DRY-RUN : la copie vers le staging serait effectuée ici"
 else
-  _wait "Copie du cas vers le staging …"
-  cp -a "$SOURCE_CAS" "$STAGING_CAS"
+  if [[ "$COPY_JOBS" -le 1 ]]; then
+    _wait "Copie du cas vers le staging …"
+    cp -a "$SOURCE_CAS" "$STAGING_CAS"
+  else
+    _wait "Copie parallèle du cas vers le staging (${COPY_JOBS} jobs) …"
+    parallel_copy "$SOURCE_CAS" "$STAGING_CAS" "$COPY_JOBS"
+  fi
   _result "Copie terminée ($(util_obtenir_taille "$STAGING_CAS"))"
 fi
 
