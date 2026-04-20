@@ -3,16 +3,25 @@
 #  cfd-archivage-cas — Wrapper pour archiver un cas CFD complet en .tar.xz
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-#  Ce script permet de lancer archivage_cas.sh depuis n'importe où pour
-#  archiver un cas CFD complet via un espace de staging sécurisé.
+#  Stratégie par défaut (repli progressif si l'archive est trop grosse) :
+#    1. Archive avec --keep-vol --keep-surf
+#    2. Si archive > max-size : ré-archive avec --keep-surf (sans vol)
+#    3. Si encore > max-size : ré-archive sans solution (ni vol, ni surf)
 #
-#  Usage: cfd-archivage-cas [OPTIONS] --solutions-volumiques <keep|remove> <CAS>
+#  Les attempts successifs réutilisent le staging (--skip-copy) pour éviter
+#  de recopier le cas source à chaque itération.
+#
+#  Si l'utilisateur passe explicitement --keep-vol et/ou --keep-surf (ou
+#  --solutions-volumiques), le wrapper se contente de transmettre ses options
+#  à archivage_cas.sh SANS logique de repli.
+#
+#  Usage: cfd-archivage-cas [OPTIONS] <CAS>
 #
 #  Auteur : KL
 #  Licence : MIT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -Euo pipefail
 IFS=$'\n\t'
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -30,8 +39,301 @@ if [[ ! -d "$CFD_FRAMEWORK" ]]; then
   exit 1
 fi
 
+# Charger format.sh pour les messages (best-effort).
+# shellcheck disable=SC1091
+[[ -f "${CFD_FRAMEWORK}/lib/format.sh" ]] && source "${CFD_FRAMEWORK}/lib/format.sh" || true
+
+ARCHIVAGE_SCRIPT="${CFD_FRAMEWORK}/scripts/archivage/archivage_cas.sh"
+
 # ══════════════════════════════════════════════════════════════════════════════
-#  🚀 LANCEMENT DU SCRIPT D'ARCHIVAGE
+#  🔧 PARSING — extraire uniquement ce dont le wrapper a besoin
 # ══════════════════════════════════════════════════════════════════════════════
 
-exec "${CFD_FRAMEWORK}/scripts/archivage/archivage_cas.sh" "$@"
+MAX_SIZE="100G"
+USER_KEEP_VOL=false
+USER_KEEP_SURF=false
+USER_KEEP_EXPLICIT=false         # l'utilisateur a forcé --keep-vol/--keep-surf/--solutions-volumiques
+USER_STAGING_DIR=""
+USER_OUTPUT=""
+USER_NO_ARCHIVE=false
+
+FWD_ARGS=()        # args à re-transmettre à archivage_cas.sh
+POSITIONAL=()      # positionnel attendu : <CAS>
+
+show_help() {
+  cat <<HEREDOC
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║       💾 cfd-archivage-cas — Wrapper avec repli par taille                   ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+USAGE:
+  cfd-archivage-cas [OPTIONS] <CAS>
+
+OPTIONS propres au wrapper:
+  --max-size <TAILLE>    Seuil de repli (défaut: 100G)
+                         Suffixes : K, M, G, T (base 1024)
+
+OPTIONS relayées à archivage_cas.sh:
+  --keep-vol, --keep-surf, --solutions-volumiques <keep|remove>
+      Forcent la conservation : désactivent la logique de repli du wrapper.
+  --staging-dir, -o/--output, --hook, --threads, --copy-jobs,
+  --dry-run, --no-compress, --no-archive,
+  --no-relative-links, --copy-external-links, -h/--help
+
+Utilisez \`cfd-archivage-cas --help\` pour l'aide complète (affichée par
+archivage_cas.sh).
+HEREDOC
+}
+
+# Parsing : on extrait --max-size, le positionnel, et on note si l'utilisateur
+# force un mode keep. Tout le reste est transmis tel quel.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --max-size)
+      [[ $# -ge 2 ]] || { echo "ERREUR: --max-size requiert une valeur" >&2; exit 1; }
+      MAX_SIZE="$2"
+      shift 2
+      ;;
+    --keep-vol)
+      USER_KEEP_VOL=true
+      USER_KEEP_EXPLICIT=true
+      FWD_ARGS+=("$1")
+      shift
+      ;;
+    --keep-surf)
+      USER_KEEP_SURF=true
+      USER_KEEP_EXPLICIT=true
+      FWD_ARGS+=("$1")
+      shift
+      ;;
+    --solutions-volumiques)
+      [[ $# -ge 2 ]] || { echo "ERREUR: --solutions-volumiques requiert une valeur" >&2; exit 1; }
+      USER_KEEP_EXPLICIT=true
+      FWD_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --staging-dir)
+      [[ $# -ge 2 ]] || { echo "ERREUR: --staging-dir requiert un chemin" >&2; exit 1; }
+      USER_STAGING_DIR="$2"
+      FWD_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    -o|--output)
+      [[ $# -ge 2 ]] || { echo "ERREUR: -o/--output requiert un chemin" >&2; exit 1; }
+      USER_OUTPUT="$2"
+      FWD_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --no-archive)
+      USER_NO_ARCHIVE=true
+      FWD_ARGS+=("$1")
+      shift
+      ;;
+    -h|--help)
+      show_help
+      echo
+      echo "── Aide détaillée d'archivage_cas.sh ──"
+      exec "$ARCHIVAGE_SCRIPT" --help
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do POSITIONAL+=("$1"); shift; done
+      ;;
+    -*)
+      FWD_ARGS+=("$1")
+      shift
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ ${#POSITIONAL[@]} -ne 1 ]]; then
+  echo "ERREUR: un seul argument positionnel attendu (le chemin du cas)" >&2
+  show_help
+  exit 1
+fi
+
+SOURCE_CAS="$(cd "${POSITIONAL[0]}" 2>/dev/null && pwd)" || {
+  echo "ERREUR: Dossier du cas introuvable : ${POSITIONAL[0]}" >&2
+  exit 1
+}
+CAS_NAME="$(basename "$SOURCE_CAS")"
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔁 MODE PASSTHROUGH (utilisateur a fixé les keeps)
+# ══════════════════════════════════════════════════════════════════════════════
+
+if [[ "$USER_KEEP_EXPLICIT" == true || "$USER_NO_ARCHIVE" == true ]]; then
+  exec "$ARCHIVAGE_SCRIPT" "${FWD_ARGS[@]}" "${POSITIONAL[@]}"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  📏 CONVERSION DU SEUIL EN BYTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+parse_size_to_bytes() {
+  local s="$1"
+  local num unit
+  # Accepte 100G, 100Gi, 50M, 1024
+  if [[ "$s" =~ ^([0-9]+)([KkMmGgTt]?)i?[Bb]?$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+    case "${unit,,}" in
+      "")  echo "$num" ;;
+      k)   echo $(( num * 1024 )) ;;
+      m)   echo $(( num * 1024 * 1024 )) ;;
+      g)   echo $(( num * 1024 * 1024 * 1024 )) ;;
+      t)   echo $(( num * 1024 * 1024 * 1024 * 1024 )) ;;
+    esac
+  else
+    echo "ERREUR: taille invalide: $s" >&2
+    return 1
+  fi
+}
+
+THRESHOLD_BYTES="$(parse_size_to_bytes "$MAX_SIZE")" || exit 1
+
+human_size() {
+  local b="$1"
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec-i --suffix=B "$b"
+  else
+    echo "${b}B"
+  fi
+}
+
+log_wrapper() {
+  if command -v boite_info >/dev/null 2>&1; then
+    boite_info "$1"
+  else
+    echo "┃ $1"
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  📂 STAGING PARTAGÉ ENTRE TENTATIVES
+# ══════════════════════════════════════════════════════════════════════════════
+
+if [[ -n "$USER_STAGING_DIR" ]]; then
+  SHARED_STAGING="$USER_STAGING_DIR"
+  SHARED_STAGING_OWNED=false
+  mkdir -p "$SHARED_STAGING"
+else
+  SHARED_STAGING="$(mktemp -d "$(dirname "$SOURCE_CAS")/.cfd-staging-${CAS_NAME}-XXXXXX")"
+  SHARED_STAGING_OWNED=true
+fi
+
+cleanup_wrapper_staging() {
+  if [[ "$SHARED_STAGING_OWNED" == true && -d "$SHARED_STAGING" ]]; then
+    rm -rf "$SHARED_STAGING"
+  fi
+}
+trap cleanup_wrapper_staging EXIT
+
+# Injecter le staging dans les args si non déjà fourni par l'utilisateur.
+if [[ -z "$USER_STAGING_DIR" ]]; then
+  FWD_ARGS+=(--staging-dir "$SHARED_STAGING")
+fi
+
+# Déterminer le chemin de l'archive finale (pour mesurer sa taille).
+if [[ -z "$USER_OUTPUT" ]]; then
+  USER_OUTPUT="$(dirname "$SOURCE_CAS")/${CAS_NAME}.tar.xz"
+  FWD_ARGS+=(-o "$USER_OUTPUT")
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  🔁 BOUCLE DE REPLI
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Tentatives successives : vol+surf → surf → rien.
+# Chaque ligne = tableau d'options à injecter devant les FWD_ARGS utilisateur.
+ATTEMPT_LABELS=(
+  "vol+surf"
+  "surf"
+  "none"
+)
+ATTEMPT_OPTS=(
+  "--keep-vol --keep-surf"
+  "--keep-surf"
+  ""
+)
+
+N_ATTEMPTS=${#ATTEMPT_LABELS[@]}
+final_size=0
+final_label=""
+success=false
+
+for (( i=0; i<N_ATTEMPTS; i++ )); do
+  label="${ATTEMPT_LABELS[$i]}"
+  # IFS du script est \n\t : il faut forcer l'espace pour éclater la liste d'options.
+  IFS=' ' read -r -a attempt_opts <<< "${ATTEMPT_OPTS[$i]}"
+
+  log_wrapper "Tentative $((i+1))/$N_ATTEMPTS — conservation : $label"
+
+  # Re-tentatives : staging déjà peuplé, on saute la copie.
+  extra_args=()
+  if (( i > 0 )); then
+    extra_args+=(--skip-copy)
+  fi
+  # Toujours effacer l'archive précédente pour éviter le prompt de confirmation.
+  rm -f "$USER_OUTPUT"
+
+  if "$ARCHIVAGE_SCRIPT" "${attempt_opts[@]}" "${extra_args[@]}" "${FWD_ARGS[@]}" "${POSITIONAL[@]}"; then
+    :
+  else
+    echo "ERREUR: archivage échoué à la tentative '$label'" >&2
+    exit 1
+  fi
+
+  # Mesurer la taille de l'archive produite.
+  if [[ ! -f "$USER_OUTPUT" ]]; then
+    echo "ERREUR: archive introuvable après tentative '$label' : $USER_OUTPUT" >&2
+    exit 1
+  fi
+
+  final_size="$(stat -c%s "$USER_OUTPUT")"
+  final_label="$label"
+
+  log_wrapper "Tentative '$label' : archive = $(human_size "$final_size") (seuil : $(human_size "$THRESHOLD_BYTES"))"
+
+  if (( final_size <= THRESHOLD_BYTES )); then
+    success=true
+    break
+  fi
+
+  if (( i == N_ATTEMPTS - 1 )); then
+    log_wrapper "Dernière tentative atteinte — on garde cette archive même au-delà du seuil."
+    success=true
+    break
+  fi
+
+  log_wrapper "Archive > seuil : nouvelle tentative avec moins de conservation…"
+done
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ✅ BILAN
+# ══════════════════════════════════════════════════════════════════════════════
+
+echo
+if command -v tableau_init >/dev/null 2>&1; then
+  tableau_init "Propriété" "Valeur"
+  tableau_add "Cas source"        "$SOURCE_CAS"
+  tableau_add "Archive finale"    "$USER_OUTPUT"
+  tableau_add "Conservation"      "$final_label"
+  tableau_add "Taille archive"    "$(human_size "$final_size") ($final_size bytes)"
+  tableau_add "Seuil configuré"   "$(human_size "$THRESHOLD_BYTES") ($MAX_SIZE)"
+  tableau_print "Résumé wrapper cfd-archivage-cas"
+else
+  echo "── Résumé ──"
+  echo "Cas source     : $SOURCE_CAS"
+  echo "Archive finale : $USER_OUTPUT"
+  echo "Conservation   : $final_label"
+  echo "Taille archive : $(human_size "$final_size") ($final_size bytes)"
+  echo "Seuil          : $(human_size "$THRESHOLD_BYTES") ($MAX_SIZE)"
+fi
+
+[[ "$success" == true ]] && exit 0 || exit 1

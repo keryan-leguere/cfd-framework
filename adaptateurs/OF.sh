@@ -288,47 +288,120 @@ adapt_nettoyer() {
   return 0
 }
 
-adapt_clean() {
-  local rep_exec="$1"
-  [[ -d "$rep_exec" ]] || return 1
-  cd "$rep_exec" || return 1
+# ══════════════════════════════════════════════════════════════════════════════
+#  🧹 NETTOYAGE D'UN RUN (ARCHIVAGE)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+#  Template piloté par des listes de patterns (à la archivage_cas.sh) :
+#    - _OF_BASE_KEEP_PATTERNS : socle minimal (toujours conservé)
+#    - _OF_SURF_KEEP_PATTERNS : patterns « solution surfacique »
+#    - _OF_ALWAYS_REMOVE      : entrées systématiquement supprimées
+#  Les patterns sont comparés au nom de l'entrée de premier niveau du run
+#  (nom simple, supportant les globs type *SURFACIQUE*).
+#
+#  Pour ajouter/retirer un pattern : éditer ces tableaux.
+#  Ils sont aussi surchargeables via les variables d'environnement :
+#    CFD_ARCHIVE_OF_BASE_KEEP, CFD_ARCHIVE_OF_SURF_KEEP (liste séparée par espaces)
 
-  command -v _info &>/dev/null && _info "adapt_clean: conservation de la dernière solution volumique"
+_OF_BASE_KEEP_PATTERNS=(
+  "0"
+  "constant"
+  "system"
+  "LOG"
+  ".metadata.yaml"
+  "job.data*"
+  "*.yaml"
+  "*.org"
+)
 
-  rm -rf processor* dynamicCode 2>/dev/null || true
+_OF_SURF_KEEP_PATTERNS=(
+  "postProcessing"
+  "VTK"
+  "surfaces"
+  "sampleDict*"
+)
 
-  # Identifier les répertoires de temps (numériques, hors 0/)
-  local -a time_dirs=()
-  while IFS= read -r d; do
-    [[ -n "$d" ]] && time_dirs+=("$d")
-  done < <(find . -maxdepth 1 -type d -regex './[1-9][0-9]*\(\.[0-9]*\)?' | sed 's|^\./||' | sort -n)
+_OF_ALWAYS_REMOVE=(
+  "processor*"
+  "dynamicCode"
+)
 
-  if [[ ${#time_dirs[@]} -gt 1 ]]; then
-    local last="${time_dirs[-1]}"
-    for d in "${time_dirs[@]}"; do
-      [[ "$d" == "$last" ]] && continue
-      rm -rf "$d"
-    done
-    command -v _info &>/dev/null && _info "Conservé : 0/ et $last"
-  fi
+# Surcharge éventuelle via l'environnement.
+if [[ -n "${CFD_ARCHIVE_OF_BASE_KEEP:-}" ]]; then
+  read -r -a _OF_BASE_KEEP_PATTERNS <<< "$CFD_ARCHIVE_OF_BASE_KEEP"
+fi
+if [[ -n "${CFD_ARCHIVE_OF_SURF_KEEP:-}" ]]; then
+  read -r -a _OF_SURF_KEEP_PATTERNS <<< "$CFD_ARCHIVE_OF_SURF_KEEP"
+fi
 
-  return 0
+# ── Helper : tester si un nom matche un des patterns ─────────────────────────
+_of_match_any() {
+  local name="$1"; shift
+  local pat
+  for pat in "$@"; do
+    # shellcheck disable=SC2053
+    [[ "$name" == $pat ]] && return 0
+  done
+  return 1
 }
 
-adapt_rm() {
-  local rep_exec="$1"
+adapt_nettoyer_run() {
+  local rep_exec="$1"; shift
+  local keep_vol=false
+  local keep_surf=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keep-vol)  keep_vol=true;  shift ;;
+      --keep-surf) keep_surf=true; shift ;;
+      *) shift ;;
+    esac
+  done
+
   [[ -d "$rep_exec" ]] || return 1
-  cd "$rep_exec" || return 1
 
-  command -v _info &>/dev/null && _info "adapt_rm: suppression de toutes les solutions volumiques"
+  (
+    cd "$rep_exec" || exit 1
 
-  rm -rf processor* dynamicCode 2>/dev/null || true
+    command -v _debug &>/dev/null && \
+      _debug "adapt_nettoyer_run: keep_vol=$keep_vol keep_surf=$keep_surf ($(basename "$rep_exec"))"
 
-  # Supprimer tous les répertoires de temps sauf 0/
-  while IFS= read -r d; do
-    [[ -n "$d" ]] && rm -rf "$d"
-  done < <(find . -maxdepth 1 -type d -regex './[1-9][0-9]*\(\.[0-9]*\)?' | sed 's|^\./||')
+    # 1) Suppression inconditionnelle
+    local pat
+    for pat in "${_OF_ALWAYS_REMOVE[@]}"; do
+      # shellcheck disable=SC2086
+      rm -rf $pat 2>/dev/null || true
+    done
 
-  command -v _info &>/dev/null && _info "Conservé : 0/, constant/, system/"
+    # 2) Déterminer le dernier répertoire de temps (si --keep-vol)
+    local last_time=""
+    if [[ "$keep_vol" == true ]]; then
+      local -a time_dirs=()
+      while IFS= read -r d; do
+        [[ -n "$d" ]] && time_dirs+=("$d")
+      done < <(find . -maxdepth 1 -type d -regex './[1-9][0-9]*\(\.[0-9]*\)?' \
+                 | sed 's|^\./||' | sort -n)
+      (( ${#time_dirs[@]} > 0 )) && last_time="${time_dirs[-1]}"
+    fi
+
+    # 3) Construire l'ensemble des patterns « à garder »
+    local -a keep_patterns=("${_OF_BASE_KEEP_PATTERNS[@]}")
+    [[ -n "$last_time" ]] && keep_patterns+=("$last_time")
+    [[ "$keep_surf" == true ]] && keep_patterns+=("${_OF_SURF_KEEP_PATTERNS[@]}")
+
+    # 4) Supprimer tout ce qui n'est pas couvert par les patterns (niveau 1).
+    #    Les répertoires de temps non conservés passent aussi par ce filtre.
+    local entry base
+    while IFS= read -r entry; do
+      base="${entry#./}"
+      if ! _of_match_any "$base" "${keep_patterns[@]}"; then
+        rm -rf -- "$entry"
+      fi
+    done < <(find . -maxdepth 1 -mindepth 1)
+
+    command -v _info &>/dev/null && \
+      _info "Run nettoyé ($(basename "$rep_exec")) — keep-vol=$keep_vol keep-surf=$keep_surf"
+  )
+
   return 0
 }

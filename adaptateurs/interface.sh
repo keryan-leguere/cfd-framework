@@ -107,16 +107,35 @@ adapt_nettoyer() {
   adapt_non_impl "adapt_nettoyer"
 }
 
-# Archivage : nettoyage en conservant la dernière solution volumique
-adapt_clean() {
+# Archivage : nettoyage unifié d'un run (utilisé par archivage_cas.sh).
+#
+# Usage :
+#   adapt_nettoyer_run <rep_exec> [--keep-vol] [--keep-surf]
+#
+# Sémantique attendue :
+#   - Base (toujours conservée)   : fichiers nécessaires pour relancer le calcul
+#                                   (ex. : 0/, constant/, system/, LOG/, .metadata.yaml)
+#   - --keep-vol                  : conserver la dernière solution volumique
+#                                   (ex. OpenFOAM : dernier répertoire de temps)
+#   - --keep-surf                 : conserver les données surfaciques
+#                                   (ex. OpenFOAM : postProcessing/, VTK/, surfaces/…)
+#
+# Si aucun flag n'est passé, seul le socle minimal est conservé.
+# L'adaptateur doit définir ses propres listes/patterns — c'est un template.
+adapt_nettoyer_run() {
   local rep_exec="$1"
-  adapt_non_impl "adapt_clean"
+  adapt_non_impl "adapt_nettoyer_run"
 }
 
-# Archivage : suppression de toutes les solutions volumiques (garde le minimum pour relance)
+# ── Alias de compatibilité (API historique) ───────────────────────────────────
+# Remplacés par adapt_nettoyer_run. Conservés pour ne pas casser les scripts
+# externes qui appelaient directement adapt_clean / adapt_rm.
+adapt_clean() {
+  adapt_nettoyer_run "$1" --keep-vol
+}
+
 adapt_rm() {
-  local rep_exec="$1"
-  adapt_non_impl "adapt_rm"
+  adapt_nettoyer_run "$1"
 }
 
 # Liste des éléments à copier (pour wrapper)

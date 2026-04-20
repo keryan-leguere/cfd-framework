@@ -269,15 +269,18 @@ adapt_nettoyer() {
   return 0
 }
 
-adapt_clean() {
-  local rep_exec="$1"
-  command -v _info &>/dev/null && _info "adapt_clean (mock) : noop"
-  return 0
-}
-
-adapt_rm() {
-  local rep_exec="$1"
-  command -v _info &>/dev/null && _info "adapt_rm (mock) : noop"
+adapt_nettoyer_run() {
+  local rep_exec="$1"; shift
+  local keep_vol=false keep_surf=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --keep-vol)  keep_vol=true;  shift ;;
+      --keep-surf) keep_surf=true; shift ;;
+      *) shift ;;
+    esac
+  done
+  command -v _info &>/dev/null && \
+    _info "adapt_nettoyer_run (mock) : noop (keep_vol=$keep_vol keep_surf=$keep_surf)"
   return 0
 }
 
