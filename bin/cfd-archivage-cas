@@ -57,8 +57,20 @@ USER_STAGING_DIR=""
 USER_OUTPUT=""
 USER_NO_ARCHIVE=false
 
+# NOTE: sous set -u, l'expansion "${arr[@]}" d'un tableau vide déclenche une
+# erreur "unbound variable" sur bash < 4.4. On utilise partout l'idiome
+# ${arr[@]+"${arr[@]}"} pour être défensif, peu importe la version de bash.
 FWD_ARGS=()        # args à re-transmettre à archivage_cas.sh
 POSITIONAL=()      # positionnel attendu : <CAS>
+
+# Pré-initialisations pour que toute référence ultérieure soit toujours liée,
+# même si une erreur intervient avant leur affectation « normale ».
+SHARED_STAGING=""
+SHARED_STAGING_OWNED=false
+THRESHOLD_BYTES=0
+final_size=0
+final_label=""
+success=false
 
 show_help() {
   cat <<HEREDOC
@@ -168,7 +180,9 @@ CAS_NAME="$(basename "$SOURCE_CAS")"
 # ══════════════════════════════════════════════════════════════════════════════
 
 if [[ "$USER_KEEP_EXPLICIT" == true || "$USER_NO_ARCHIVE" == true ]]; then
-  exec "$ARCHIVAGE_SCRIPT" "${FWD_ARGS[@]}" "${POSITIONAL[@]}"
+  exec "$ARCHIVAGE_SCRIPT" \
+    ${FWD_ARGS[@]+"${FWD_ARGS[@]}"} \
+    ${POSITIONAL[@]+"${POSITIONAL[@]}"}
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -228,8 +242,12 @@ else
 fi
 
 cleanup_wrapper_staging() {
-  if [[ "$SHARED_STAGING_OWNED" == true && -d "$SHARED_STAGING" ]]; then
-    rm -rf "$SHARED_STAGING"
+  # Accès défensif : si le trap se déclenche très tôt (erreur avant l'affectation
+  # habituelle), les variables peuvent ne pas avoir leur valeur « finale ».
+  local owned="${SHARED_STAGING_OWNED:-false}"
+  local staging="${SHARED_STAGING:-}"
+  if [[ "$owned" == true && -n "$staging" && -d "$staging" ]]; then
+    rm -rf "$staging"
   fi
 }
 trap cleanup_wrapper_staging EXIT
@@ -263,14 +281,17 @@ ATTEMPT_OPTS=(
 )
 
 N_ATTEMPTS=${#ATTEMPT_LABELS[@]}
-final_size=0
-final_label=""
-success=false
 
 for (( i=0; i<N_ATTEMPTS; i++ )); do
   label="${ATTEMPT_LABELS[$i]}"
-  # IFS du script est \n\t : il faut forcer l'espace pour éclater la liste d'options.
-  IFS=' ' read -r -a attempt_opts <<< "${ATTEMPT_OPTS[$i]}"
+
+  # IFS du script est \n\t : il faut forcer l'espace pour éclater la liste
+  # d'options. Pour la dernière tentative la chaîne est vide → on garantit
+  # un tableau (vide mais déclaré) pour éviter tout « unbound variable ».
+  attempt_opts=()
+  if [[ -n "${ATTEMPT_OPTS[$i]:-}" ]]; then
+    IFS=' ' read -r -a attempt_opts <<< "${ATTEMPT_OPTS[$i]}"
+  fi
 
   log_wrapper "Tentative $((i+1))/$N_ATTEMPTS — conservation : $label"
 
@@ -282,7 +303,13 @@ for (( i=0; i<N_ATTEMPTS; i++ )); do
   # Toujours effacer l'archive précédente pour éviter le prompt de confirmation.
   rm -f "$USER_OUTPUT"
 
-  if "$ARCHIVAGE_SCRIPT" "${attempt_opts[@]}" "${extra_args[@]}" "${FWD_ARGS[@]}" "${POSITIONAL[@]}"; then
+  # Expansion défensive : ${arr[@]+"${arr[@]}"} n'émet rien pour un tableau
+  # vide et satisfait set -u sur toutes les versions de bash.
+  if "$ARCHIVAGE_SCRIPT" \
+        ${attempt_opts[@]+"${attempt_opts[@]}"} \
+        ${extra_args[@]+"${extra_args[@]}"} \
+        ${FWD_ARGS[@]+"${FWD_ARGS[@]}"} \
+        ${POSITIONAL[@]+"${POSITIONAL[@]}"}; then
     :
   else
     echo "ERREUR: archivage échoué à la tentative '$label'" >&2

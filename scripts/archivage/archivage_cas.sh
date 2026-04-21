@@ -173,7 +173,10 @@ archive_process_params() {
       fi
       _info() { :; }
 
-      adapt_nettoyer_run "$run_dir" "${adapt_opts[@]}"
+      # Expansion défensive : sous set -u, "${arr[@]}" d'un tableau vide
+      # déclenche « unbound variable » sur bash < 4.4. L'idiome
+      # ${arr[@]+"${arr[@]}"} est un no-op sûr pour les tableaux vides.
+      adapt_nettoyer_run "$run_dir" ${adapt_opts[@]+"${adapt_opts[@]}"}
 
       if [[ -n "$saved_info" ]]; then
         eval "$saved_info"
