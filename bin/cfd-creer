@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-#  cfd-creer — Création de cas CFD avec environnement tmux (tmuxifier)
+#  cfd-creer — Create or resume a CFD case with a tmuxifier session
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-#  Ce script crée un nouveau cas CFD à partir d'un template et configure
-#  automatiquement un environnement tmux via tmuxifier avec plusieurs fenêtres
-#  pour le développement et l'analyse.
-#
-#  Usage: cfd-creer [OPTIONS]
+#  Usage: cfd-creer NAME [--template TEMPLATE] [--layout LAYOUT]
 #
 #  Auteur : KL
 #  Licence : MIT
@@ -19,71 +15,38 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 FRAMEWORK_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 source "$FRAMEWORK_DIR/lib/format.sh"
 
-title "CFD_FRAMEWORK - $(basename "$0")"
-
-# Default values
+# ── Defaults ─────────────────────────────────────────────────────────────────
 CASE_NAME=""
 TEMPLATE_NAME="TEMPLATE_CASE_DEFAULT"
-LAYOUT_ONLY=0
 LAYOUT_NAME="cfd-case"
 
 usage() {
   cat <<EOF
 
-╔═══════════════════════════════════════════════════════════════════════════════╗
-║           🚀 cfd-creer — Création de cas CFD avec tmuxifier                   ║
-╚═══════════════════════════════════════════════════════════════════════════════╝
-
 ${BOLD}USAGE:${RESET}
-  $(basename "$0") [OPTIONS]
+  $(basename "$0") NAME [OPTIONS]
 
 ${BOLD}DESCRIPTION:${RESET}
-  Crée un nouveau cas CFD à partir d'un template et configure automatiquement
-  un environnement tmux via tmuxifier avec plusieurs fenêtres organisées pour
-  le workflow CFD:
-  - SETUP: Configuration initiale et préparation
-  - CONFIGURATION: Édition des paramètres (02_PARAMS)
-  - RESULTAT: Visualisation des résultats (08_RESULTAT)
-  - DATA: Extraction et analyse des données (09_POST_TRAITEMENT/DATA)
-  - FIGURE: Génération de graphiques (split: scripts Python / figures)
+  Create a new CFD case from a template or open an existing one, then
+  launch a tmuxifier session with a pre-configured window layout.
+
+  If NAME does not exist, a directory is created and populated from the
+  selected template.  If NAME already exists, the script reuses it as-is.
+
+${BOLD}POSITIONAL:${RESET}
+  NAME                       Name of the case (becomes the directory and
+                             the tmux session name)
 
 ${BOLD}OPTIONS:${RESET}
-  --name <case_name>       Nom du cas à créer (sinon mode interactif)
-  --template <template>    Template à utiliser (défaut: TEMPLATE_CASE_DEFAULT)
-  --layout <layout_name>   Layout tmuxifier à utiliser (défaut: cfd-case)
-  --layout-only, -l        Recréer uniquement le layout tmux (cas existant)
-  -h, --help               Afficher cette aide
+  --template <template>      Template to copy (default: TEMPLATE_CASE_DEFAULT)
+  --layout  <layout>         Tmuxifier session layout (default: cfd-case)
+  --layouts <layout>         Alias for --layout
+  -h, --help                 Show this help
 
-${BOLD}VARIABLES D'ENVIRONNEMENT:${RESET}
-  CFD_FRAMEWORK            Chemin vers le framework CFD
-  CFD_BINARY_CMD           Commande à lancer automatiquement (fenêtre BINARY)
-  CFD_POST_CMD             Commande post-traitement automatique (fenêtre POST)
-
-${BOLD}EXEMPLES:${RESET}
-  # Créer un nouveau cas en mode interactif
-  cfd-creer
-
-  # Créer un cas nommé AIRFOIL_2D avec le template par défaut
-  cfd-creer --name AIRFOIL_2D
-
-  # Créer un cas avec un template spécifique
-  cfd-creer --name NACA0012 --template TEMPLATE_AIRFOIL
-
-  # Recréer le layout tmux pour un cas existant
-  cfd-creer --name EXISTING_CASE --layout-only
-
-  # Créer un cas et lancer automatiquement un solveur
-  CFD_BINARY_CMD="./run_solver.sh" cfd-creer --name AIRFOIL_2D
-
-${BOLD}LAYOUTS TMUXIFIER:${RESET}
-  Les layouts sont dans: \${CFD_FRAMEWORK}/tmuxifier-layouts/
-  - cfd-case : Layout par défaut pour workflow CFD
-
-${BOLD}TEMPLATES DISPONIBLES:${RESET}
-  Placez vos templates dans: \${CFD_FRAMEWORK}/templates/
-  - TEMPLATE_CASE_DEFAULT : Template par défaut
-  - TEMPLATE_AIRFOIL      : Template pour simulations d'ailes
-  - TEMPLATE_SIMPLE       : Template minimaliste
+${BOLD}EXAMPLES:${RESET}
+  cfd-creer AIRFOIL_2D
+  cfd-creer NACA0012 --template TEMPLATE_AIRFOIL
+  cfd-creer EXISTING_CASE --layout custom-layout
 
 EOF
 }
@@ -91,117 +54,101 @@ EOF
 # ── Parse arguments ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --name)
-      CASE_NAME="$2"
-      shift 2
-      ;;
     --template)
-      TEMPLATE_NAME="$2"
-      shift 2
-      ;;
-    --layout)
-      LAYOUT_NAME="$2"
-      shift 2
-      ;;
-    --layout-only|-l)
-      LAYOUT_ONLY=1
-      shift
-      ;;
+      TEMPLATE_NAME="$2"; shift 2 ;;
+    --layout|--layouts)
+      LAYOUT_NAME="$2"; shift 2 ;;
     -h|--help)
-      usage
-      exit 0
-      ;;
+      usage; exit 0 ;;
+    -*)
+      _error "Unknown option: $1"; usage; exit 1 ;;
     *)
-      _error "Unknown argument: $1"
-      usage
-      exit 1
+      if [[ -z "$CASE_NAME" ]]; then
+        CASE_NAME="$1"; shift
+      else
+        _error "Unexpected argument: $1"; usage; exit 1
+      fi
       ;;
   esac
 done
 
-# ── Dependency checks ────────────────────────────────────────────────────────
-if ! command -v tmux >/dev/null 2>&1; then
-  _error "tmux is not installed."
-  _note "Install: sudo apt install tmux"
-  exit 1
-fi
+# ── Normalize NAME (strip trailing slash from tab-completion) ─────────────────
+CASE_NAME="${CASE_NAME%/}"
 
-if ! command -v tmuxifier >/dev/null 2>&1; then
-  _error "tmuxifier is not installed."
-  _note "Install: https://github.com/jimeh/tmuxifier"
-  exit 1
-fi
-
-# ── Interactive name prompt ──────────────────────────────────────────────────
+# ── Validate NAME ────────────────────────────────────────────────────────────
 if [[ -z "$CASE_NAME" ]]; then
-  read -rp "Enter your case name: " CASE_NAME
-fi
-
-if [[ -z "$CASE_NAME" ]]; then
-  _error "Case name cannot be empty."
+  _error "Case name is required."
+  usage
   exit 1
 fi
 
 if [[ ! "$CASE_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
-  _error "Use only letters, numbers, dot, dash, underscore."
+  _error "Invalid case name. Use only letters, numbers, dot, dash, underscore."
   exit 1
 fi
 
-BASE_DIR="$(pwd -P)/$CASE_NAME"
+title "cfd-creer — $CASE_NAME"
 
-# ── Case creation or layout-only check ───────────────────────────────────────
-if [[ "$LAYOUT_ONLY" -eq 0 ]]; then
-  if [[ -d "$BASE_DIR" ]]; then
-    boite_error "Case directory $BASE_DIR already exists."
-    _note "Use --layout-only to recreate tmux layout for existing case."
+# ── Dependency checks ────────────────────────────────────────────────────────
+for cmd in tmux tmuxifier; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    _error "$cmd is not installed."
     exit 1
   fi
+done
 
-  mkdir -p "$BASE_DIR"
-  cd "$BASE_DIR"
+# ── Session collision check ──────────────────────────────────────────────────
+if tmux has-session -t "=$CASE_NAME" 2>/dev/null; then
+  _error "A tmux session named '$CASE_NAME' already exists."
+  _note  "Attach with:  tmux attach -t '$CASE_NAME'"
+  _note  "Or kill it:   tmux kill-session -t '$CASE_NAME'"
+  exit 1
+fi
 
-  git init -b main >/dev/null 2>&1 || git init >/dev/null
+# ── Resolve paths ────────────────────────────────────────────────────────────
+CASE_PATH="$(pwd -P)/$CASE_NAME"
+
+# ── Create or reuse ─────────────────────────────────────────────────────────
+if [[ -d "$CASE_PATH" ]]; then
+  CFD_CASE_IS_NEW=0
+  _info "Existing case detected: $CASE_PATH"
+else
+  CFD_CASE_IS_NEW=1
+  mkdir -p "$CASE_PATH"
 
   TEMPLATE_PATH="$FRAMEWORK_DIR/templates/$TEMPLATE_NAME"
   if [[ -d "$TEMPLATE_PATH" ]]; then
     if command -v rsync >/dev/null 2>&1; then
-      rsync -a --exclude=".git" "$TEMPLATE_PATH/" .
+      rsync -a --exclude=".git" "$TEMPLATE_PATH/" "$CASE_PATH/"
     else
-      cp -a "$TEMPLATE_PATH/." .
-      rm -rf ./.git 2>/dev/null || true
+      cp -a "$TEMPLATE_PATH/." "$CASE_PATH/"
+      rm -rf "$CASE_PATH/.git" 2>/dev/null || true
     fi
     _result "Template $TEMPLATE_NAME applied"
   else
-    _warn "Template $TEMPLATE_NAME not found in $FRAMEWORK_DIR/templates"
+    _warn "Template '$TEMPLATE_NAME' not found in $FRAMEWORK_DIR/templates/"
   fi
 
-  git add -A >/dev/null 2>&1 || true
-  git commit -m "Create case $CASE_NAME" >/dev/null 2>&1 || true
+  git -C "$CASE_PATH" init -b main >/dev/null 2>&1 || git -C "$CASE_PATH" init >/dev/null
+  git -C "$CASE_PATH" add -A >/dev/null 2>&1 || true
+  git -C "$CASE_PATH" commit -m "Initial commit — $CASE_NAME ($TEMPLATE_NAME)" >/dev/null 2>&1 || true
+  _result "Git repository initialized"
 
-  echo
-  _result "Case $CASE_NAME created at $BASE_DIR"
-else
-  if [[ ! -d "$BASE_DIR" ]]; then
-    _error "Case directory $BASE_DIR does not exist for layout-only mode."
-    exit 1
-  fi
-
-  _info "Layout-only mode for existing case: $CASE_NAME"
-
-  # Kill existing session so the layout is fully recreated
-  tmux kill-session -t "$CASE_NAME" 2>/dev/null || true
+  _result "Case $CASE_NAME created at $CASE_PATH"
 fi
 
 # ── Export variables for the tmuxifier layout ────────────────────────────────
-export CFD_CASE_NAME="$CASE_NAME"
-export CFD_BASE_DIR="$BASE_DIR"
+export CASE_NAME
+export CASE_PATH
 export CFD_TEMPLATE_NAME="$TEMPLATE_NAME"
+export CFD_CASE_IS_NEW
+export CFD_LAYOUT_DIR="$FRAMEWORK_DIR/tmuxifier-layouts"
 
-# ── Resolve and load the tmuxifier layout ────────────────────────────────────
-LAYOUT_FILE="$FRAMEWORK_DIR/tmuxifier-layouts/${LAYOUT_NAME}.session.sh"
+# ── Load the tmuxifier layout ───────────────────────────────────────────────
+LAYOUT_FILE="${CFD_LAYOUT_DIR}/${LAYOUT_NAME}.session.sh"
 if [[ ! -f "$LAYOUT_FILE" ]]; then
   _error "Layout file not found: $LAYOUT_FILE"
-  _note "Available layouts in: $FRAMEWORK_DIR/tmuxifier-layouts/"
+  _note "Available layouts in: $CFD_LAYOUT_DIR/"
   exit 1
 fi
 
