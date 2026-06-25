@@ -210,79 +210,153 @@ archive_process_params() {
 #    $2 source_root    — dossier source d'origine
 #    $3 copy_external  — "true" pour matérialiser les cibles externes
 
+# Retourne 0 si $path est sous $root (comparaison sur chemins normalisés).
+_archive_path_is_under() {
+  local path="$1" root="$2"
+  path="$(readlink -m "$path")"
+  root="$(readlink -m "$root")"
+  [[ "$path" == "$root" || "$path" == "$root"/* ]]
+}
+
+# Extrait le suffixe relatif de $path sous $root, ou "" si $path == $root.
+_archive_strip_prefix() {
+  local path="$1" root="$2"
+  path="$(readlink -m "$path")"
+  root="$(readlink -m "$root")"
+  if [[ "$path" == "$root" ]]; then
+    printf '%s' ''
+    return 0
+  fi
+  if [[ "$path" == "$root"/* ]]; then
+    printf '%s' "${path#"$root/"}"
+    return 0
+  fi
+  return 1
+}
+
+# Mappe une cible absolue vers son équivalent dans le staging.
+# Retourne 1 si la cible est hors du cas.
+_archive_map_target_to_staging() {
+  local target_norm="$1"
+  local src_log="$2" src_phys="$3" stg_log="$4" stg_phys="$5"
+  local suffix mapped
+
+  if suffix="$(_archive_strip_prefix "$target_norm" "$src_log")"; then
+    if [[ -z "$suffix" ]]; then
+      mapped="$(readlink -m "$stg_log")"
+    else
+      mapped="$(readlink -m "$stg_log/$suffix")"
+    fi
+    printf '%s' "$mapped"
+    return 0
+  fi
+  if [[ "$src_phys" != "$src_log" ]] && \
+     suffix="$(_archive_strip_prefix "$target_norm" "$src_phys")"; then
+    if [[ -z "$suffix" ]]; then
+      mapped="$(readlink -m "$stg_phys")"
+    else
+      mapped="$(readlink -m "$stg_phys/$suffix")"
+    fi
+    printf '%s' "$mapped"
+    return 0
+  fi
+
+  if suffix="$(_archive_strip_prefix "$target_norm" "$stg_log")"; then
+    if [[ -z "$suffix" ]]; then
+      mapped="$(readlink -m "$stg_log")"
+    else
+      mapped="$(readlink -m "$stg_log/$suffix")"
+    fi
+    printf '%s' "$mapped"
+    return 0
+  fi
+  if [[ "$stg_phys" != "$stg_log" ]] && \
+     suffix="$(_archive_strip_prefix "$target_norm" "$stg_phys")"; then
+    if [[ -z "$suffix" ]]; then
+      mapped="$(readlink -m "$stg_phys")"
+    else
+      mapped="$(readlink -m "$stg_phys/$suffix")"
+    fi
+    printf '%s' "$mapped"
+    return 0
+  fi
+
+  return 1
+}
+
 archive_relativiser_liens_symboliques() {
   local staging_root="$1"
   local source_root="$2"
   local copy_external="${3:-false}"
 
   [[ -d "$staging_root" ]] || return 0
+  [[ -d "$source_root" ]]  || { _warn "Source introuvable pour relativisation : $source_root"; return 0; }
 
-  local staging_abs source_abs
-  staging_abs="$(cd "$staging_root" && pwd)"
-  source_abs="$(cd "$source_root" && pwd)"
+  local staging_log staging_phys source_log source_phys
+  staging_log="$(cd "$staging_root" && pwd)"
+  staging_phys="$(cd "$staging_root" && pwd -P)"
+  source_log="$(cd "$source_root" && pwd)"
+  source_phys="$(cd "$source_root" && pwd -P)"
 
   local converted=0 already_rel=0
   local outside_kept=0 outside_copied=0 outside_broken=0
   local broken=0
 
   while IFS= read -r -d '' link; do
-    local target
-    target="$(readlink "$link")"
+    local target target_norm mapped rel rel_link link_dir
 
-    # Lien déjà relatif : on ne touche pas.
+    target="$(readlink -n "$link")"
+
     if [[ "$target" != /* ]]; then
-      ((already_rel++))
+      already_rel=$((already_rel + 1))
       continue
     fi
 
-    # Normaliser d'abord pour éliminer // et trailing slashes.
-    local target_norm
-    target_norm="$(readlink -m "$target" 2>/dev/null || echo "$target")"
-
-    # Mapper vers l'équivalent dans le staging si la cible pointe vers le
-    # dossier source (cas typique après cp -a).
-    local mapped=""
-    if [[ "$target_norm" == "$source_abs" || "$target_norm" == "$source_abs"/* ]]; then
-      mapped="${staging_abs}${target_norm#"$source_abs"}"
-    elif [[ "$target_norm" == "$staging_abs" || "$target_norm" == "$staging_abs"/* ]]; then
-      mapped="$target_norm"
+    if [[ -e "$target" || -L "$target" ]]; then
+      target_norm="$(readlink -f "$target" 2>/dev/null || readlink -m "$target")"
     else
-      # ── Cible HORS du cas ────────────────────────────────────────────────
-      local rel_link="${link#"$staging_abs"/}"
+      target_norm="$(readlink -m "$target" 2>/dev/null || printf '%s' "$target")"
+    fi
+
+    if mapped="$(_archive_map_target_to_staging \
+          "$target_norm" "$source_log" "$source_phys" "$staging_log" "$staging_phys")"; then
+      :
+    else
+      rel_link="${link#"$staging_log"/}"
+      [[ "$rel_link" == "$link" ]] && rel_link="${link#"$staging_phys"/}"
+
       if [[ "$copy_external" == true ]]; then
-        if [[ ! -e "$target_norm" ]]; then
+        if [[ ! -e "$target_norm" && ! -L "$target_norm" ]]; then
           _warn "Lien cassé — impossible de copier : $rel_link → $target"
-          ((outside_broken++))
+          outside_broken=$((outside_broken + 1))
           continue
         fi
         _warn "Lien hors cas → copie matérialisée : $rel_link ← $target"
         rm -f "$link"
-        # cp -aL : préserve perms/attrs et déréférence la cible.
         if cp -aL --no-preserve=ownership "$target_norm" "$link"; then
-          ((outside_copied++))
+          outside_copied=$((outside_copied + 1))
         else
           _warn "Échec de la copie : $rel_link ← $target"
-          ((outside_broken++))
+          outside_broken=$((outside_broken + 1))
         fi
       else
         _warn "Lien hors cas conservé absolu (non portable) : $rel_link → $target"
-        ((outside_kept++))
+        outside_kept=$((outside_kept + 1))
       fi
       continue
     fi
 
-    local link_dir rel
     link_dir="$(dirname "$link")"
     if ! rel="$(realpath -m --relative-to="$link_dir" "$mapped" 2>/dev/null)"; then
-      ((broken++))
+      broken=$((broken + 1))
       _warn "Impossible de relativiser : $link → $target"
       continue
     fi
 
     ln -sfn "$rel" "$link"
-    ((converted++))
-    _debug "Lien relativisé : ${link#"$staging_abs"/} → $rel"
-  done < <(find "$staging_abs" -type l -print0)
+    converted=$((converted + 1))
+    _debug "Lien relativisé : ${link#"$staging_log"/} → $rel"
+  done < <(find "$staging_log" -type l -print0)
 
   _info "Liens symboliques : $converted relativisés, $already_rel déjà relatifs"
   if (( outside_kept > 0 )); then
