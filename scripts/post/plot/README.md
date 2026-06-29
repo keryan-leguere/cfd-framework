@@ -664,6 +664,136 @@ Pitfalls:
 
 ---
 
+## Batch plotting
+
+Dictionary-driven batch plotting for multi-source curve comparisons (CFD vs analytics vs experiment) at every flight point.
+
+### Input dictionaries
+
+**`configuration_dict`** — one entry per curve/source:
+
+```python
+configuration_dict = {
+    "KW": {
+        "name": "KW",
+        "label": r"$k$-$\omega$",
+        "dir": "/path/to/data",
+        "CDG": [0, 0, 0],
+        "df": kw_df,          # pandas DataFrame (required)
+        "color": "C0",        # optional — forwarded to plot_line
+    },
+}
+```
+
+**`y_axis_dict`** — QOIs to plot on the y-axis:
+
+```python
+y_axis_dict = {
+    "CN": {
+        "col_name": "CN",
+        "literal_name": "",
+        "symbol": r"$C_N$",
+        "unit": "-",
+        "y_save_name": "CN",
+    },
+}
+```
+
+**`sweep_dict`** — sweep / PDV variables (x-axis of each polar). One polar is generated per entry:
+
+```python
+sweep_dict = {
+    "alpha": {
+        "col_name": "alpha",
+        "literal_name": "Angle of attack",
+        "symbol": r"$\alpha$",
+        "unit": "deg",
+        "x_save_name": "alpha",
+        "polar_prefix": "ALPHA_POLAR",
+        "label": r"$\alpha$",
+        "save_name": "ALPHA",
+    },
+    "beta": {
+        "col_name": "beta",
+        "symbol": r"$\beta$",
+        "unit": "deg",
+        "x_save_name": "beta",
+        "polar_prefix": "BETA_POLAR",
+        "label": r"$\beta$",
+        "save_name": "BETA",
+    },
+}
+```
+
+For each sweep variable *s*, the module plots y vs. *s* at every flight point while holding all **other** sweep variables fixed at each of their unique values (cross-sweep / combinatorial PDV). Sweep keys listed in ``flight_point_dict`` are automatically excluded from the flight point.
+
+Legacy ``x_axis_dict`` is still accepted (treated as a single-entry ``sweep_dict``).
+
+Axis labels are built as ``{literal_name}, {symbol} ({unit})``. Set ``literal_name=""`` to omit the name and start with the symbol (e.g. ``$C_N$ (-)``).
+
+Figure titles use **symbol and unit only**, plus context metadata (flight point + fixed sweeps):
+
+```
+$C_N$ (-) vs. $\alpha$ (deg) (M=0.8, Z=8000, $\beta$=2, $\delta_L$=$\delta_M$=$\delta_N$=0)
+```
+
+**`flight_point_dict`** — fixed parameters that define a flight point (sweep keys are excluded automatically):
+
+```python
+flight_point_dict = {
+    "Mach": {"values": [], "label": "M", "save_name": "M"},
+    "Altitude_m": {"values": [], "label": "Z", "save_name": "Z"},
+    "DL": {"values": [], "label": r"$\delta_L$", "save_name": "DL"},
+    "DM": {"values": [], "label": r"$\delta_M$", "save_name": "DM"},
+    "DN": {"values": [], "label": r"$\delta_N$", "save_name": "DN"},
+}
+# ``label`` — display name used in figure titles (may contain LaTeX).
+# ``save_name`` — filesystem-safe name used in output directory segments.
+# Empty ``values`` lists are auto-filled from the concatenated configuration data.
+```
+
+### Usage
+
+```python
+from plotting import batch_plot
+
+written = batch_plot(
+    configuration_dict=configuration_dict,
+    y_axis_dict=y_axis_dict,
+    sweep_dict=sweep_dict,
+    flight_point_dict=flight_point_dict,
+    output_base="output/study",
+    style_profile="paper",
+    formats=("svg",),
+)
+```
+
+Output paths use a polar prefix, then flight-point and fixed-sweep directory segments:
+
+```
+output/study/ALPHA_POLAR/M_0.8/Z_8000/BETA_2/CN_vs_alpha.svg
+output/study/BETA_POLAR/M_0.8/Z_8000/ALPHA_3/CN_vs_beta.svg
+```
+
+Single-value parameters are omitted from the path. Fixed sweep segments appear only when the held sweep variable takes more than one unique value in the data.
+
+### Flexibility hooks
+
+- Per-source styling: any extra key in a configuration entry (``color``, ``linestyle``, ``marker``, …) is forwarded to `plot_line`.
+- `include_curve(source_key, flight_point, x_key, y_key) -> bool` — skip sources for specific plots.
+- `on_before_save(fig, ax, context)` — modify a figure before export (add a curve, tweak colors, etc.).
+
+### E2E example
+
+```bash
+cd scripts/post/plot
+PYTHONPATH=. python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py
+```
+
+See `tests/E2E_MULTIPLE_PLOTTING/` for sample CSV fixtures (`kw.csv`, `sa.csv`, `exp.csv`) and the driver script.
+
+---
+
 ## Dependencies
 
 - **Required**: `matplotlib`, `numpy`
@@ -682,6 +812,7 @@ scripts/post/plot/
         field2d.py             # 2D scalar field plotting
         vector2d.py            # 2D vector field plotting
         composite2d.py         # Combined scalar + vector plots
+        batch.py               # Batch curve plotting for multi-source comparisons
         prep.py                # Data reshaping, pivoting, slicing
         _grid.py               # Internal grid validators
         styles/

@@ -53,7 +53,22 @@ from .composite2d import (
     plot_contour_quiver,
 )
 
-# --- Data preparation --------------------------------------------------------
+# --- Batch curve plotting ----------------------------------------------------
+from .batch import (
+    BatchPlotContext,
+    DEFAULT_FLIGHT_POINT_KEYS,
+    batch_plot,
+    build_output_path,
+    discover_flight_point_values,
+    format_axis_label,
+    format_axis_title_label,
+    format_flight_point_title_suffix,
+    format_plot_title,
+    iter_fixed_sweep_combinations,
+    iter_flight_points,
+    varying_flight_keys,
+)
+
 from .prep import (
     dataframe_to_grid,
     dataframe_to_masked_grid,
@@ -89,6 +104,19 @@ __all__ = [
     "subsample_vectors",
     # 2D composite
     "plot_contour_quiver",
+    # Batch curve plotting
+    "BatchPlotContext",
+    "DEFAULT_FLIGHT_POINT_KEYS",
+    "batch_plot",
+    "build_output_path",
+    "discover_flight_point_values",
+    "format_axis_label",
+    "format_axis_title_label",
+    "format_flight_point_title_suffix",
+    "format_plot_title",
+    "iter_fixed_sweep_combinations",
+    "iter_flight_points",
+    "varying_flight_keys",
     # Data preparation
     "dataframe_to_grid",
     "dataframe_to_masked_grid",
