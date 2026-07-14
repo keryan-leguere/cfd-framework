@@ -57,7 +57,9 @@ from .composite2d import (
 from .batch import (
     BatchPlotContext,
     DEFAULT_FLIGHT_POINT_KEYS,
+    batch_compare_flight_points,
     batch_plot,
+    build_compare_output_path,
     build_output_path,
     discover_flight_point_values,
     format_axis_label,
@@ -107,7 +109,9 @@ __all__ = [
     # Batch curve plotting
     "BatchPlotContext",
     "DEFAULT_FLIGHT_POINT_KEYS",
+    "batch_compare_flight_points",
     "batch_plot",
+    "build_compare_output_path",
     "build_output_path",
     "discover_flight_point_values",
     "format_axis_label",

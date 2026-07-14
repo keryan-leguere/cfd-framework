@@ -731,25 +731,33 @@ Legacy ``x_axis_dict`` is still accepted (treated as a single-entry ``sweep_dict
 
 Axis labels are built as ``{literal_name}, {symbol} ({unit})``. Set ``literal_name=""`` to omit the name and start with the symbol (e.g. ``$C_N$ (-)``).
 
-Figure titles use **symbol and unit only**, plus context metadata (flight point + fixed sweeps):
+Figure titles use **symbols only** for Y vs X. Context metadata in the brackets
+appends each parameter's ``unit`` when set (``-`` / empty units are omitted):
 
 ```
-$C_N$ (-) vs. $\alpha$ (deg) (M=0.8, Z=8000, $\beta$=2, $\delta_L$=$\delta_M$=$\delta_N$=0)
+$C_N$ vs. $\alpha$ (M=0.8, Z=8000 m, $\beta$=2°, $\delta_L$=$\delta_M$=$\delta_N$=0°)
 ```
 
-**`flight_point_dict`** — fixed parameters that define a flight point (sweep keys are excluded automatically):
+**`flight_point_dict`** — fixed parameters that define a flight point.
+Any key that also appears in ``sweep_dict`` is **dropped automatically**, so you
+can keep a full reusable template (Mach, altitude, alpha, beta, deflections, …)
+and change only the sweep choice per study:
 
 ```python
 flight_point_dict = {
-    "Mach": {"values": [], "label": "M", "save_name": "M"},
-    "Altitude_m": {"values": [], "label": "Z", "save_name": "Z"},
-    "DL": {"values": [], "label": r"$\delta_L$", "save_name": "DL"},
-    "DM": {"values": [], "label": r"$\delta_M$", "save_name": "DM"},
-    "DN": {"values": [], "label": r"$\delta_N$", "save_name": "DN"},
+    "Mach": {"values": [], "label": "M", "save_name": "M", "unit": "-"},
+    "Altitude_m": {"values": [], "label": "Z", "save_name": "Z", "unit": "m"},
+    "alpha": {"values": [], "label": r"$\alpha$", "save_name": "ALPHA", "unit": "°"},
+    "beta": {"values": [], "label": r"$\beta$", "save_name": "BETA", "unit": "°"},
+    "DL": {"values": [], "label": r"$\delta_L$", "save_name": "DL", "unit": "°"},
+    "DM": {"values": [], "label": r"$\delta_M$", "save_name": "DM", "unit": "°"},
+    "DN": {"values": [], "label": r"$\delta_N$", "save_name": "DN", "unit": "°"},
 }
 # ``label`` — display name used in figure titles (may contain LaTeX).
 # ``save_name`` — filesystem-safe name used in output directory segments.
+# ``unit`` — optional; appended to values in the title brackets (``-`` / empty omitted).
 # Empty ``values`` lists are auto-filled from the concatenated configuration data.
+# If ``alpha`` / ``beta`` are in ``sweep_dict``, they are not used as flight-point axes.
 ```
 
 ### Usage
@@ -765,6 +773,10 @@ written = batch_plot(
     output_base="output/study",
     style_profile="paper",
     formats=("svg",),
+    report=True,       # print_file_report summary (default)
+    verbose=False,     # Rich plan + progress bar with ETA
+    dry_run=False,     # plan paths without writing
+    n_jobs=1,          # 1=sequential, -1=all CPUs
 )
 ```
 
@@ -777,17 +789,146 @@ output/study/BETA_POLAR/M_0.8/Z_8000/ALPHA_3/CN_vs_beta.svg
 
 Single-value parameters are omitted from the path. Fixed sweep segments appear only when the held sweep variable takes more than one unique value in the data.
 
+After a real run with ``report=True``, exported files are summarised with `print_file_report`. Use ``dry_run=True`` to preview the same path list without creating figures. Set ``n_jobs=-1`` (or any ``n_jobs > 1``) to render figures in a process pool; pyplot is not thread-safe, so parallelism uses processes.
+
+With ``verbose=True``, the CLI prints a **Batch plan** panel (sources, Y axes, unique sweep / flight-point value lists, expected figure count, parallel worker setup), then a Rich progress bar with elapsed time and ETA while rendering. Rich already provides ETA, so ``tqdm`` is not required; a plain-text plan/progress fallback is used if Rich is not installed.
+
+### Compare flight points (subplots)
+
+To put several named flight points side-by-side on the same polar, use
+``batch_compare_flight_points``. Each polar / fixed-sweep / Y combination becomes
+**one figure** with one subplot panel per entry (at most **3 columns per row**):
+
+```python
+from plotting import batch_compare_flight_points
+
+written = batch_compare_flight_points(
+    configuration_dict=configuration_dict,
+    y_axis_dict=y_axis_dict,
+    sweep_dict=sweep_dict,
+    flight_point_dict=flight_point_dict,  # labels/units; sweep keys still auto-excluded
+    compare_flight_points={
+        "design": {"Mach": 0.8, "Altitude_m": 8000, "DL": 0, "DM": 0, "DN": 0},
+        "off_design": {"Mach": 0.7, "Altitude_m": 5000, "DL": 0, "DM": 0, "DN": 0},
+    },
+    output_base="output/compare",
+    max_cols=3,  # 1–3 panels per row
+    verbose=True,
+)
+```
+
+Layout / titles:
+
+- Figure title (suptitle): ``$C_N$ vs. $\alpha$ ($\beta$=2°)`` — fixed-sweep context only.
+- Panel title: ``design (M=0.8, Z=8000 m, …)``.
+- Paths: ``output/compare/ALPHA_POLAR/COMPARE/BETA_2/CN_vs_alpha.svg``.
+
+Hooks work per panel: ``context.compare_name`` / ``context.panel_index`` identify the
+subplot; ``context.flight_point`` is that panel's point.
+
 ### Flexibility hooks
 
-- Per-source styling: any extra key in a configuration entry (``color``, ``linestyle``, ``marker``, …) is forwarded to `plot_line`.
-- `include_curve(source_key, flight_point, x_key, y_key) -> bool` — skip sources for specific plots.
-- `on_before_save(fig, ax, context)` — modify a figure before export (add a curve, tweak colors, etc.).
+- **Per-source styling**: any extra key in a configuration entry (``color``, ``linestyle``, ``marker``, …) is forwarded to `plot_line`.
+- **`include_curve(source_key, flight_point, x_key, y_key, fixed_sweeps) -> bool`** — skip sources for specific plots.
+- **`on_before_save(fig, ax, context)`** — modify a figure before export (add a curve, tweak colors, etc.). ``context`` is a `BatchPlotContext`.
+
+When ``n_jobs > 1``, ``on_before_save`` must be a picklable top-level function (lambdas fall back to sequential rendering with a warning). ``include_curve`` runs during job enumeration in the parent process, so it does not need to be picklable.
+
+```python
+def include_curve(source_key, flight_point, x_key, y_key, fixed_sweeps):
+    if y_key == "CA" and source_key == "EXP":
+        return False
+    return True
+
+def on_before_save(fig, ax, context):
+    ax.axhline(0.0, color="0.6", lw=0.6, zorder=0)
+    if context.y_key == "CN":
+        ax.set_ylim(bottom=0.0)
+
+written = batch_plot(
+    configuration_dict=configuration_dict,
+    y_axis_dict=y_axis_dict,
+    sweep_dict=sweep_dict,
+    flight_point_dict=flight_point_dict,
+    output_base="output/study",
+    include_curve=include_curve,
+    on_before_save=on_before_save,
+    verbose=True,
+    report=True,
+    n_jobs=-1,
+)
+```
+
+#### Targeting figures with `on_before_save`
+
+Every figure passes a `BatchPlotContext`. Branch on its fields — do nothing when
+the figure is not of interest:
+
+| Field | Meaning |
+|-------|---------|
+| `context.y_key` | Y-axis dict key (e.g. ``"CN"``, ``"CA"``) |
+| `context.sweep_key` | Sweep / polar x-axis key (e.g. ``"alpha"``, ``"beta"``) |
+| `context.flight_point` | Fixed flight parameters for this figure (e.g. ``{"Mach": 0.8, "Altitude_m": 8000, …}``) |
+| `context.fixed_sweeps` | Other sweep variables held fixed (e.g. ``{"beta": 2.0}`` on an alpha polar) |
+| `context.polar_prefix` | Output folder prefix (e.g. ``"ALPHA_POLAR"``) |
+| `context.output_path` | Stem path where the figure will be saved |
+| `context.x_spec` / `context.y_spec` | Full axis specs (labels, units, …) |
+
+```python
+def on_before_save(fig, ax, context):
+    """Illustrative hook: apply edits globally, or only to selected figures."""
+    fp = context.flight_point
+    fixed = context.fixed_sweeps
+
+    # --- ALL figures -------------------------------------------------------
+    ax.axhline(0.0, color="0.7", lw=0.5, zorder=0)
+
+    # --- one Y variable (every polar / flight point that plots CN) ---------
+    if context.y_key == "CN":
+        ax.set_ylim(bottom=0.0)
+
+    # --- one sweep / polar (every ALPHA_POLAR figure, any Y / flight point) -
+    if context.sweep_key == "alpha":
+        ax.set_xlabel(r"Angle of attack $\alpha$ (°)")  # override default
+
+    # --- one flight point (any Y / sweep at that condition) ----------------
+    if fp.get("Mach") == 0.8 and fp.get("Altitude_m") == 8000.0:
+        ax.set_title(ax.get_title() + r"  [design point]")
+
+    # --- combine: CN vs alpha at M=0.8, Z=8000, with beta fixed to 2 -------
+    if (
+        context.y_key == "CN"
+        and context.sweep_key == "alpha"
+        and fp.get("Mach") == 0.8
+        and fp.get("Altitude_m") == 8000.0
+        and fixed.get("beta") == 2.0
+    ):
+        ax.axvline(4.0, color="C3", ls="--", lw=0.8, label=r"$\alpha$ limit")
+        # re-build legend after adding a new labelled artist
+        from plotting import make_legend
+        make_legend(ax)
+
+    # --- add an extra curve on one specific plot only ----------------------
+    if context.y_key == "CA" and context.sweep_key == "beta" and fp.get("Mach") == 0.7:
+        ax.plot([0, 2, 4], [0.35, 0.33, 0.30], "k:", label="hand fit")
+        from plotting import make_legend
+        make_legend(ax)
+```
+
+Tips:
+
+- Compare floats carefully (fixture values are often exact ``0.8`` / ``8000.0``; use a tolerance if needed).
+- Prefer ``context.sweep_key`` over ``polar_prefix`` for branching — the key is stable API, the prefix is a path convenience.
+- ``include_curve`` is better when you want to *omit a source series*; ``on_before_save`` is for axes-level edits and extra artists after the standard curves are drawn.
 
 ### E2E example
 
 ```bash
 cd scripts/post/plot
 PYTHONPATH=. python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py
+PYTHONPATH=. python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --dry-run --verbose
+PYTHONPATH=. python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --n-jobs -1
+PYTHONPATH=. python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --demo-hooks
 ```
 
 See `tests/E2E_MULTIPLE_PLOTTING/` for sample CSV fixtures (`kw.csv`, `sa.csv`, `exp.csv`) and the driver script.

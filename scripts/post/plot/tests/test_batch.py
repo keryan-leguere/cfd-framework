@@ -13,7 +13,9 @@ import pandas as pd
 import pytest
 
 from plotting import (
+    batch_compare_flight_points,
     batch_plot,
+    build_compare_output_path,
     build_output_path,
     discover_flight_point_values,
     format_axis_label,
@@ -206,13 +208,13 @@ class TestFormatAxisLabel:
 
 
 class TestFormatAxisTitleLabel:
-    def test_uses_symbol_and_unit_only(self):
+    def test_uses_symbol_only_without_unit(self):
         spec = {
             "literal_name": "Normal force coefficient",
             "symbol": r"$C_N$",
             "unit": "-",
         }
-        assert format_axis_title_label(spec, "CN") == "$C_N$ (-)"
+        assert format_axis_title_label(spec, "CN") == "$C_N$"
 
 
 class TestFormatFlightPointTitleSuffix:
@@ -228,15 +230,18 @@ class TestFormatFlightPointTitleSuffix:
         keys = ["Mach", "Altitude_m", "beta", "DL", "DM", "DN"]
         specs = {
             "Mach": {"label": "M"},
-            "Altitude_m": {"label": "H"},
-            "beta": {"label": r"$\beta$"},
-            "DL": {"label": r"$\delta_L$"},
-            "DM": {"label": r"$\delta_M$"},
-            "DN": {"label": r"$\delta_N$"},
+            "Altitude_m": {"label": "H", "unit": "m"},
+            "beta": {"label": r"$\beta$", "unit": "°"},
+            "DL": {"label": r"$\delta_L$", "unit": "°"},
+            "DM": {"label": r"$\delta_M$", "unit": "°"},
+            "DN": {"label": r"$\delta_N$", "unit": "°"},
         }
         suffix = format_flight_point_title_suffix(flight_point, keys, specs)
 
-        assert suffix == r"M=0.8, H=8000, $\beta$=0, $\delta_L$=$\delta_M$=$\delta_N$=0"
+        assert (
+            suffix
+            == r"M=0.8, H=8000 m, $\beta$=0°, $\delta_L$=$\delta_M$=$\delta_N$=0°"
+        )
 
 
 class TestFormatPlotTitle:
@@ -261,11 +266,11 @@ class TestFormatPlotTitle:
         }
         specs = {
             "Mach": {"label": "M"},
-            "Altitude_m": {"label": "H"},
-            "beta": {"label": r"$\beta$"},
-            "DL": {"label": r"$\delta_L$"},
-            "DM": {"label": r"$\delta_M$"},
-            "DN": {"label": r"$\delta_N$"},
+            "Altitude_m": {"label": "H", "unit": "m"},
+            "beta": {"label": r"$\beta$", "unit": "deg"},
+            "DL": {"label": r"$\delta_L$", "unit": "deg"},
+            "DM": {"label": r"$\delta_M$", "unit": "deg"},
+            "DN": {"label": r"$\delta_N$", "unit": "deg"},
         }
         title = format_plot_title(
             y_spec,
@@ -279,8 +284,8 @@ class TestFormatPlotTitle:
 
         assert (
             title
-            == r"$C_N$ (-) vs. $\alpha$ (deg) "
-            r"(M=0.8, H=8000, $\beta$=0, $\delta_L$=$\delta_M$=$\delta_N$=0)"
+            == r"$C_N$ vs. $\alpha$ "
+            r"(M=0.8, H=8000 m, $\beta$=0 deg, $\delta_L$=$\delta_M$=$\delta_N$=0 deg)"
         )
 
 
@@ -331,12 +336,49 @@ class TestBatchPlot:
             flight_point_dict=flight_point_dict,
             output_base=tmp_path,
             formats=("svg",),
+            report=False,
         )
 
         assert len(written) == 2
         assert all("ALPHA_POLAR" in str(path) for path in written)
         assert any("M_0.8" in str(path) for path in written)
         assert any("M_0.85" in str(path) for path in written)
+
+    def test_flight_point_dict_can_include_sweep_keys(self, sample_configuration_dict, tmp_path):
+        """Sweep keys listed in flight_point_dict are ignored as flight axes."""
+        y_axis_dict = {"CN": {"col_name": "CN", "y_save_name": "CN"}}
+        sweep_dict = {
+            "alpha": {
+                "col_name": "alpha",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+            }
+        }
+        # Full reusable template including the sweep variable itself.
+        flight_point_dict = {
+            "Mach": {"values": [], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [], "label": "H", "save_name": "H"},
+            "alpha": {"values": [], "label": r"$\alpha$", "save_name": "ALPHA"},
+            "beta": {"values": [], "label": r"$\beta$", "save_name": "BETA"},
+            "DL": {"values": [], "label": "DL", "save_name": "DL"},
+            "DM": {"values": [], "label": "DM", "save_name": "DM"},
+            "DN": {"values": [], "label": "DN", "save_name": "DN"},
+        }
+
+        written = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+        )
+
+        assert len(written) == 2
+        # alpha is the polar x-axis, not a flight-point directory segment
+        assert not any("ALPHA_" in path.name for path in written)
+        assert all("ALPHA_POLAR" in str(path) for path in written)
 
     def test_cross_sweep_generates_both_polars(self, tmp_path):
         rows = [
@@ -386,6 +428,7 @@ class TestBatchPlot:
             flight_point_dict=flight_point_dict,
             output_base=tmp_path,
             formats=("svg",),
+            report=False,
         )
 
         # 1 flight point × 2 beta slices × 1 y (ALPHA) + 1 flight × 3 alpha slices × 1 y (BETA)
@@ -414,7 +457,201 @@ class TestBatchPlot:
             flight_point_dict=flight_point_dict,
             output_base=tmp_path,
             formats=("svg",),
+            report=False,
             include_curve=lambda source, *_args: source == "KW",
         )
 
         assert len(written) == 2
+
+    def test_on_before_save_receives_context(self, sample_configuration_dict, tmp_path):
+        y_axis_dict = {"CN": {"col_name": "CN", "y_save_name": "CN"}}
+        sweep_dict = {
+            "alpha": {
+                "col_name": "alpha",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+            }
+        }
+        flight_point_dict = {
+            "Mach": {"values": [], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [], "label": "H", "save_name": "H"},
+            "beta": {"values": [], "label": "beta", "save_name": "BETA"},
+            "DL": {"values": [], "label": "DL", "save_name": "DL"},
+            "DM": {"values": [], "label": "DM", "save_name": "DM"},
+            "DN": {"values": [], "label": "DN", "save_name": "DN"},
+        }
+        seen: list[str] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append(context.y_key)
+            ax.axhline(0.0, color="0.5", lw=0.5)
+
+        written = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            on_before_save=on_before_save,
+        )
+
+        assert len(written) == 2
+        assert seen == ["CN", "CN"]
+
+    def test_dry_run_returns_paths_without_writing(
+        self, sample_configuration_dict, tmp_path, capsys
+    ):
+        y_axis_dict = {"CN": {"col_name": "CN", "y_save_name": "CN"}}
+        sweep_dict = {
+            "alpha": {
+                "col_name": "alpha",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+            }
+        }
+        flight_point_dict = {
+            "Mach": {"values": [], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [], "label": "H", "save_name": "H"},
+            "beta": {"values": [], "label": "beta", "save_name": "BETA"},
+            "DL": {"values": [], "label": "DL", "save_name": "DL"},
+            "DM": {"values": [], "label": "DM", "save_name": "DM"},
+            "DN": {"values": [], "label": "DN", "save_name": "DN"},
+        }
+
+        planned = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=tmp_path,
+            formats=("svg",),
+            dry_run=True,
+            verbose=True,
+            report=True,
+        )
+
+        assert len(planned) == 2
+        assert all(path.suffix == ".svg" for path in planned)
+        assert not any(path.exists() for path in planned)
+        assert list(tmp_path.iterdir()) == []
+        captured = capsys.readouterr()
+        assert "Batch plan" in captured.out or "=== Batch plan ===" in captured.out
+        assert "Figures" in captured.out
+        assert "Dry run complete" in captured.out
+        assert "Flight" in captured.out
+        assert "alpha" in captured.out
+
+    def test_n_jobs_matches_sequential(self, sample_configuration_dict, tmp_path):
+        y_axis_dict = {"CN": {"col_name": "CN", "y_save_name": "CN"}}
+        sweep_dict = {
+            "alpha": {
+                "col_name": "alpha",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+            }
+        }
+        flight_point_dict = {
+            "Mach": {"values": [], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [], "label": "H", "save_name": "H"},
+            "beta": {"values": [], "label": "beta", "save_name": "BETA"},
+            "DL": {"values": [], "label": "DL", "save_name": "DL"},
+            "DM": {"values": [], "label": "DM", "save_name": "DM"},
+            "DN": {"values": [], "label": "DN", "save_name": "DN"},
+        }
+        out_seq = tmp_path / "seq"
+        out_par = tmp_path / "par"
+
+        seq = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=out_seq,
+            formats=("svg",),
+            report=False,
+            n_jobs=1,
+        )
+        par = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=out_par,
+            formats=("svg",),
+            report=False,
+            n_jobs=2,
+        )
+
+        assert {p.relative_to(out_seq) for p in seq} == {p.relative_to(out_par) for p in par}
+        assert all(p.exists() for p in seq)
+        assert all(p.exists() for p in par)
+
+
+class TestBatchCompareFlightPoints:
+    def test_compare_builds_subplot_figures(self, sample_configuration_dict, tmp_path):
+        y_axis_dict = {"CN": {"col_name": "CN", "y_save_name": "CN"}}
+        sweep_dict = {
+            "alpha": {
+                "col_name": "alpha",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+                "save_name": "ALPHA",
+            }
+        }
+        flight_point_dict = {
+            "Mach": {"values": [], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [], "label": "H", "save_name": "H"},
+            "alpha": {"values": [], "label": r"$\alpha$", "save_name": "ALPHA"},
+            "beta": {"values": [], "label": "beta", "save_name": "BETA"},
+            "DL": {"values": [], "label": "DL", "save_name": "DL"},
+            "DM": {"values": [], "label": "DM", "save_name": "DM"},
+            "DN": {"values": [], "label": "DN", "save_name": "DN"},
+        }
+        compare_flight_points = {
+            "design": {
+                "Mach": 0.80,
+                "Altitude_m": 8000,
+                "beta": 0.0,
+                "DL": 0.0,
+                "DM": 0.0,
+                "DN": 0.0,
+            },
+            "high": {
+                "Mach": 0.85,
+                "Altitude_m": 10000,
+                "beta": 0.0,
+                "DL": 0.0,
+                "DM": 0.0,
+                "DN": 0.0,
+            },
+        }
+
+        written = batch_compare_flight_points(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=y_axis_dict,
+            compare_flight_points=compare_flight_points,
+            sweep_dict=sweep_dict,
+            flight_point_dict=flight_point_dict,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            max_cols=3,
+        )
+
+        assert len(written) == 1
+        assert "COMPARE" in str(written[0])
+        assert written[0].exists()
+
+    def test_build_compare_output_path(self):
+        path = build_compare_output_path(
+            "/tmp/out",
+            {"beta": 2.0},
+            ["beta"],
+            "ALPHA_POLAR",
+            "alpha",
+            "CN",
+            {"beta": {"save_name": "BETA"}},
+        )
+        assert path == Path("/tmp/out/ALPHA_POLAR/COMPARE/BETA_2/CN_vs_alpha")
