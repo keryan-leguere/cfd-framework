@@ -1,2 +1,0 @@
-[console_scripts]
-cfd-stats = cfd_stats.cli:main

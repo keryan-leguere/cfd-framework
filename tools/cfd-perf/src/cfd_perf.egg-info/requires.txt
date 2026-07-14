@@ -1,9 +1,0 @@
-numpy
-pandas
-matplotlib
-rich
-
-[dev]
-pytest
-ruff
-mypy
