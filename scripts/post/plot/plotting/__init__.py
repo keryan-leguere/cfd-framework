@@ -27,6 +27,7 @@ from .mpl_template import (
     set_suptitle,
     set_title,
     style_context,
+    sync_axes_limits,
     use_style,
 )
 
@@ -140,6 +141,7 @@ __all__ = [
     "set_subtitle",
     "set_suptitle",
     "set_title",
+    "sync_axes_limits",
     # Export
     "print_file_report",
     "save_figure",

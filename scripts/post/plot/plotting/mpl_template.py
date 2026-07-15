@@ -11,6 +11,7 @@ Provides:
     make_legend(ax, ...)          — legend with old-style frame defaults
     plot_with_band(ax, ...)       — line + shaded uncertainty band
     add_reference_lines(ax, ...)  — horizontal / vertical reference lines
+    sync_axes_limits(axes, ...)   — match x/y limits across subplots to their shared data range
     apply_oldschool_axes(ax)      — cosmetic polish (spines, ticks, legend)
     add_textbox(ax, text, ...)    — anchored metadata text box
     set_axis_sci(ax, ...)         — clean scientific notation on axis
@@ -434,6 +435,87 @@ def add_shared_colorbar(
     if label:
         cbar.set_label(label)
     return cbar
+
+
+# ---------------------------------------------------------------------------
+# Multi-panel axes helpers
+# ---------------------------------------------------------------------------
+
+
+def sync_axes_limits(axes, *, which: str = "y", margin: float | None = None) -> None:
+    """Give every axis in *axes* the same data-driven limits.
+
+    For each requested dimension, scans every axis's plotted curves for their
+    min/max, takes the overall min/max across *all* axes, pads it the same
+    way Matplotlib's own autoscale would, and applies that shared range to
+    every individual axis — so panels sharing a figure (e.g. subplots
+    comparing several flight points) become directly comparable.
+
+    Only ``Line2D`` artists plotted in data coordinates are scanned (i.e. real
+    curves from ``ax.plot`` / :func:`plot_line`); reference lines added via
+    ``ax.axhline``/``ax.axvline`` use a blended transform and are ignored so
+    they don't skew the bounds.
+
+    Parameters
+    ----------
+    axes : Axes or array-like of Axes
+        The axes to synchronize, e.g. ``fig.axes`` or the array returned by
+        ``plt.subplots``.
+    which : {"y", "x", "both"}
+        Which axis/axes to synchronize. Defaults to ``"y"``.
+    margin : float, optional
+        Fractional padding added on each side of the shared min/max, as a
+        fraction of the data span (same convention as ``ax.margins()``).
+        Defaults to :rc:`axes.xmargin` / :rc:`axes.ymargin` (Matplotlib's own
+        autoscale default, normally 0.05) so synced axes keep the same
+        natural breathing room a single autoscaled axis would have.
+
+    Returns
+    -------
+    None
+    """
+    import numpy as _np
+
+    if hasattr(axes, "ravel"):
+        axes = axes.ravel()
+    elif not hasattr(axes, "__iter__"):
+        axes = [axes]
+    axes = list(axes)
+
+    if which not in ("x", "y", "both"):
+        raise ValueError(f"which={which!r} not supported; use 'x', 'y', or 'both'")
+    dims = ("x", "y") if which == "both" else (which,)
+
+    def _curve_bounds(ax, dim: str) -> tuple[float, float] | None:
+        spans = []
+        for line in ax.get_lines():
+            if line.get_transform() is not ax.transData:
+                continue
+            data = _np.asarray(
+                line.get_xdata() if dim == "x" else line.get_ydata(), dtype=float
+            )
+            data = data[_np.isfinite(data)]
+            if data.size:
+                spans.append((data.min(), data.max()))
+        if not spans:
+            return None
+        return min(s[0] for s in spans), max(s[1] for s in spans)
+
+    for dim in dims:
+        bounds = [b for ax in axes if (b := _curve_bounds(ax, dim)) is not None]
+        if not bounds:
+            continue
+        lo = min(b[0] for b in bounds)
+        hi = max(b[1] for b in bounds)
+
+        pad_frac = margin if margin is not None else mpl.rcParams[f"axes.{dim}margin"]
+        span = hi - lo
+        pad = span * pad_frac if span > 0 else (abs(lo) or 1.0) * pad_frac
+        lo -= pad
+        hi += pad
+
+        for ax in axes:
+            ax.set_xlim(lo, hi) if dim == "x" else ax.set_ylim(lo, hi)
 
 
 # ---------------------------------------------------------------------------

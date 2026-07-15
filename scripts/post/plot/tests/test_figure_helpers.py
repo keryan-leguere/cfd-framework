@@ -12,6 +12,7 @@ from plotting import (
     make_figure_legend,
     plot_contourf,
     plot_line,
+    sync_axes_limits,
     use_style,
 )
 
@@ -178,3 +179,86 @@ class TestAddSharedColorbar:
         )
         cbar_width = cbar.ax.get_position().width
         assert cbar_width < 0.04, f"cbar width={cbar_width:.4f} is too wide"
+
+
+# -----------------------------------------------------------------------
+# sync_axes_limits
+# -----------------------------------------------------------------------
+class TestSyncAxesLimits:
+    def test_matches_y_limits_to_global_range(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        sync_axes_limits((ax1, ax2), which="y")
+        assert ax1.get_ylim() == ax2.get_ylim()
+        lo, hi = ax1.get_ylim()
+        # ax2 has -sin(x) which reaches lower than anything on ax1/ax2's sin/cos
+        assert lo <= -0.99
+        assert hi >= 0.99
+
+    def test_matches_x_limits(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        ax1.set_xlim(0, 3)
+        ax2.set_xlim(0, 6)
+        sync_axes_limits((ax1, ax2), which="x")
+        assert ax1.get_xlim() == ax2.get_xlim()
+
+    def test_both_syncs_x_and_y(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        sync_axes_limits((ax1, ax2), which="both")
+        assert ax1.get_xlim() == ax2.get_xlim()
+        assert ax1.get_ylim() == ax2.get_ylim()
+
+    def test_accepts_axes_array_from_subplots(self):
+        x = np.linspace(0, 6, 30)
+        fig, axes = plt.subplots(1, 2)
+        plot_line(axes[0], x, np.sin(x) * 2, label="big")
+        plot_line(axes[1], x, np.sin(x) * 0.5, label="small")
+        sync_axes_limits(axes, which="y")
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+
+    def test_ignores_reference_lines(self, twin_line_fig):
+        """axhline/axvline use a blended transform and shouldn't skew bounds."""
+        fig, (ax1, ax2) = twin_line_fig
+        ax1.axhline(50.0, color="0.5")
+        sync_axes_limits((ax1, ax2), which="y")
+        lo, hi = ax1.get_ylim()
+        assert hi < 50.0
+
+    def test_invalid_which_raises(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        with pytest.raises(ValueError):
+            sync_axes_limits((ax1, ax2), which="z")
+
+    @staticmethod
+    def _raw_y_bounds():
+        """Global (unpadded) y min/max across the twin_line_fig curves."""
+        x = np.linspace(0, 6, 30)
+        values = np.concatenate([np.sin(x), np.cos(x), -np.sin(x)])
+        return float(values.min()), float(values.max())
+
+    def test_default_margin_matches_rcparam(self, twin_line_fig):
+        """Bounds should breathe like a normal autoscaled axis, not sit flush on the data."""
+        fig, (ax1, ax2) = twin_line_fig
+        sync_axes_limits((ax1, ax2), which="y")
+        lo, hi = ax1.get_ylim()
+        raw_lo, raw_hi = self._raw_y_bounds()
+        margin = plt.rcParams["axes.ymargin"]
+        expected_pad = (raw_hi - raw_lo) * margin
+        assert lo == pytest.approx(raw_lo - expected_pad, abs=1e-6)
+        assert hi == pytest.approx(raw_hi + expected_pad, abs=1e-6)
+
+    def test_custom_margin_overrides_default(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        sync_axes_limits((ax1, ax2), which="y", margin=0.5)
+        lo, hi = ax1.get_ylim()
+        raw_lo, raw_hi = self._raw_y_bounds()
+        expected_pad = (raw_hi - raw_lo) * 0.5
+        assert lo == pytest.approx(raw_lo - expected_pad, abs=1e-6)
+        assert hi == pytest.approx(raw_hi + expected_pad, abs=1e-6)
+
+    def test_zero_margin_is_flush_with_data(self, twin_line_fig):
+        fig, (ax1, ax2) = twin_line_fig
+        sync_axes_limits((ax1, ax2), which="y", margin=0.0)
+        lo, hi = ax1.get_ylim()
+        raw_lo, raw_hi = self._raw_y_bounds()
+        assert lo == pytest.approx(raw_lo, abs=1e-6)
+        assert hi == pytest.approx(raw_hi, abs=1e-6)

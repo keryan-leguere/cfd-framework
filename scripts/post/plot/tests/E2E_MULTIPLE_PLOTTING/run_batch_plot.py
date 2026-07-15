@@ -24,7 +24,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from plotting import batch_compare_flight_points, batch_plot, discover_flight_point_values
+from plotting import (
+    batch_compare_flight_points,
+    batch_plot,
+    discover_flight_point_values,
+    sync_axes_limits,
+)
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = HERE / "output"
@@ -208,6 +213,13 @@ def on_before_save(fig, ax, context):
     ):
         ax.axvline(4.0, color="C3", ls="--", lw=0.8)
 
+    # Compare figures only (context.compare_name is set per-panel): re-sync the
+    # shared Y range on every panel call. Curves for a given panel are drawn
+    # before this hook fires, so the *last* panel's call sees every panel's
+    # data and leaves the figure with the correct, fully-harmonized limits.
+    if context.compare_name is not None:
+        sync_axes_limits(fig.axes, which="y")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run batch plotting E2E example.")
@@ -278,6 +290,13 @@ def main() -> None:
 
     if args.compare:
         compare_flight_points = {
+            "off_design1": {
+                "Mach": 0.85,
+                "Altitude_m": 8000,
+                "DL": 0.0,
+                "DM": 0.0,
+                "DN": 0.0,
+            },
             "design": {
                 "Mach": 0.8,
                 "Altitude_m": 8000,

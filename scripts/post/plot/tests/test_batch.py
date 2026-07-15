@@ -641,7 +641,7 @@ class TestBatchCompareFlightPoints:
         )
 
         assert len(written) == 1
-        assert "COMPARE" in str(written[0])
+        assert "design_high" in str(written[0])
         assert written[0].exists()
 
     def test_build_compare_output_path(self):

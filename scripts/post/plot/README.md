@@ -821,7 +821,8 @@ Layout / titles:
 
 - Figure title (suptitle): ``$C_N$ vs. $\alpha$ ($\beta$=2°)`` — fixed-sweep context only.
 - Panel title: ``design (M=0.8, Z=8000 m, …)``.
-- Paths: ``output/compare/ALPHA_POLAR/COMPARE/BETA_2/CN_vs_alpha.svg``.
+- Paths: ``output/compare/ALPHA_POLAR/design_off_design/BETA_2/CN_vs_alpha.svg`` — the
+  folder is named from the joined ``compare_flight_points`` keys.
 
 Hooks work per panel: ``context.compare_name`` / ``context.panel_index`` identify the
 subplot; ``context.flight_point`` is that panel's point.

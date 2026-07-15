@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 import warnings
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -31,7 +32,6 @@ import pandas as pd
 from .mpl_template import (
     make_legend,
     plot_line,
-    print_file_report,
     save_figure,
     set_suptitle,
     set_title,
@@ -113,6 +113,8 @@ class _BatchPlotJob:
     polar_prefix: str
     output_path: Path
     title: str
+    flight_point_label: str
+    case_label: str
     curves: tuple[_SourceCurve, ...]
 
 
@@ -139,6 +141,7 @@ class _ComparePlotJob:
     polar_prefix: str
     output_path: Path
     suptitle: str
+    case_label: str
     panels: tuple[_ComparePanel, ...]
     max_cols: int
 
@@ -323,6 +326,10 @@ def build_compare_output_path(
     return Path(*parts)
 
 
+_COMPARE_PANEL_HEIGHT_FACTOR = 1.25
+_COMPARE_LAYOUT_H_PAD = 0.02
+
+
 def _subplot_grid_shape(n_panels: int, max_cols: int = 3) -> tuple[int, int]:
     """Return ``(nrows, ncols)`` with at most *max_cols* panels per row."""
     if n_panels < 1:
@@ -463,6 +470,25 @@ def format_flight_point_title_suffix(
     return ", ".join(parts)
 
 
+def _combined_flight_point_suffix(
+    flight_point: dict[str, float],
+    flight_point_keys: Sequence[str],
+    flight_point_specs: dict[str, dict[str, Any]] | None = None,
+    fixed_sweeps: dict[str, float] | None = None,
+    sweep_specs: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    """Merge a flight point with any fixed-sweep values into one title suffix."""
+    context = dict(flight_point)
+    context_keys = list(flight_point_keys)
+    if fixed_sweeps:
+        context.update(fixed_sweeps)
+        context_keys.extend(fixed_sweeps.keys())
+    combined_specs = dict(flight_point_specs or {})
+    if sweep_specs:
+        combined_specs.update(sweep_specs)
+    return format_flight_point_title_suffix(context, context_keys, combined_specs)
+
+
 def format_plot_title(
     y_spec: dict[str, Any],
     y_key: str,
@@ -481,15 +507,9 @@ def format_plot_title(
     """
     y_label = format_axis_title_label(y_spec, y_key)
     x_label = format_axis_title_label(x_spec, x_key)
-    context = dict(flight_point)
-    context_keys = list(flight_point_keys)
-    if fixed_sweeps:
-        context.update(fixed_sweeps)
-        context_keys.extend(fixed_sweeps.keys())
-    combined_specs = dict(flight_point_specs or {})
-    if sweep_specs:
-        combined_specs.update(sweep_specs)
-    flight_suffix = format_flight_point_title_suffix(context, context_keys, combined_specs)
+    flight_suffix = _combined_flight_point_suffix(
+        flight_point, flight_point_keys, flight_point_specs, fixed_sweeps, sweep_specs
+    )
     return f"{y_label} vs. {x_label} ({flight_suffix})"
 
 
@@ -657,6 +677,16 @@ def _enumerate_jobs(
                         fixed_sweeps,
                         completed_sweeps,
                     )
+                    flight_point_label = format_flight_point_title_suffix(
+                        flight_point, flight_point_keys, completed_flight_points
+                    )
+                    case_label = (
+                        format_flight_point_title_suffix(
+                            fixed_sweeps, list(fixed_sweeps.keys()), completed_sweeps
+                        )
+                        if fixed_sweeps
+                        else ""
+                    )
                     jobs.append(
                         _BatchPlotJob(
                             flight_point=flight_point,
@@ -669,6 +699,8 @@ def _enumerate_jobs(
                             polar_prefix=polar_prefix,
                             output_path=output_path,
                             title=title,
+                            flight_point_label=flight_point_label,
+                            case_label=case_label,
                             curves=tuple(curves),
                         )
                     )
@@ -705,6 +737,18 @@ def _format_values_preview(values: Sequence[Any], *, max_items: int = 12) -> str
         return ", ".join(items)
     head = ", ".join(items[: max_items - 1])
     return f"{head}, … (+{len(items) - (max_items - 1)} more)"
+
+
+_LATEX_CMD_RE = re.compile(r"\\([a-zA-Z]+)")
+
+
+def _cli_text(text: str) -> str:
+    """Strip simple LaTeX math markup (``$\\alpha$`` → ``alpha``) for CLI display.
+
+    Figure titles keep the LaTeX form (matplotlib renders it); this is only for
+    console/table output, where a literal ``$\\beta$`` would look broken.
+    """
+    return _LATEX_CMD_RE.sub(r"\1", text.replace("$", ""))
 
 
 def _print_batch_plan(
@@ -910,7 +954,10 @@ def _run_jobs(
     task_desc = f"batch ({workers} worker{'s' if workers != 1 else ''})"
 
     def _job_label(job: _BatchPlotJob) -> str:
-        return f"{job.polar_prefix}/{job.y_key}_vs_{job.sweep_key}"
+        point = _cli_text(job.flight_point_label)
+        if job.case_label:
+            point = f"{point}, {_cli_text(job.case_label)}"
+        return f"{job.polar_prefix} · {point} · {job.y_key} vs {job.sweep_key}"
 
     if not use_parallel:
         use_style(style_profile)
@@ -954,6 +1001,64 @@ def _run_jobs(
     return written_paths
 
 
+def _print_batch_file_report(jobs: Sequence[_BatchPlotJob], formats: Sequence[str]) -> None:
+    """Pretty-print exported batch figures, grouped by polar then flight point.
+
+    A flat file listing repeats the same ``Y_vs_X.svg`` filename once per
+    flight point (and fixed-sweep combination), which makes them
+    indistinguishable. Each flight point (the real loop variable in
+    ``batch_plot``) gets its own section per polar; rows within a section only
+    need to show what still varies there — the fixed-sweep case (if any) and
+    the Y variable.
+    """
+    groups: dict[str, dict[str, list[_BatchPlotJob]]] = {}
+    for job in jobs:
+        groups.setdefault(job.polar_prefix, {}).setdefault(job.flight_point_label, []).append(job)
+
+    if _RICH and _console is not None:
+        for polar, points in groups.items():
+            for flight_point_label, point_jobs in points.items():
+                point = _cli_text(flight_point_label) if flight_point_label else "(none)"
+                n_files = len(point_jobs) * len(formats)
+                table = Table(
+                    title=f"{polar}  —  {point}  —  {n_files} file(s)",
+                    show_header=True,
+                    header_style="bold",
+                )
+                table.add_column("Fixed sweep", style="cyan")
+                table.add_column("Figure")
+                table.add_column("Format", style="magenta")
+                table.add_column("Size", justify="right", style="green")
+                for job in point_jobs:
+                    case = _cli_text(job.case_label) if job.case_label else "—"
+                    for path in _paths_for_formats(job.output_path, formats):
+                        size_kb = path.stat().st_size / 1024
+                        table.add_row(
+                            case,
+                            f"{job.y_key} vs {job.sweep_key}",
+                            path.suffix.lstrip(".").upper(),
+                            f"{size_kb:.1f} kB",
+                        )
+                _console.print(table)
+        return
+
+    # Plain-text fallback
+    print("=== Batch plot outputs ===")
+    for polar, points in groups.items():
+        print(f"\n{polar}:")
+        for flight_point_label, point_jobs in points.items():
+            point = _cli_text(flight_point_label) if flight_point_label else "(none)"
+            print(f"  {point}:")
+            for job in point_jobs:
+                case = _cli_text(job.case_label) if job.case_label else "—"
+                for path in _paths_for_formats(job.output_path, formats):
+                    size_kb = path.stat().st_size / 1024
+                    print(
+                        f"    [{case}] {job.y_key} vs {job.sweep_key:8s} "
+                        f"{path.suffix.lstrip('.').upper():>4s}  {size_kb:>7.1f} kB"
+                    )
+
+
 def batch_plot(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -987,7 +1092,8 @@ def batch_plot(
     Parameters
     ----------
     report :
-        Pretty-print exported files via ``print_file_report`` after a real run.
+        Pretty-print exported files, grouped by polar then flight point, after
+        a real run.
     verbose :
         Print a Rich plan summary (sweeps, flight points, figure counts,
         parallel setup) and a progress bar with elapsed time / ETA.
@@ -1067,7 +1173,7 @@ def batch_plot(
     )
 
     if report and written_paths:
-        print_file_report(written_paths, title="Batch plot outputs")
+        _print_batch_file_report(jobs, formats)
 
     return written_paths
 
@@ -1088,6 +1194,7 @@ def _enumerate_compare_jobs(
     sweep_keys = list(completed_sweeps.keys())
     flight_point_keys = list(completed_flight_points.keys())
     varying_sw_keys = varying_flight_keys(configuration_dict, sweep_keys)
+    compare_folder_name = "_".join(compare_flight_points.keys())
     jobs: list[_ComparePlotJob] = []
 
     for x_key, x_spec in completed_sweeps.items():
@@ -1145,17 +1252,19 @@ def _enumerate_compare_jobs(
                     x_save_name,
                     y_save_name,
                     completed_sweeps,
+                    compare_folder=compare_folder_name,
                 )
                 y_label = format_axis_title_label(y_spec, y_key)
                 x_label = format_axis_title_label(x_spec, x_key)
                 if fixed_sweeps:
-                    fixed_suffix = format_flight_point_title_suffix(
+                    case_label = format_flight_point_title_suffix(
                         fixed_sweeps,
                         list(fixed_sweeps.keys()),
                         completed_sweeps,
                     )
-                    suptitle = f"{y_label} vs. {x_label} ({fixed_suffix})"
+                    suptitle = f"{y_label} vs. {x_label} ({case_label})"
                 else:
+                    case_label = ""
                     suptitle = f"{y_label} vs. {x_label}"
 
                 jobs.append(
@@ -1169,6 +1278,7 @@ def _enumerate_compare_jobs(
                         polar_prefix=polar_prefix,
                         output_path=output_path,
                         suptitle=suptitle,
+                        case_label=case_label,
                         panels=tuple(panels),
                         max_cols=max_cols,
                     )
@@ -1189,10 +1299,11 @@ def _render_one_compare_job(
     n_panels = len(job.panels)
     nrows, ncols = _subplot_grid_shape(n_panels, job.max_cols)
     base_w, base_h = plt.rcParams["figure.figsize"]
+    panel_h = base_h * _COMPARE_PANEL_HEIGHT_FACTOR
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=(base_w * ncols, base_h * nrows),
+        figsize=(base_w * ncols, panel_h * nrows),
         squeeze=False,
         sharex=False,
         sharey=False,
@@ -1232,8 +1343,17 @@ def _render_one_compare_job(
     for ax in axes_flat[n_panels:]:
         ax.set_visible(False)
 
-    set_suptitle(fig, job.suptitle)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    panel_titlesize = plt.rcParams["axes.titlesize"]
+    set_suptitle(fig, job.suptitle, fontsize=panel_titlesize * 1.3, fontweight="bold")
+
+    # All style profiles enable constrained_layout (see .mplstyle files), which makes
+    # fig.tight_layout() a no-op: Figure.set_layout_engine(None) re-selects 'constrained'
+    # from rcParams in its `finally` clause, silently discarding any tight_layout rect/pad.
+    # Tune the actual active engine's padding instead of the ineffective tight_layout call.
+    layout_engine = fig.get_layout_engine()
+    if layout_engine is not None:
+        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)
+
     written = save_figure(fig, job.output_path, formats=formats)
     plt.close(fig)
     return written
@@ -1268,7 +1388,8 @@ def _run_compare_jobs(
     task_desc = f"compare ({workers} worker{'s' if workers != 1 else ''})"
 
     def _job_label(job: _ComparePlotJob) -> str:
-        return f"{job.polar_prefix}/COMPARE/{job.y_key}_vs_{job.sweep_key}"
+        case = _cli_text(job.case_label) if job.case_label else "no fixed sweep"
+        return f"{job.polar_prefix} · {case} · {job.y_key} vs {job.sweep_key}"
 
     if not use_parallel:
         use_style(style_profile)
@@ -1314,6 +1435,191 @@ def _run_compare_jobs(
     return written_paths
 
 
+def _print_compare_plan(
+    *,
+    configuration_dict: dict[str, dict[str, Any]],
+    y_axis_dict: dict[str, dict[str, Any]],
+    completed_sweeps: dict[str, dict[str, Any]],
+    completed_flight_points: dict[str, dict[str, Any]],
+    normalized_compare: dict[str, dict[str, float]],
+    jobs: Sequence[_ComparePlotJob],
+    output_base: str | Path,
+    formats: Sequence[str],
+    style_profile: str,
+    max_cols: int,
+    n_jobs: int,
+    dry_run: bool,
+    include_curve: Callable[..., bool] | None,
+    on_before_save: Callable[..., Any] | None,
+) -> None:
+    """Pretty-print the compare-mode execution plan (Rich when available).
+
+    Unlike :func:`_print_batch_plan`, this describes what is actually
+    happening in compare mode: a fixed, named set of flight points rendered
+    as subplots, repeated once per polar / fixed-sweep-value / Y — it does
+    not claim to "loop" over flight-point parameters the way ``batch_plot``
+    does.
+    """
+    workers = _resolve_n_jobs(n_jobs)
+    parallel_ok = workers > 1 and _is_picklable(on_before_save)
+    effective_workers = workers if parallel_ok else 1
+    if workers > 1 and not parallel_ok:
+        parallel_note = f"requested {workers}, falling back to sequential (hooks not picklable)"
+    elif effective_workers > 1:
+        parallel_note = f"{effective_workers} process workers"
+    else:
+        parallel_note = "sequential (n_jobs=1)"
+
+    n_files = len(jobs) * len(formats)
+    jobs_by_polar = Counter(job.polar_prefix for job in jobs)
+    sources = list(configuration_dict.keys())
+    y_keys = list(y_axis_dict.keys())
+
+    overview_lines = [
+        f"Sources         : {', '.join(sources)}  ({len(sources)})",
+        f"Y axes          : {', '.join(y_keys)}  ({len(y_keys)})",
+        f"Sweeps          : {', '.join(completed_sweeps.keys())}  ({len(completed_sweeps)})",
+        f"Compared points : {', '.join(normalized_compare.keys())}  ({len(normalized_compare)})",
+        f"Panels / figure : up to {max_cols} column(s)",
+        f"Output base     : {output_base}",
+        f"Formats         : {', '.join(formats)}",
+        f"Style           : {style_profile}",
+        f"Mode            : {'dry-run (no files written)' if dry_run else 'write'}",
+        f"Hooks           : include_curve={'yes' if include_curve else 'no'}, "
+        f"on_before_save={'yes' if on_before_save else 'no'}",
+        f"Parallel        : {parallel_note}",
+        f"Figures         : {len(jobs)}  →  {n_files} file(s)",
+    ]
+
+    if _RICH and _console is not None:
+        _console.print(
+            Panel(
+                "\n".join(overview_lines),
+                title="Compare plan",
+                border_style="cyan",
+            )
+        )
+
+        cmp_table = Table(
+            title="Compared flight points", show_header=True, header_style="bold"
+        )
+        cmp_table.add_column("Name", style="cyan")
+        cmp_table.add_column("Values")
+        fp_keys = list(completed_flight_points.keys())
+        for name, values in normalized_compare.items():
+            cmp_table.add_row(
+                name,
+                _cli_text(
+                    format_flight_point_title_suffix(values, fp_keys, completed_flight_points)
+                ),
+            )
+        _console.print(cmp_table)
+
+        sw_table = Table(title="Sweep / polar loops", show_header=True, header_style="bold")
+        sw_table.add_column("Sweep key", style="cyan")
+        sw_table.add_column("Polar")
+        sw_table.add_column("n", justify="right", style="magenta")
+        sw_table.add_column("Unique values")
+        for key, spec in completed_sweeps.items():
+            values = spec.get("values", [])
+            sw_table.add_row(
+                key,
+                str(spec.get("polar_prefix", "")),
+                str(len(values)),
+                _format_values_preview(values),
+            )
+        _console.print(sw_table)
+
+        if jobs_by_polar:
+            polar_table = Table(title="Figures per polar", show_header=True, header_style="bold")
+            polar_table.add_column("Polar", style="cyan")
+            polar_table.add_column("Figures", justify="right", style="green")
+            for polar, count in sorted(jobs_by_polar.items()):
+                polar_table.add_row(polar, str(count))
+            _console.print(polar_table)
+        return
+
+    # Plain-text fallback
+    print("=== Compare plan ===")
+    for line in overview_lines:
+        print(line)
+    print("\nCompared flight points:")
+    fp_keys = list(completed_flight_points.keys())
+    for name, values in normalized_compare.items():
+        suffix = _cli_text(
+            format_flight_point_title_suffix(values, fp_keys, completed_flight_points)
+        )
+        print(f"  {name}: {suffix}")
+    print("\nSweep / polar loops:")
+    for key, spec in completed_sweeps.items():
+        values = spec.get("values", [])
+        print(
+            f"  {key} ({spec.get('polar_prefix', '')}): "
+            f"n={len(values)}  [{_format_values_preview(values)}]"
+        )
+    if jobs_by_polar:
+        print("\nFigures per polar:")
+        for polar, count in sorted(jobs_by_polar.items()):
+            print(f"  {polar}: {count}")
+
+
+def _print_compare_file_report(
+    jobs: Sequence[_ComparePlotJob], formats: Sequence[str]
+) -> None:
+    """Pretty-print exported compare figures, grouped by polar then flight point.
+
+    Each exported figure is named after its Y variable (e.g. ``CN_vs_alpha.svg``),
+    and that same filename repeats once per fixed-sweep flight point (e.g. once
+    for beta=0, once for beta=2). A flat file listing makes those repeats
+    indistinguishable, so results are grouped by polar and annotated with the
+    flight point each row belongs to.
+    """
+    groups: dict[str, dict[str, list[_ComparePlotJob]]] = {}
+    for job in jobs:
+        groups.setdefault(job.polar_prefix, {}).setdefault(job.case_label, []).append(job)
+
+    if _RICH and _console is not None:
+        for polar, cases in groups.items():
+            n_files = sum(len(js) for js in cases.values()) * len(formats)
+            table = Table(
+                title=f"{polar}  —  {n_files} file(s)",
+                show_header=True,
+                header_style="bold",
+            )
+            table.add_column("Flight point", style="cyan")
+            table.add_column("Figure")
+            table.add_column("Format", style="magenta")
+            table.add_column("Size", justify="right", style="green")
+            for case_label, case_jobs in cases.items():
+                label = _cli_text(case_label) if case_label else "(no fixed sweep)"
+                for job in case_jobs:
+                    for path in _paths_for_formats(job.output_path, formats):
+                        size_kb = path.stat().st_size / 1024
+                        table.add_row(
+                            label,
+                            f"{job.y_key} vs {job.sweep_key}",
+                            path.suffix.lstrip(".").upper(),
+                            f"{size_kb:.1f} kB",
+                        )
+            _console.print(table)
+        return
+
+    # Plain-text fallback
+    print("=== Batch compare outputs ===")
+    for polar, cases in groups.items():
+        print(f"\n{polar}:")
+        for case_label, case_jobs in cases.items():
+            label = _cli_text(case_label) if case_label else "(no fixed sweep)"
+            print(f"  {label}:")
+            for job in case_jobs:
+                for path in _paths_for_formats(job.output_path, formats):
+                    size_kb = path.stat().st_size / 1024
+                    print(
+                        f"    {job.y_key} vs {job.sweep_key:8s} "
+                        f"{path.suffix.lstrip('.').upper():>4s}  {size_kb:>7.1f} kB"
+                    )
+
+
 def batch_compare_flight_points(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -1351,10 +1657,11 @@ def batch_compare_flight_points(
         Optional metadata (labels / units / template keys). Sweep keys listed
         here are excluded automatically, same as ``batch_plot``.
 
-    Output layout::
+    Output layout (folder named from the joined ``compare_flight_points`` keys,
+    e.g. ``design`` / ``off_design``)::
 
-        output_base/ALPHA_POLAR/COMPARE/BETA_2/CN_vs_alpha.svg
-        output_base/BETA_POLAR/COMPARE/ALPHA_3/CN_vs_beta.svg
+        output_base/ALPHA_POLAR/design_off_design/BETA_2/CN_vs_alpha.svg
+        output_base/BETA_POLAR/design_off_design/ALPHA_3/CN_vs_beta.svg
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
@@ -1402,34 +1709,22 @@ def batch_compare_flight_points(
     )
 
     if verbose:
-        requested_fp_keys = list(flight_point_dict.keys()) if flight_point_dict else []
-        excluded_from_flight_point = [
-            key for key in requested_fp_keys if key in completed_sweeps
-        ]
-        _print_batch_plan(
+        _print_compare_plan(
             configuration_dict=configuration_dict,
             y_axis_dict=y_axis_dict,
             completed_sweeps=completed_sweeps,
             completed_flight_points=completed_flight_points,
-            jobs=jobs,  # duck-typed: uses .polar_prefix for per-polar counts
+            normalized_compare=normalized_compare,
+            jobs=jobs,
             output_base=output_base,
             formats=formats,
             style_profile=style_profile,
+            max_cols=max_cols,
             n_jobs=n_jobs,
             dry_run=dry_run,
             include_curve=include_curve,
             on_before_save=on_before_save,
-            excluded_from_flight_point=excluded_from_flight_point,
         )
-        names = ", ".join(normalized_compare.keys())
-        msg = (
-            f"Compare panels : {len(normalized_compare)}  [{names}]  "
-            f"(max_cols={max_cols})"
-        )
-        if _RICH and _console is not None:
-            _console.print(f"[cyan]{msg}[/cyan]")
-        else:
-            print(msg)
 
     if dry_run:
         planned: list[Path] = []
@@ -1456,6 +1751,6 @@ def batch_compare_flight_points(
     )
 
     if report and written_paths:
-        print_file_report(written_paths, title="Batch compare outputs")
+        _print_compare_file_report(jobs, formats)
 
     return written_paths
