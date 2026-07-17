@@ -1,184 +1,227 @@
-"""CLI entry point for cfd-perf.
+"""Interface en ligne de commande de cfd-perf.
 
-Reads a plain-text input file describing mesh, pilot measurements and
-optimisation settings, then produces a scaling figure.
+    cfd-perf run ETUDE.yaml [--figure SORTIE.png] [--strategy ...] [-v]
+    cfd-perf check ETUDE.yaml
+    cfd-perf example [--output RÉP]
 
-Usage::
-
-    cfd-perf <input_file> <output_figure>
-
-Input file format (lines starting with ``#`` are comments)::
-
-    num_cells       = 200000000
-    num_faces       = 600000000
-    hex             = 0.78
-    prism           = 0.14
-
-    n_iterations    = 20000
-
-    mode                = efficiency
-    max_efficiency_loss = 0.3
-    cores_max           = 512
-    stride              = 32
-
-    pilot 32 120 140.0
-    pilot 64  65 140.0
+Les erreurs sont affichées comme un court panneau Rich nommant le fichier et le
+problème, jamais une trace d'appels : le public est un ingénieur CFD qui
+dimensionne un calcul, pas un développeur Python qui débogue cet outil.
 """
 
 from __future__ import annotations
 
+import argparse
+import shutil
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import pandas as pd
+from rich.console import Console
+from rich.panel import Panel
 
-import cfd_perf
-from cfd_perf.constraints.config import HardConstraints
-from cfd_perf.io.display import print_fit_result, print_optimization_result
+from cfd_perf.core.model import ModelKind, fit_model
+from cfd_perf.data.study import Study, StudyError, load_study
+from cfd_perf.engine.recommend import Recommendation, Strategy, recommend
+from cfd_perf.report.console import _STRATEGY_FR, _fr_int, print_report, render_pilot_warnings
 
-_CELL_TYPES = frozenset({"hex", "prism", "tet", "pyramid", "poly", "wedge"})
+console = Console()
+err_console = Console(stderr=True)
 
-_DEFAULTS: dict[str, object] = {
-    "mode": "efficiency",
-    "scaling_model": "auto",
-    "max_efficiency_loss": 0.3,
-    "cores_max": 512,
-    "stride": 32,
-    "min_cells_per_core": 100_000,
-    "min_ram_per_core_gb": 0.5,
-}
+EXAMPLE_DIR = Path(__file__).resolve().parents[3] / "01_EXEMPLE"
+
+_SCHEMA_HINT = "Voir 00_DOC/03_FORMAT_ENTREE.md pour le schéma du fichier d'étude."
 
 
-def parse_input(filepath: str | Path) -> dict:
-    """Parse the plain-text cfd-perf input file into a config dict."""
-    config: dict[str, object] = {
-        "num_cells": None,
-        "num_faces": None,
-        "cell_type_distribution": {},
-        "n_iterations": None,
-        "pilot_points": [],
-        **_DEFAULTS,
-    }
-    cell_dist: dict[str, float] = {}
-
-    with open(filepath) as fh:
-        for raw in fh:
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-
-            if line.startswith("pilot"):
-                parts = line.split()
-                if len(parts) < 3:
-                    print(f"Warning: ignoring malformed pilot line: {line}", file=sys.stderr)
-                    continue
-                config["pilot_points"].append({  # type: ignore[union-attr]
-                    "cores": int(parts[1]),
-                    "time_per_iter_s": float(parts[2]),
-                    "peak_ram_total_gb": float(parts[3]) if len(parts) > 3 else 0.0,
-                })
-                continue
-
-            if "=" not in line:
-                continue
-
-            key, val = (s.strip() for s in line.split("=", 1))
-
-            if key == "num_cells":
-                config["num_cells"] = int(val)
-            elif key == "num_faces":
-                config["num_faces"] = int(val)
-            elif key in _CELL_TYPES:
-                cell_dist[key] = float(val)
-            elif key == "n_iterations":
-                config["n_iterations"] = int(val)
-            elif key in ("mode", "scaling_model"):
-                config[key] = val
-            elif key in ("max_efficiency_loss", "min_ram_per_core_gb", "deadline_hours"):
-                config[key] = float(val)
-            elif key in ("cores_max", "stride", "min_cells_per_core"):
-                config[key] = int(val)
-
-    if cell_dist:
-        config["cell_type_distribution"] = cell_dist
-    return config
+def _fail(message: str, *, hint: str = "") -> None:
+    body = message
+    if hint:
+        body += f"\n\n[dim]{hint}[/]"
+    err_console.print(Panel(body, title="[bold red]Erreur[/]", border_style="red"))
+    sys.exit(1)
 
 
-def _validate(config: dict) -> None:
-    errors: list[str] = []
-    if config["num_cells"] is None:
-        errors.append("num_cells is required")
-    if config["n_iterations"] is None:
-        errors.append("n_iterations is required")
-    if not config["pilot_points"]:
-        errors.append("at least one pilot line is required")
-    if errors:
-        for e in errors:
-            print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-def main(argv: list[str] | None = None) -> None:
-    args = argv if argv is not None else sys.argv[1:]
-
-    if len(args) < 2:
-        print("Usage: cfd-perf <input_file> <output_figure>", file=sys.stderr)
-        sys.exit(1)
-
-    input_file, output_figure = Path(args[0]), Path(args[1])
-    if not input_file.is_file():
-        print(f"Error: input file not found: {input_file}", file=sys.stderr)
-        sys.exit(1)
-
-    config = parse_input(input_file)
-    _validate(config)
-
-    num_faces = config["num_faces"] or int(config["num_cells"]) * 3  # type: ignore[arg-type]
-    mesh_data = {
-        "num_cells": config["num_cells"],
-        "num_faces": num_faces,
-        "cell_type_distribution": config["cell_type_distribution"] or {"hex": 1.0},
-    }
-
-    pilot_df = pd.DataFrame(config["pilot_points"])
-    n_iterations: int = config["n_iterations"]  # type: ignore[assignment]
-
-    pilot = cfd_perf.pilot_from_data(pilot_df, n_iterations=n_iterations)
-    mesh = cfd_perf.mesh_from_data(mesh_data, pilot_baseline=pilot.baseline)
-    model_hint = str(config.get("scaling_model", "auto"))
-    params = cfd_perf.fit_scaling_model(pilot, model_hint=model_hint)  # type: ignore[arg-type]
-    print_fit_result(params, pilot)
-
-    constraints = HardConstraints(
-        min_cells_per_core=int(config["min_cells_per_core"]),  # type: ignore[arg-type]
-        min_ram_per_core_gb=float(config["min_ram_per_core_gb"]),  # type: ignore[arg-type]
+def _run_study(
+    study: Study,
+    *,
+    strategy: Strategy | None,
+    model_kind: ModelKind | None,
+    deadline_hours: float | None = None,
+    cores_max: int | None = None,
+) -> Recommendation:
+    """Ajuste et recommande, les options CLI l'emportant sur le fichier d'étude."""
+    model = fit_model(study.pilot, kind=model_kind)
+    obj = study.objective
+    return recommend(
+        model=model,
+        mesh=study.mesh,
+        pilot=study.pilot,
+        machine=study.machine,
+        constraints=study.constraints,
+        strategy=strategy or obj.strategy,
+        max_efficiency_loss=obj.max_efficiency_loss,
+        deadline_hours=deadline_hours or obj.deadline_hours,
+        cores_min=obj.cores_min,
+        cores_max=cores_max or obj.cores_max,
     )
 
-    opt_kwargs: dict[str, object] = {
-        "mode": config["mode"],
-        "max_efficiency_loss": config["max_efficiency_loss"],
-        "cores_max": config["cores_max"],
-        "stride": config["stride"],
-    }
-    if "deadline_hours" in config:
-        opt_kwargs["deadline_hours"] = config["deadline_hours"]
 
-    result = cfd_perf.optimize(mesh, pilot, params, constraints=constraints, **opt_kwargs)
-    print_optimization_result(result)
+def cmd_run(args: argparse.Namespace) -> int:
+    try:
+        study = load_study(args.study)
+    except StudyError as exc:
+        _fail(str(exc), hint=_SCHEMA_HINT)
 
-    fig_result = cfd_perf.plot_scaling(
-        result, pilot=pilot, mesh=mesh, params=params, return_figure=True,
+    strategy = Strategy(args.strategy) if args.strategy else None
+    model_kind = ModelKind(args.model) if args.model else None
+
+    try:
+        rec = _run_study(
+            study,
+            strategy=strategy,
+            model_kind=model_kind,
+            deadline_hours=args.deadline,
+            cores_max=args.cores_max,
+        )
+    except ValueError as exc:
+        hint = ""
+        if "deadline_hours est requis" in str(exc):
+            hint = (
+                "Passez --deadline HEURES, ou renseignez objective.deadline_hours "
+                "dans le fichier d'étude."
+            )
+        _fail(str(exc), hint=hint)
+
+    print_report(rec, study, verbose=args.verbose, con=console)
+
+    if args.figure:
+        try:
+            from cfd_perf.report.figures import save_recommendation_figure
+        except ImportError as exc:  # pragma: no cover - matplotlib toujours présent
+            _fail(f"impossible d'importer le moteur de tracé : {exc}")
+        path = save_recommendation_figure(
+            rec, args.figure, title=f"{study.name}  --  sur combien de cœurs ?"
+        )
+        console.print(f"[dim]Figure écrite dans[/] [bold]{path}[/]\n")
+
+    if rec.choice is None:
+        return 2
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """Valide un fichier d'étude et signale la qualité du pilote, sans recommander."""
+    try:
+        study = load_study(args.study)
+    except StudyError as exc:
+        _fail(str(exc), hint=_SCHEMA_HINT)
+
+    console.print(
+        Panel(
+            f"[green]Fichier d'étude valide.[/]\n\n"
+            f"[dim]nom       [/] {study.name}\n"
+            f"[dim]maillage  [/] {_fr_int(study.mesh.num_cells)} mailles\n"
+            f"[dim]pilote    [/] {len(study.pilot.points)} points, "
+            f"{study.pilot.core_range[0]}-{study.pilot.core_range[1]} cœurs\n"
+            f"[dim]stratégie [/] {_STRATEGY_FR[study.objective.strategy]}",
+            title="[bold]Contrôle[/]",
+            border_style="green",
+        )
     )
-    if fig_result is not None:
-        fig, _axes = fig_result
-        output_figure.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(output_figure), dpi=180, bbox_inches="tight")
-        plt.close(fig)
-        print(f"Figure saved to: {output_figure}")
-    else:
-        print("Warning: no figure produced (empty result set)", file=sys.stderr)
+    warn = render_pilot_warnings(study.pilot)
+    if warn is not None:
+        console.print(warn)
+    return 0
+
+
+def cmd_example(args: argparse.Namespace) -> int:
+    """Copie l'exemple prêt à l'emploi dans un répertoire de travail."""
+    dest = Path(args.output)
+    if not EXAMPLE_DIR.is_dir():
+        _fail(f"répertoire d'exemple introuvable : {EXAMPLE_DIR}")
+    if dest.exists() and any(dest.iterdir()):
+        _fail(
+            f"{dest} existe déjà et n'est pas vide",
+            hint="Passez --output vers un répertoire neuf.",
+        )
+
+    # On copie les entrées mais pas les figures générées de SORTIE/ : tout
+    # l'intérêt de l'exemple est de le lancer et de les produire soi-même.
+    shutil.copytree(
+        EXAMPLE_DIR,
+        dest,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("*.png", "*.svg", "*.pdf"),
+    )
+    (dest / "SORTIE").mkdir(exist_ok=True)
+    study_file = next(dest.glob("*.yaml"), None)
+    console.print(
+        Panel(
+            f"[green]Exemple copié dans[/] [bold]{dest}[/]\n\n"
+            f"[dim]Lancez-le avec :[/]\n"
+            f"  cfd-perf run {study_file or dest / 'ETUDE.yaml'} --figure scalabilite.png -v",
+            title="[bold]Exemple[/]",
+            border_style="green",
+        )
+    )
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cfd-perf",
+        description="Sur combien de CPU lancer ma simulation CFD ?",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_run = sub.add_parser("run", help="répond à la question de dimensionnement d'une étude")
+    p_run.add_argument("study", help="chemin du fichier d'étude YAML")
+    p_run.add_argument("--figure", "-f", help="écrit aussi la figure de scalabilité ici")
+    p_run.add_argument(
+        "--strategy",
+        choices=[s.value for s in Strategy],
+        help="remplace objective.strategy du fichier d'étude",
+    )
+    p_run.add_argument(
+        "--deadline",
+        type=float,
+        metavar="HEURES",
+        help="échéance en temps d'horloge ; remplace objective.deadline_hours",
+    )
+    p_run.add_argument(
+        "--cores-max",
+        type=int,
+        metavar="N",
+        help="borne haute de la recherche de cœurs ; remplace objective.cores_max",
+    )
+    p_run.add_argument(
+        "--model",
+        choices=[k.value for k in ModelKind],
+        help="force une forme de modèle au lieu du choix automatique",
+    )
+    p_run.add_argument(
+        "--verbose", "-v", action="store_true", help="affiche aussi toute la courbe de scalabilité"
+    )
+    p_run.set_defaults(func=cmd_run)
+
+    p_check = sub.add_parser("check", help="valide un fichier d'étude et signale la qualité du pilote")
+    p_check.add_argument("study", help="chemin du fichier d'étude YAML")
+    p_check.set_defaults(func=cmd_check)
+
+    p_ex = sub.add_parser("example", help="copie ici l'exemple prêt à l'emploi")
+    p_ex.add_argument(
+        "--output", "-o", default="cfd-perf-exemple", help="répertoire de destination"
+    )
+    p_ex.set_defaults(func=cmd_example)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    exit_code: int = args.func(args)
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

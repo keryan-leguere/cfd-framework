@@ -1,0 +1,75 @@
+# =====================================================================
+#  cfd-perf -- example study
+#
+#  Case    : ONERA M6 wing, transonic cruise, steady RANS (k-omega SST)
+#  Solver  : OpenFOAM v13, simpleFoam
+#  Machine : 48-core nodes, 192 GB/node, air-gapped cluster
+#
+#  Run it:
+#     cfd-perf run ONERA_M6_CRUISE.yaml --figure SORTIE/scaling.png -v
+#
+#  Every section except `study`, `mesh` and `pilot` is optional.
+#  Full schema: ../00_DOC/03_FORMAT_ENTREE.md
+# =====================================================================
+
+study:
+  name: "Aile ONERA M6 - croisière transsonique (RANS k-oméga SST)"
+  # Iterations needed for a converged steady solution. Take this from a
+  # previous run of a similar case, not from a guess: the wall-time and
+  # cost numbers scale linearly with it.
+  n_iterations: 12000
+
+mesh:
+  num_cells: 20000000
+  num_faces: 61200000
+  # Left unset on purpose: memory per cell is inferred from the pilot's
+  # measured peak RAM below, which beats any hard-coded rule of thumb.
+  # mem_per_cell_bytes: 7600
+  cell_type_distribution:      # documentation only; does not affect the fit
+    hex: 0.78
+    prism: 0.14
+    tet: 0.06
+    pyramid: 0.02
+
+machine:
+  name: "cluster-a (skylake)"
+  cores_per_node: 48           # answers are rounded to whole nodes
+  ram_per_node_gb: 192
+  max_nodes: 32                # 1536 cores = the partition limit
+  max_walltime_hours: 24       # scheduler kills the job past this
+
+constraints:
+  # Below this, MPI halo exchange dominates real solver work.
+  min_cells_per_core: 10000
+  # Allocation budget for this study.
+  max_core_hours: 250000
+
+objective:
+  # efficiency | deadline | fastest
+  #   efficiency -> most cores that still use the allocation well
+  #   deadline   -> fewest cores that still meet deadline_hours
+  #   fastest    -> lowest wall-time, cost ignored
+  strategy: efficiency
+  max_efficiency_loss: 0.30    # accept losing up to 30% vs perfect scaling
+  cores_max: 1536
+
+# ---------------------------------------------------------------------
+#  Pilot measurements -- the only real data in this file.
+#
+#  Run the ACTUAL case for a few hundred iterations at each core count
+#  and record the steady-state time per iteration. Do not use a smaller
+#  mesh or a different solver: the whole model is fitted from these rows.
+#
+#  These seven points show the full lifecycle of a real strong-scaling
+#  curve: near-linear at 48-192 cores, flattening by 384, bottoming out
+#  around 576, then getting SLOWER at 768 and 1024 as communication
+#  overtakes solver work.
+# ---------------------------------------------------------------------
+pilot:
+  - {cores:   48, time_per_iter_s: 3.85, peak_ram_total_gb: 142.0}
+  - {cores:   96, time_per_iter_s: 2.18, peak_ram_total_gb: 142.0}
+  - {cores:  192, time_per_iter_s: 1.41, peak_ram_total_gb: 143.0}
+  - {cores:  384, time_per_iter_s: 1.12, peak_ram_total_gb: 144.0}
+  - {cores:  576, time_per_iter_s: 1.05, peak_ram_total_gb: 145.0}
+  - {cores:  768, time_per_iter_s: 1.10, peak_ram_total_gb: 146.0}
+  - {cores: 1024, time_per_iter_s: 1.28, peak_ram_total_gb: 148.0}

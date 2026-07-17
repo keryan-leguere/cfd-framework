@@ -136,8 +136,14 @@ not modify the common interface itself or hardcode paths inside an adapter.
 These are independent packages (own `pyproject.toml`, own venv/deps) nested inside the repo — they are
 not part of the Bash framework's runtime:
 
-- **`tools/cfd-perf/`** — CPU scaling estimator for steady RANS CFD runs (`cfd-perf` CLI,
-  `src/cfd_perf/`: mesh analysis, benchmarking, strong-scaling models, optimizer).
+- **`tools/cfd-perf/`** — answers "how many CPUs should I launch on?" for steady RANS runs.
+  `cfd-perf run STUDY.yaml [--figure F.png]`, plus `check` (validate a study) and `example`
+  (copy a runnable example). One YAML file per study; the only real input is a set of pilot
+  measurements. Layout: `00_DOC/` (illustrated docs, FR), `01_EXEMPLE/` (ready-to-run example),
+  `src/cfd_perf/{core,data,engine,report,cli}/`. Terminal report is Rich; **figures are in
+  French** and render via `scripts/post/plot`'s `plotting` package when it is importable,
+  falling back to plain Matplotlib otherwise. See `tools/cfd-perf/00_DOC/01_MODELE.md` for the
+  scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).

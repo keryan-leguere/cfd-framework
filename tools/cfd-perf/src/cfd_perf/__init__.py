@@ -1,43 +1,65 @@
-"""CFD Performance & Scaling Estimator for steady RANS simulations."""
+"""cfd-perf -- how many CPUs should I launch my CFD simulation on?
+
+Typical use::
+
+    from cfd_perf import load_study, fit_model, recommend
+
+    study = load_study("STUDY.yaml")
+    model = fit_model(study.pilot)
+    rec = recommend(model=model, mesh=study.mesh, pilot=study.pilot,
+                    machine=study.machine, constraints=study.constraints)
+    print(rec.choice.cores)
+"""
 
 from __future__ import annotations
 
-from cfd_perf.benchmark.ingest import load_pilot, pilot_from_data
-from cfd_perf.benchmark.models import PilotPoint, PilotSeries
-from cfd_perf.mesh.analyzer import analyze_mesh, mesh_from_data
-from cfd_perf.mesh.models import MeshStats
-from cfd_perf.models.parameters import ModelParameters
-from cfd_perf.models.strong_scaling import fit_beta, fit_scaling_model
-from cfd_perf.optimizer.models import OptimizationResult
-from cfd_perf.optimizer.selector import optimize
-from cfd_perf.io.plotting import plot_scaling
-from cfd_perf.checkpoint.optimal_interval import (
-    survival_probability,
+from cfd_perf.core.checkpoint import (
     expected_utilization,
-    optimal_interval,
     mtbf_to_failure_rate,
     mtbf_years_to_failure_rate,
+    optimal_interval,
+    survival_probability,
+)
+from cfd_perf.core.constraints import Constraints, Violation
+from cfd_perf.core.model import FitQuality, ModelKind, ScalingModel, fit_model
+from cfd_perf.data.machine import Machine
+from cfd_perf.data.mesh import Mesh, mesh_from_data
+from cfd_perf.data.pilot import PilotPoint, PilotSeries, pilot_from_points
+from cfd_perf.data.study import Objective, Study, StudyError, load_study, parse_study
+from cfd_perf.engine.recommend import (
+    Candidate,
+    Recommendation,
+    Strategy,
+    recommend,
 )
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = [
-    "analyze_mesh",
-    "mesh_from_data",
-    "load_pilot",
-    "pilot_from_data",
-    "fit_beta",
-    "fit_scaling_model",
-    "optimize",
-    "plot_scaling",
-    "survival_probability",
-    "expected_utilization",
-    "optimal_interval",
-    "mtbf_to_failure_rate",
-    "mtbf_years_to_failure_rate",
-    "MeshStats",
+    "Candidate",
+    "Constraints",
+    "FitQuality",
+    "Machine",
+    "Mesh",
+    "ModelKind",
+    "Objective",
     "PilotPoint",
     "PilotSeries",
-    "ModelParameters",
-    "OptimizationResult",
+    "Recommendation",
+    "ScalingModel",
+    "Strategy",
+    "Study",
+    "StudyError",
+    "Violation",
+    "expected_utilization",
+    "fit_model",
+    "load_study",
+    "mesh_from_data",
+    "mtbf_to_failure_rate",
+    "mtbf_years_to_failure_rate",
+    "optimal_interval",
+    "parse_study",
+    "pilot_from_points",
+    "recommend",
+    "survival_probability",
 ]
