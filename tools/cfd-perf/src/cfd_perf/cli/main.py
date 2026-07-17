@@ -15,13 +15,21 @@ import argparse
 import shutil
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 from rich.console import Console
 from rich.panel import Panel
 
+from cfd_perf.capture import BashAdapter, CaptureError, MachineOverrides, collect, submit
+from cfd_perf.capture.study_writer import ObjectiveSpec
 from cfd_perf.core.model import ModelKind, fit_model
 from cfd_perf.data.study import Study, StudyError, load_study
-from cfd_perf.engine.recommend import Recommendation, Strategy, recommend
+from cfd_perf.engine.recommend import (
+    DEFAULT_MAX_EFFICIENCY_LOSS,
+    Recommendation,
+    Strategy,
+    recommend,
+)
 from cfd_perf.report.console import _STRATEGY_FR, _fr_int, print_report, render_pilot_warnings
 
 console = Console()
@@ -32,7 +40,7 @@ EXAMPLE_DIR = Path(__file__).resolve().parents[3] / "01_EXEMPLE"
 _SCHEMA_HINT = "Voir 00_DOC/03_FORMAT_ENTREE.md pour le schéma du fichier d'étude."
 
 
-def _fail(message: str, *, hint: str = "") -> None:
+def _fail(message: str, *, hint: str = "") -> NoReturn:
     body = message
     if hint:
         body += f"\n\n[dim]{hint}[/]"
@@ -166,6 +174,140 @@ def cmd_example(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_coeurs(raw: str | None) -> list[int]:
+    """Transforme « 48 96 192 » (ou « 48,96,192 ») en [48, 96, 192]."""
+    if not raw:
+        _fail(
+            "la phase de soumission requiert --coeurs (ex. --coeurs \"48 96 192\")",
+            hint="Utilisez --collect pour la phase de collecte.",
+        )
+    tokens = raw.replace(",", " ").split()
+    coeurs: list[int] = []
+    for tok in tokens:
+        try:
+            n = int(tok)
+        except ValueError:
+            _fail(f"valeur de cœurs invalide : « {tok} » (entier attendu)")
+        if n <= 0:
+            _fail(f"valeur de cœurs invalide : {n} (doit être > 0)")
+        coeurs.append(n)
+    return coeurs
+
+
+def _capture_submit(args: argparse.Namespace, case_dir: Path, work_dir: Path, adapter: BashAdapter) -> int:
+    coeurs = _parse_coeurs(args.coeurs)
+    try:
+        res = submit(
+            case_dir=case_dir, adapter=adapter, coeurs=coeurs, work_dir=work_dir, queue=args.queue
+        )
+    except CaptureError as exc:
+        _fail(str(exc))
+
+    lignes = [f"[green]{len(res.manifest.runs)} run(s) soumis[/] via l'adaptateur "
+              f"« {adapter.adapter_id} »", ""]
+    for r in res.manifest.runs:
+        lignes.append(f"[dim]{r.cores:>6} cœurs[/]  job {r.job_id}  [dim]{Path(r.run_dir).name}[/]")
+    lignes += [
+        "",
+        "[dim]Quand les runs sont terminés, collectez et recommandez :[/]",
+        f"  cfd-perf capture --collect --case-dir {args.case_dir}",
+    ]
+    console.print(Panel("\n".join(lignes), title="[bold]Capture — soumission[/]", border_style="blue"))
+    return 0
+
+
+def _capture_collect(args: argparse.Namespace, case_dir: Path, work_dir: Path, adapter: BashAdapter) -> int:
+    overrides = MachineOverrides(
+        cores_per_node=args.cores_per_node,
+        ram_per_node_gb=args.ram_per_node,
+        max_nodes=args.max_nodes,
+        max_walltime_hours=args.max_walltime,
+    )
+    strategy = Strategy(args.strategy) if args.strategy else Strategy.EFFICIENCY
+    mel = args.max_efficiency_loss if args.max_efficiency_loss is not None else DEFAULT_MAX_EFFICIENCY_LOSS
+    objective = ObjectiveSpec(
+        strategy=strategy,
+        max_efficiency_loss=mel,
+        deadline_hours=args.deadline,
+        cores_max=args.cores_max,
+    )
+    try:
+        res = collect(
+            work_dir=work_dir,
+            adapter=adapter,
+            machine_overrides=overrides,
+            num_cells=args.num_cells,
+            n_iterations=args.n_iterations,
+            objective=objective,
+        )
+    except (CaptureError, StudyError, FileNotFoundError) as exc:
+        _fail(str(exc))
+
+    if not res.ready:
+        lignes = ["[yellow]Certains runs ne sont pas terminés.[/]", ""]
+        for cores, etat in res.pending:
+            lignes.append(f"[dim]{cores:>6} cœurs[/]  {etat}")
+        lignes += ["", "[dim]Relancez --collect plus tard.[/]"]
+        console.print(Panel("\n".join(lignes), title="[bold]Capture — en cours[/]", border_style="yellow"))
+        return 3
+
+    if res.study_path is None:
+        _fail("aucun run exploitable (tous en échec) ; rien à recommander")
+
+    summary = [
+        f"[green]Étude générée :[/] [bold]{res.study_path}[/]",
+        "",
+        f"[dim]points pilotes[/] {len(res.points)}",
+        f"[dim]mailles       [/] {_fr_int(res.num_cells)}",
+        f"[dim]n_iterations  [/] {_fr_int(res.n_iterations)}",
+    ]
+    for note in res.notes:
+        summary.append(f"[yellow]! {note}[/]")
+    console.print(Panel("\n".join(summary), title="[bold]Capture — collecte[/]", border_style="green"))
+
+    if args.no_run:
+        return 0
+
+    study = load_study(res.study_path)
+    try:
+        rec = _run_study(study, strategy=None, model_kind=None)
+    except ValueError as exc:
+        _fail(str(exc))
+    print_report(rec, study, verbose=args.verbose, con=console)
+
+    if args.figure:
+        from cfd_perf.report.figures import save_recommendation_figure
+
+        path = save_recommendation_figure(
+            rec, args.figure, title=f"{study.name}  --  sur combien de cœurs ?"
+        )
+        console.print(f"[dim]Figure écrite dans[/] [bold]{path}[/]\n")
+
+    if rec.choice is None:
+        return 2
+    return 0
+
+
+def cmd_capture(args: argparse.Namespace) -> int:
+    """Capture automatique des données pilotes (soumission, puis --collect)."""
+    case_dir = Path(args.case_dir).resolve()
+    if not case_dir.is_dir():
+        _fail(f"répertoire de cas introuvable : {case_dir}")
+
+    work_dir = Path(args.work_dir)
+    if not work_dir.is_absolute():
+        work_dir = case_dir / work_dir
+
+    try:
+        adapter = BashAdapter(args.adaptateur)
+    except CaptureError as exc:
+        _fail(str(exc))
+
+    if args.collect:
+        return _capture_collect(args, case_dir, work_dir, adapter)
+    return _capture_submit(args, case_dir, work_dir, adapter)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cfd-perf",
@@ -212,6 +354,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", "-o", default="cfd-perf-exemple", help="répertoire de destination"
     )
     p_ex.set_defaults(func=cmd_example)
+
+    p_cap = sub.add_parser(
+        "capture",
+        help="capture automatique des données pilotes (soumission, puis --collect)",
+    )
+    p_cap.add_argument(
+        "--coeurs",
+        metavar='"N N …"',
+        help="nombres de cœurs des runs pilotes (phase de soumission)",
+    )
+    p_cap.add_argument(
+        "--collect",
+        action="store_true",
+        help="phase de collecte : lit les runs terminés, génère l'étude et recommande",
+    )
+    p_cap.add_argument("--adaptateur", "-a", default="mock", help="adaptateur solveur (défaut : mock)")
+    p_cap.add_argument("--queue", help="queue / partition de l'ordonnanceur")
+    p_cap.add_argument("--case-dir", default=".", help="répertoire du cas (défaut : .)")
+    p_cap.add_argument(
+        "--work-dir", default="PILOTE", help="répertoire de travail des runs (défaut : PILOTE)"
+    )
+    p_cap.add_argument("--figure", "-f", help="écrit la figure de scalabilité (collecte)")
+    p_cap.add_argument("--no-run", action="store_true", help="génère l'étude sans lancer la recommandation")
+    p_cap.add_argument("--verbose", "-v", action="store_true", help="affiche aussi toute la courbe")
+    # Surcharges (sinon détection automatique / défauts)
+    p_cap.add_argument("--num-cells", type=int, help="nombre de mailles (sinon via l'adaptateur)")
+    p_cap.add_argument("--n-iterations", type=int, help="itérations de production (study.n_iterations)")
+    p_cap.add_argument("--cores-per-node", type=int, help="cœurs par nœud (sinon auto-détecté)")
+    p_cap.add_argument("--ram-per-node", type=float, metavar="GO", help="RAM par nœud en Go")
+    p_cap.add_argument("--max-nodes", type=int, help="nombre maximal de nœuds")
+    p_cap.add_argument("--max-walltime", type=float, metavar="HEURES", help="temps d'horloge maximal")
+    # Objectif
+    p_cap.add_argument("--strategy", choices=[s.value for s in Strategy], help="stratégie de l'objectif")
+    p_cap.add_argument("--max-efficiency-loss", type=float, help="perte d'efficacité tolérée (0-1)")
+    p_cap.add_argument("--deadline", type=float, metavar="HEURES", help="échéance en temps d'horloge")
+    p_cap.add_argument("--cores-max", type=int, help="borne haute de la recherche de cœurs")
+    p_cap.set_defaults(func=cmd_capture)
 
     return parser
 

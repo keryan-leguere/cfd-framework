@@ -76,6 +76,11 @@ def mesh_from_data(
     2. otherwise inferred from the pilot's measured peak RAM;
     3. otherwise left unknown, and memory constraints are skipped.
     """
+    # Validate before the pilot-inference division below, so a bad cell count
+    # surfaces as a clear ValueError rather than a ZeroDivisionError.
+    if num_cells <= 0:
+        raise ValueError(f"num_cells must be positive, got {num_cells}")
+
     resolved = mem_per_cell_bytes
     source = "unknown"
 

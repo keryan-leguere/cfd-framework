@@ -2,6 +2,11 @@
 
 Une étude tient dans **un seul fichier YAML**, versionnable à côté du cas.
 
+> Vous pouvez **générer ce fichier automatiquement** depuis un cas prêt à lancer
+> avec `cfd-perf capture` (voir [05_CAPTURE_PILOTE.md](05_CAPTURE_PILOTE.md)) —
+> cette page décrit alors ce que la capture produit, et reste la référence pour
+> l'écrire ou l'ajuster à la main.
+
 Exemple complet et commenté : [`01_EXEMPLE/ONERA_M6_CRUISE.yaml`](../01_EXEMPLE/ONERA_M6_CRUISE.yaml).
 
 Valider un fichier sans lancer le calcul :

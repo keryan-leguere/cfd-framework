@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  hotes.yaml — Paramètres machine par hôte (repli de la détection automatique)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  `cfd-perf capture --collect` renseigne la section `machine` du fichier d'étude
+#  dans cet ordre de priorité :
+#     1. options CLI (--cores-per-node, --ram-per-node, --max-nodes, --max-walltime)
+#     2. détection automatique (scontrol / nproc / /proc/meminfo)
+#     3. cette table, indexée par le nom d'hôte (préfixe le plus long qui matche)
+#     4. la clé `defaut` ci-dessous
+#     5. les valeurs par défaut de cfd-perf (cores_per_node=1)
+#
+#  Ajoutez vos calculateurs ici. La clé est comparée au `hostname` : une entrée
+#  « cluster-a » matche « cluster-a-login01 », « cluster-a-node042 », etc.
+#  Champs : cores_per_node (requis), ram_per_node_gb, max_nodes, max_walltime_hours.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+defaut:
+  cores_per_node: 1
+
+# Exemples — à adapter / compléter :
+cluster-a:
+  cores_per_node: 48
+  ram_per_node_gb: 192
+  max_nodes: 32
+  max_walltime_hours: 24
+
+cluster-b:
+  cores_per_node: 128
+  ram_per_node_gb: 512
+  max_nodes: 64
+  max_walltime_hours: 48

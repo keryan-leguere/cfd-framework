@@ -27,7 +27,26 @@ le coût et les réserves qui vont avec.
 ```bash
 cd tools/cfd-perf
 pip install -e ".[dev]"
+```
 
+### Voie automatique — depuis un cas prêt à lancer *(recommandée)*
+
+`cfd-perf capture` lance les runs pilotes, mesure tout, et génère le fichier
+d'étude tout seul. Aucun pilote à relever, aucun YAML à écrire.
+
+```bash
+# 1. soumission des runs pilotes (adaptez --adaptateur à votre solveur)
+cfd-perf capture --coeurs "48 96 192 384" --adaptateur OF --queue normal --case-dir .
+# 2. quand les runs sont finis : collecte + recommandation
+cfd-perf capture --collect --case-dir . --figure SORTIE/fig.png
+```
+
+Sans solveur, essayez avec l'adaptateur simulé `mock` (voir
+[00_DOC/05_CAPTURE_PILOTE.md](00_DOC/05_CAPTURE_PILOTE.md)).
+
+### Voie manuelle — fichier d'étude à la main
+
+```bash
 cfd-perf example -o mon_etude          # copie l'exemple prêt à l'emploi
 cd mon_etude && ./RUN_EXEMPLE.sh       # le rejoue sous les 3 stratégies
 ```
@@ -61,15 +80,16 @@ tools/cfd-perf/
 │   ├── 01_MODELE.md              le modèle et sa physique
 │   ├── 02_GUIDE_UTILISATEUR.md   méthode, lecture des résultats
 │   ├── 03_FORMAT_ENTREE.md       schéma du fichier d'étude
+│   ├── 05_CAPTURE_PILOTE.md      capture automatique des données pilotes
 │   ├── FIGURES/                  illustrations (regénérables)
 │   └── generer_figures.py
 ├── 01_EXEMPLE/          exemple prêt à l'exécution (données réalistes)
-│   ├── ONERA_M6_CRUISE.yaml
-│   ├── RUN_EXEMPLE.sh
-│   └── SORTIE/
+├── ADAPTATEUR/          adaptateurs bash de capture (solveur-agnostiques)
+│   ├── interface.sh  mock.sh  OF.sh  hotes.yaml  README.md
 ├── src/cfd_perf/        le paquet
 │   ├── core/                modèle, mémoire, contraintes, check-point
 │   ├── data/                pilote, maillage, machine, fichier d'étude
+│   ├── capture/             capture pilote : adaptateur, machine, étude, orchestration
 │   ├── engine/              décision : « combien de cœurs ? »
 │   ├── report/              rapport Rich + figures (françaises)
 │   └── cli/

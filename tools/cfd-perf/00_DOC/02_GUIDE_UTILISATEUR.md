@@ -1,6 +1,21 @@
 # Guide utilisateur
 
-## 1. En trois commandes
+## 0. Deux voies
+
+- **Automatique** *(recommandée)* — depuis un cas prêt à lancer, `cfd-perf
+  capture` lance les runs pilotes, mesure temps/itérations/RAM, et génère le
+  fichier d'étude tout seul. Voir [05_CAPTURE_PILOTE.md](05_CAPTURE_PILOTE.md).
+
+  ```bash
+  cfd-perf capture --coeurs "48 96 192 384" --adaptateur OF --queue normal --case-dir .
+  cfd-perf capture --collect --case-dir . --figure SORTIE/scalabilite.png
+  ```
+
+- **Manuelle** — vous relevez le pilote et écrivez le YAML vous-même (sections
+  ci-dessous). Utile pour comprendre ce que la capture automatise, ou quand
+  aucun adaptateur n'existe pour votre solveur.
+
+## 1. En trois commandes (voie manuelle)
 
 ```bash
 cfd-perf example -o mon_etude      # copie l'exemple prêt à l'emploi

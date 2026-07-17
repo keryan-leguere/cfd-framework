@@ -137,13 +137,22 @@ These are independent packages (own `pyproject.toml`, own venv/deps) nested insi
 not part of the Bash framework's runtime:
 
 - **`tools/cfd-perf/`** — answers "how many CPUs should I launch on?" for steady RANS runs.
-  `cfd-perf run STUDY.yaml [--figure F.png]`, plus `check` (validate a study) and `example`
-  (copy a runnable example). One YAML file per study; the only real input is a set of pilot
-  measurements. Layout: `00_DOC/` (illustrated docs, FR), `01_EXEMPLE/` (ready-to-run example),
-  `src/cfd_perf/{core,data,engine,report,cli}/`. Terminal report is Rich; **figures are in
-  French** and render via `scripts/post/plot`'s `plotting` package when it is importable,
-  falling back to plain Matplotlib otherwise. See `tools/cfd-perf/00_DOC/01_MODELE.md` for the
-  scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
+  `cfd-perf run STUDY.yaml [--figure F.png]`, plus `check` (validate a study), `example`
+  (copy a runnable example), and `capture` (automate pilot capture — see below). One YAML file
+  per study; the only real input is a set of pilot measurements. Layout: `00_DOC/` (illustrated
+  docs, FR), `01_EXEMPLE/` (ready-to-run example), `ADAPTATEUR/` (solver-agnostic bash capture
+  adapters), `src/cfd_perf/{core,data,capture,engine,report,cli}/`. Terminal report and CLI are
+  Rich **in French**; figures (also French) render via `scripts/post/plot`'s `plotting` package
+  when importable, falling back to plain Matplotlib. See `tools/cfd-perf/00_DOC/01_MODELE.md`
+  for the scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
+    - **Pilot capture** (`cfd-perf capture`, `00_DOC/05_CAPTURE_PILOTE.md`): two-phase
+      submit→collect. `capture --coeurs "N…" --adaptateur X [--queue Q]` submits one run per
+      core count via a local bash adapter in `ADAPTATEUR/` (mirrors the framework
+      `adaptateurs/` contract but self-contained — `interface.sh`/`mock.sh`/`OF.sh`); `capture
+      --collect` reads finished runs, extracts time/iters/RAM (peak RAM = SLURM `MaxRSS ×
+      NTasks`), auto-detects the machine (`hotes.yaml` fallback), writes a validated `ETUDE.yaml`,
+      and recommends. Python side under `src/cfd_perf/capture/` (`BashAdapter`, `machine_detect`,
+      `manifest`, `study_writer`, `orchestrator`). Test with `--adaptateur mock` (no solver/SLURM).
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).
