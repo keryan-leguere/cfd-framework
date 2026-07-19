@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-atm"
+version = "1.0.0"
+description = "Atmosphere model: air conditions and flight-mechanics airspeeds from an altitude."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+]
+
+[project.scripts]
+cfd-atm = "cfd_atm.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# French docs, report and figure labels legitimately use en dashes, minus
+# signs, multiplication signs, curly apostrophes and non-breaking spaces;
+# they are not homoglyph mistakes. The Greek letters ρ, ν, σ are physics
+# symbols (density, kinematic viscosity, density ratio), not Latin lookalikes.
+allowed-confusables = ["–", "−", "×", "’", " ", "ρ", "ν", "σ"]
+
+[tool.ruff.lint.per-file-ignores]
+# The `value == pytest.approx(expected)` idiom reads naturally; don't flip it.
+"tests/**" = ["SIM300"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_atm"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*"]
+ignore_missing_imports = true
+
+# The in-house plotting library ships no type stubs and is resolved at
+# runtime from disk (see report/_plotting_lib.py), so it cannot be typed here.
+[[tool.mypy.overrides]]
+module = ["plotting"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

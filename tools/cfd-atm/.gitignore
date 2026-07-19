@@ -1,0 +1,16 @@
+# Environnements & caches
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Sorties générées par l'exemple (régénérables via RUN_EXEMPLE.sh)
+01_EXEMPLE/SORTIE/
+
+# Artefacts d'éditeur
+Untitled

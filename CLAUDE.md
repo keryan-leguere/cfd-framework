@@ -153,6 +153,19 @@ not part of the Bash framework's runtime:
       NTasks`), auto-detects the machine (`hotes.yaml` fallback), writes a validated `ETUDE.yaml`,
       and recommends. Python side under `src/cfd_perf/capture/` (`BashAdapter`, `machine_detect`,
       `manifest`, `study_writer`, `orchestrator`). Test with `--adaptateur mock` (no solver/SLURM).
+- **`tools/cfd-atm/`** — atmosphere model as a "block": maps an altitude (geometric/geopotential/
+  pressure) + a temperature model (`ISA`, `ISA±ΔT`, custom `T(H)` profile) to the air state (p, T, ρ),
+  derived quantities (speed of sound, Sutherland viscosity, θ/δ/σ ratios), every equivalent altitude,
+  and — from one speed input — all flight-mechanics airspeeds (Mach, Vc/CAS, EAS, TAS) in subsonic
+  **and** supersonic (Rayleigh pitot). `cfd-atm point …` (Rich FR report, aero units first with SI),
+  `cfd-atm diagramme` (iso-Vc / iso-TAS figures), `cfd-atm example`. Layout mirrors cfd-perf:
+  `00_DOC/` (FR docs — `01_MODELE_ATMOSPHERE.md`, `02_GRANDEURS_VITESSE.md`), `01_EXEMPLE/`
+  (`tracer_iso_vitesses.py` + `profil_T_custom.yaml`), `src/cfd_atm/{core,report,cli}/`. Figures use
+  `scripts/post/plot`'s `plotting` when importable (needs pandas), else plain Matplotlib. Core is
+  pure NumPy (no SciPy): custom profiles integrate hydrostatic equilibrium; the supersonic Mach
+  inversion is a hand-rolled bisection. Key physics note documented in `02_GRANDEURS_VITESSE.md`:
+  on a Mach–zp chart iso-Vc are temperature-invariant (only iso-TAS move with ΔT); the geometric-
+  altitude diagram (A) is where the temperature model shifts the iso-Vc curves.
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).

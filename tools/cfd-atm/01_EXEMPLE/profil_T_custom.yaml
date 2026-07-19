@@ -1,0 +1,15 @@
+# Profil de température custom pour cfd-atm.
+#
+# Table (altitude géopotentielle en mètres -> température en kelvin), interpolée
+# linéairement. Ici : surface chaude avec une inversion de basse couche, puis une
+# tropopause abaissée et plus froide que l'ISA. En dehors de la table, la
+# température est prolongée par la valeur du bord le plus proche.
+nom: "Custom — inversion + tropopause froide"
+profil:
+  - { altitude_m: 0,     temperature_K: 295.0 }   # 21.9 °C au sol
+  - { altitude_m: 900,   temperature_K: 300.0 }   # inversion : +5 K vers 900 m
+  - { altitude_m: 3000,  temperature_K: 283.0 }
+  - { altitude_m: 8000,  temperature_K: 236.0 }
+  - { altitude_m: 11000, temperature_K: 210.0 }   # tropopause plus froide que l'ISA
+  - { altitude_m: 20000, temperature_K: 210.0 }
+  - { altitude_m: 32000, temperature_K: 222.0 }
