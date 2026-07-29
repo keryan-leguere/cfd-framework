@@ -1,0 +1,14 @@
+# Artefacts Python / build
+__pycache__/
+*.egg-info/
+build/
+dist/
+*.whl
+.venv/
+
+# Caches d'outils
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

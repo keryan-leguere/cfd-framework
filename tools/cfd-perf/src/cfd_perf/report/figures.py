@@ -25,6 +25,7 @@ from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 from matplotlib.axes import Axes
 from matplotlib.axis import Axis
 from matplotlib.figure import Figure
@@ -51,10 +52,11 @@ VERDICT_FR = {
 }
 
 
-def _dense_cores(rec: Recommendation) -> np.ndarray:
+def _dense_cores(rec: Recommendation) -> npt.NDArray[np.int_]:
     lo = min(rec.candidates[0].cores, rec.pilot.core_range[0])
     hi = max(rec.candidates[-1].cores, rec.pilot.core_range[1])
-    return np.unique(np.round(np.geomspace(lo, hi, _POINTS_DENSES)).astype(int))
+    dense = np.unique(np.round(np.geomspace(lo, hi, _POINTS_DENSES)).astype(int))
+    return cast("npt.NDArray[np.int_]", dense)
 
 
 def _milliers(x: float, _pos: int = 0) -> str:
@@ -125,7 +127,9 @@ def _habiller(ax: Axes, xlabel: str, ylabel: str, titre: str) -> None:
     ax.tick_params(which="minor", labelsize=7)
 
 
-def _tracer_modele(ax: Axes, x: np.ndarray, y: np.ndarray, label: str) -> None:
+def _tracer_modele(
+    ax: Axes, x: npt.NDArray[Any], y: npt.NDArray[Any], label: str
+) -> None:
     plotting = get_plotting()
     if plotting is not None:
         plotting.plot_line(
@@ -135,7 +139,7 @@ def _tracer_modele(ax: Axes, x: np.ndarray, y: np.ndarray, label: str) -> None:
         ax.plot(x, y, color=COULEUR_MODELE, linewidth=2, zorder=2, label=label)
 
 
-def _tracer_pilote(ax: Axes, x: np.ndarray, y: np.ndarray) -> None:
+def _tracer_pilote(ax: Axes, x: npt.NDArray[Any], y: npt.NDArray[Any]) -> None:
     ax.scatter(
         x, y, color=COULEUR_PILOTE, s=55, marker="D", zorder=5,
         edgecolors="white", linewidths=1.2, label="pilote (mesuré)",

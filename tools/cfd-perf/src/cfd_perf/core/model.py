@@ -48,8 +48,12 @@ from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
+import numpy.typing as npt
 
 from cfd_perf.data.pilot import PilotSeries
+
+# All numeric arrays here are wall-times / core counts / coefficients: float64.
+FloatArray = npt.NDArray[np.float64]
 
 # Communication exponent scan range.  0.05 is "communication barely grows";
 # 2.0 covers all-to-all-ish behaviour on a badly decomposed mesh.
@@ -202,14 +206,14 @@ class ScalingModel:
 # ---------------------------------------------------------------------------
 
 
-def _design_matrix(nc: np.ndarray, gamma: float, with_comm: bool) -> np.ndarray:
+def _design_matrix(nc: FloatArray, gamma: float, with_comm: bool) -> FloatArray:
     cols = [np.ones_like(nc), 1.0 / nc]
     if with_comm:
         cols.append(nc**gamma)
     return np.column_stack(cols)
 
 
-def _solve_nonneg(design: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, float] | None:
+def _solve_nonneg(design: FloatArray, t: FloatArray) -> tuple[FloatArray, float] | None:
     """Relative-error least squares with all coefficients constrained >= 0.
 
     Returns ``(coeffs, sse_relative)`` or None if no non-negative solution
@@ -220,7 +224,7 @@ def _solve_nonneg(design: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, float]
     design_w = design * weights[:, None]
     t_w = t * weights
 
-    best: tuple[np.ndarray, float] | None = None
+    best: tuple[FloatArray, float] | None = None
     for mask in product((0, 1), repeat=n_coef):
         if not any(mask):
             continue
@@ -237,7 +241,7 @@ def _solve_nonneg(design: np.ndarray, t: np.ndarray) -> tuple[np.ndarray, float]
     return best
 
 
-def _quality(pred: np.ndarray, meas: np.ndarray) -> FitQuality:
+def _quality(pred: FloatArray, meas: FloatArray) -> FitQuality:
     rel = (pred - meas) / meas
     ss_res = float(np.sum((pred - meas) ** 2))
     ss_tot = float(np.sum((meas - meas.mean()) ** 2))
@@ -291,7 +295,7 @@ def fit_model(pilot: PilotSeries, *, kind: ModelKind | None = None) -> ScalingMo
         np.linspace(GAMMA_MIN, GAMMA_MAX, GAMMA_STEPS) if with_comm else np.array([0.0])
     )
 
-    best_coeffs: np.ndarray | None = None
+    best_coeffs: FloatArray | None = None
     best_sse = np.inf
     best_gamma = 0.0
     for gamma in gammas:
