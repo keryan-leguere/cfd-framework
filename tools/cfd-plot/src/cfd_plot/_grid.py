@@ -111,11 +111,11 @@ def prepare_cmap(cmap, bad_color):
     import matplotlib.pyplot as plt
 
     if isinstance(cmap, str):
-        cmap = plt.get_cmap(cmap).copy()
-    else:
-        cmap = cmap.copy()
-    cmap.set_bad(color=mcolors.to_rgba(bad_color))
-    return cmap
+        cmap = plt.get_cmap(cmap)
+    # with_extremes() returns a *new* colormap, so the caller's is left
+    # untouched and no explicit .copy() is needed. Colormap.set_bad() is
+    # pending deprecation in Matplotlib and must not be used here.
+    return cmap.with_extremes(bad=mcolors.to_rgba(bad_color))
 
 
 def add_colorbar(mappable, ax, label=None):

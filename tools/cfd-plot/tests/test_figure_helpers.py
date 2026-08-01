@@ -12,6 +12,7 @@ from cfd_plot import (
     add_reference_lines,
     add_shared_colorbar,
     make_figure_legend,
+    make_legend,
     plot_bar,
     plot_contourf,
     plot_line,
@@ -427,3 +428,45 @@ class TestSyncAxesLimitsNonLineArtists:
         sync_axes_limits(axes, which="y")
         assert axes[0].get_ylim()[1] < 5.0
         plt.close(fig)
+
+
+class TestLegendEdgeColorInherit:
+    """`legend.edgecolor` legally accepts the string "inherit".
+
+    It means "use axes.edgecolor", and Matplotlib's own `classic` style ships
+    it. Both legend helpers used to forward it straight to set_edgecolor(),
+    which raised `ValueError: Invalid RGBA argument: 'inherit'` at draw time —
+    so any user working under a style that uses it got a crash on save.
+    """
+
+    def _draw(self, fig):
+        """Force the render that used to raise."""
+        fig.canvas.draw()
+
+    def test_make_legend_under_inherit_style(self):
+        with matplotlib.style.context("classic"):
+            fig, ax = plt.subplots()
+            plot_line(ax, np.arange(5), np.arange(5), label="x")
+            leg = make_legend(ax)
+            self._draw(fig)
+            assert leg.get_frame().get_edgecolor() == pytest.approx((0.0, 0.0, 0.0, 1.0))
+            plt.close(fig)
+
+    def test_make_figure_legend_under_inherit_style(self):
+        with matplotlib.style.context("classic"):
+            fig, axes = plt.subplots(1, 2)
+            for ax in axes:
+                plot_line(ax, np.arange(5), np.arange(5), label="x")
+            leg = make_figure_legend(fig, axes)
+            self._draw(fig)
+            assert leg.get_frame().get_edgecolor() == pytest.approx((0.0, 0.0, 0.0, 1.0))
+            plt.close(fig)
+
+    def test_explicit_edgecolor_still_wins(self):
+        with matplotlib.style.context("classic"):
+            fig, ax = plt.subplots()
+            plot_line(ax, np.arange(5), np.arange(5), label="x")
+            leg = make_legend(ax, edgecolor="red")
+            self._draw(fig)
+            assert leg.get_frame().get_edgecolor() == pytest.approx((1.0, 0.0, 0.0, 1.0))
+            plt.close(fig)

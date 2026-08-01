@@ -60,6 +60,18 @@ jobs:
         working-directory: tools/${{ matrix.package }}
         run: pytest
 
+      # Image regression (pytest-mpl), cfd-plot only. Kept as its own
+      # non-blocking step on purpose: baselines are pixel comparisons, so a
+      # different FreeType/Agg build on the runner can shift them for reasons
+      # unrelated to the library. Reported, never merge-blocking, until we have
+      # evidence that runner-vs-laptop drift stays inside the tolerance.
+      # Promote to a hard gate (drop continue-on-error) once that holds.
+      - name: pytest --mpl (image regression, advisory)
+        if: matrix.package == 'cfd-plot'
+        continue-on-error: true
+        working-directory: tools/cfd-plot
+        run: pytest tests/test_images.py --mpl
+
       - name: ruff check
         if: always() # report every gate, don't stop at the first failure
         working-directory: tools/${{ matrix.package }}

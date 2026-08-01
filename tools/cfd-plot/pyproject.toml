@@ -25,6 +25,7 @@ rich = ["rich>=13.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "pytest-mpl",
     "ruff",
     "mypy",
     "scipy>=1.11",
@@ -112,3 +113,13 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "mpl_image_compare: figure is compared against a baseline PNG (pytest-mpl)",
+]
+# Matplotlib deprecations are how this library breaks: `Colormap.set_bad` went
+# pending-deprecated under our feet and would have silently taken `bad_color`
+# with it. Fail on our own deprecated usage instead of letting it scroll past.
+filterwarnings = [
+    "error::DeprecationWarning:cfd_plot.*",
+    "error::PendingDeprecationWarning:cfd_plot.*",
+]

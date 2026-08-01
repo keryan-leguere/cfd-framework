@@ -198,11 +198,10 @@ def _noop_context():
 # Marker helpers
 # ---------------------------------------------------------------------------
 
-_MARKER_DEFAULTS = dict(
-    marker="o",
-    markerfacecolor="white",
-    markeredgewidth=None,  # will be read from rcParams
-)
+# NB: the marker look is applied by apply_marker_style() below, not by a
+# defaults dict. A `_MARKER_DEFAULTS` constant used to sit here, unreferenced
+# by anything — editing its markerfacecolor changed nothing, which is exactly
+# the sort of trap that wastes an afternoon. Change apply_marker_style().
 
 
 def plot_line(
@@ -250,6 +249,21 @@ _LEGEND_DEFAULTS: dict = dict(
 )
 
 
+def _resolve_legend_edgecolor(edge):
+    """Resolve a legend edge colour, honouring Matplotlib's ``"inherit"``.
+
+    ``legend.edgecolor`` legally accepts the string ``"inherit"`` (it is what
+    Matplotlib's own ``classic`` style ships), meaning "use ``axes.edgecolor``".
+    Passing it straight to ``set_edgecolor`` raises
+    ``ValueError: Invalid RGBA argument: 'inherit'``, so translate it here.
+    """
+    if edge is None:
+        edge = mpl.rcParams.get("legend.edgecolor", "0.15")
+    if isinstance(edge, str) and edge == "inherit":
+        edge = mpl.rcParams.get("axes.edgecolor", "0.15")
+    return edge
+
+
 def make_legend(ax, **kwargs):
     """Create a legend with old-style defaults and a guaranteed thick frame.
 
@@ -274,9 +288,7 @@ def make_legend(ax, **kwargs):
         frame_lw = max(frame_lw, 1.2)
     leg.get_frame().set_linewidth(frame_lw)
 
-    if edge is None:
-        edge = mpl.rcParams.get("legend.edgecolor", "0.15")
-    leg.get_frame().set_edgecolor(edge)
+    leg.get_frame().set_edgecolor(_resolve_legend_edgecolor(edge))
 
     return leg
 
@@ -355,9 +367,7 @@ def make_figure_legend(
     leg.get_frame().set_linewidth(frame_linewidth)
 
     edge = kwargs.get("edgecolor")
-    if edge is None:
-        edge = mpl.rcParams.get("legend.edgecolor", "0.15")
-    leg.get_frame().set_edgecolor(edge)
+    leg.get_frame().set_edgecolor(_resolve_legend_edgecolor(edge))
 
     return leg
 

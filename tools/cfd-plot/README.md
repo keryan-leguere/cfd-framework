@@ -46,7 +46,7 @@ Three things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 218 tests
+pytest                       # 239 tests
 ```
 
 | Extra | Pulls | Needed for |
@@ -54,7 +54,7 @@ pytest                       # 218 tests
 | *(base)* | `matplotlib`, `numpy`, **`pandas`** | `import cfd_plot` |
 | `.[dispersion]` | `scipy` | `cfd_plot.dispersion`, `interpolate_field2d` |
 | `.[rich]` | `rich` | pretty terminal export reports |
-| `.[dev]` | the above + `pytest`, `pytest-cov`, `ruff`, `mypy`, type stubs | development |
+| `.[dev]` | the above + `pytest`, `pytest-cov`, `pytest-mpl`, `ruff`, `mypy`, type stubs | development |
 
 > **pandas is required, not optional.** `cfd_plot/__init__.py` re-exports `batch.py`, which
 > imports pandas at module level — without it `import cfd_plot` raises `ImportError`.
@@ -854,11 +854,42 @@ tools/cfd-plot/
 ```
 
 ```bash
-pytest                              # 218 tests
+pytest                              # 239 tests
+pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src
 python3 00_DOC/generer_figures.py   # rebuild the README pictures
 ```
+
+### Image regression tests
+
+`tests/test_images.py` renders 18 figures and compares them pixel-wise against
+`tests/baseline/`, via [pytest-mpl](https://pytest-mpl.readthedocs.io). The rest
+of the suite checks *structure* — a call returns a `Line2D`, limits match, a
+colorbar exists — and is structurally blind to what the figure looks like, which
+is the one thing this package exists to control.
+
+- `pytest` alone builds the figures but **does not compare** them. That is
+  pytest-mpl's design: you need `--mpl` to opt into comparison.
+- After an *intended* visual change, regenerate and **look at the diffs**
+  before committing:
+
+  ```bash
+  pytest tests/test_images.py --mpl-generate-path=tests/baseline
+  ```
+
+  A baseline nobody eyeballed is worse than no baseline: it locks in the
+  regression.
+
+The `tolerance=2` (RMS) was calibrated, not guessed. Injecting one deliberate
+regression — `plot_line`'s white marker fill turned red — gives RMS 8.6–23.6 on
+the affected tests, while an unchanged rerun gives < 0.01. At the tolerance of
+20 originally tried, that regression slipped past 16 of the 18 tests unnoticed.
+If you raise it, redo that experiment.
+
+Note that pytest-mpl applies `style="classic"` by default, which would pin a
+style this package never produces; the tests override it with `style="default"`
+and establish the house profile themselves.
 
 Every figure in this README is produced by `00_DOC/generer_figures.py`, one function per
 section. **When you add a public helper, add a panel there too** — that is what keeps the
@@ -883,4 +914,6 @@ this codebase.
 | `KeyError: compare_flight_points[...] missing flight-point keys` | each compare entry must pin every active key | add the missing keys (the sweep variable is excluded) |
 | Fonts look wrong / fall back to DejaVu | bundled fonts not registered | `register_fonts()`; check `src/cfd_plot/fonts/` was installed as package data |
 | EMF export silently produces SVG | Inkscape not on `PATH` | install Inkscape, or export SVG/PDF |
+| Image tests pass but never catch anything | `pytest` without `--mpl` builds figures without comparing | run `pytest --mpl` |
+| `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.0.1 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
 | Title overlaps the subtitle | `set_subtitle` called before `set_title` | call `set_title` first |
