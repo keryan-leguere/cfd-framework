@@ -1,0 +1,78 @@
+name: CI
+
+# Runs the quality gates of each standalone Python package on a *fresh* machine:
+# pytest, ruff and mypy — the same three commands you run by hand.
+#
+# Two packages are deliberately absent for now — a permanently red pipeline
+# gets ignored, which defeats the point:
+#
+#   tools/cfd-stats    5 tests fail on SciPy >= 1.18 (a TypeError raised inside
+#                      scipy.stats.kstest) and ~33 ruff errors.
+#   tools/slurm-utils  no test suite at all (pytest exits 5, "nothing collected").
+#
+# Add either to the matrix below once it is green.
+
+on:
+  push:
+    branches: [main, "refonte-*"]
+  pull_request:
+  workflow_dispatch: # lets you trigger a run by hand from the Actions tab
+
+# A new push to the same branch cancels the previous, still-running job.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MPLBACKEND: Agg # no display on a CI runner
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  python:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      # The packages are independent: one failing must not hide the others.
+      fail-fast: false
+      matrix:
+        package: [cfd-plot, cfd-perf, cfd-atm]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # every package sets requires-python = ">=3.12"
+          cache: pip
+          cache-dependency-path: tools/*/pyproject.toml
+
+      # cfd-plot first, and for every package: cfd-perf and cfd-atm have tests
+      # that only exercise the house-style figure path when it is importable,
+      # and silently *skip* otherwise. Installing it unconditionally keeps
+      # those tests meaningful instead of quietly passing.
+      - name: Install cfd-plot (optional dependency of the other packages)
+        run: pip install -e tools/cfd-plot
+
+      - name: Install ${{ matrix.package }}
+        run: pip install -e "tools/${{ matrix.package }}[dev]"
+
+      - name: pytest
+        working-directory: tools/${{ matrix.package }}
+        run: pytest
+
+      - name: ruff check
+        if: always() # report every gate, don't stop at the first failure
+        working-directory: tools/${{ matrix.package }}
+        run: ruff check .
+
+      - name: mypy
+        if: always()
+        working-directory: tools/${{ matrix.package }}
+        run: mypy src
+
+# A job for the Bash framework (tests/test_sprint1_2.sh with CFD_ADAPTATEUR=mock)
+# is intentionally NOT here yet: that suite currently aborts on its first `h1`
+# call. lib/format.sh uses `((sec++))`, which returns exit status 1 when the
+# counter is still 0, and the suite runs under `set -euo pipefail`. Fix that
+# (`((sec++)) || true`, or `sec=$((sec + 1))`) and the job becomes a ~10-line
+# addition.
