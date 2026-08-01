@@ -66,10 +66,10 @@ warn_unused_configs = true
 module = ["matplotlib.*"]
 ignore_missing_imports = true
 
-# The in-house plotting library ships no type stubs and is resolved at
-# runtime from disk (see report/_plotting_lib.py), so it cannot be typed here.
+# cfd-plot is an optional sibling package (see report/_plotting_lib.py); it
+# may legitimately be absent from the environment mypy runs in.
 [[tool.mypy.overrides]]
-module = ["plotting"]
+module = ["cfd_plot"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

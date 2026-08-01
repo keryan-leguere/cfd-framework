@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
-from plotting import (
+from cfd_plot import (
     batch_compare_flight_points,
     batch_plot,
     build_compare_output_path,

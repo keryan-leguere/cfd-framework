@@ -24,8 +24,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A solver-agnostic Bash framework for managing, launching, and post-processing parametric CFD
 (Computational Fluid Dynamics) studies (OpenFOAM today, mock adapter for testing, more solvers planned).
-Core framework code is Bash; several standalone Python tools live under `tools/` and
-`scripts/post/plot/`. Comments, docs, and CLI messages are largely in French; code identifiers mix
+Core framework code is Bash; several standalone Python tools live under `tools/`.
+Comments, docs, and CLI messages are largely in French; code identifiers mix
 French (`cfd_charger`, `adapt_lancer_calcul`) and English.
 
 ## Environment setup
@@ -142,8 +142,8 @@ not part of the Bash framework's runtime:
   per study; the only real input is a set of pilot measurements. Layout: `00_DOC/` (illustrated
   docs, FR), `01_EXEMPLE/` (ready-to-run example), `ADAPTATEUR/` (solver-agnostic bash capture
   adapters), `src/cfd_perf/{core,data,capture,engine,report,cli}/`. Terminal report and CLI are
-  Rich **in French**; figures (also French) render via `scripts/post/plot`'s `plotting` package
-  when importable, falling back to plain Matplotlib. See `tools/cfd-perf/00_DOC/01_MODELE.md`
+  Rich **in French**; figures (also French) render via the `cfd-plot` package
+  when installed, falling back to plain Matplotlib. See `tools/cfd-perf/00_DOC/01_MODELE.md`
   for the scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
     - **Pilot capture** (`cfd-perf capture`, `00_DOC/05_CAPTURE_PILOTE.md`): two-phase
       submit→collect. `capture --coeurs "N…" --adaptateur X [--queue Q]` submits one run per
@@ -161,7 +161,7 @@ not part of the Bash framework's runtime:
   `cfd-atm diagramme` (iso-Vc / iso-TAS figures), `cfd-atm example`. Layout mirrors cfd-perf:
   `00_DOC/` (FR docs — `01_MODELE_ATMOSPHERE.md`, `02_GRANDEURS_VITESSE.md`), `01_EXEMPLE/`
   (`tracer_iso_vitesses.py` + `profil_T_custom.yaml`), `src/cfd_atm/{core,report,cli}/`. Figures use
-  `scripts/post/plot`'s `plotting` when importable (needs pandas), else plain Matplotlib. Core is
+  the `cfd-plot` package when installed, else plain Matplotlib. Core is
   pure NumPy (no SciPy): custom profiles integrate hydrostatic equilibrium; the supersonic Mach
   inversion is a hand-rolled bisection. Key physics note documented in `02_GRANDEURS_VITESSE.md`:
   on a Mach–zp chart iso-Vc are temperature-invariant (only iso-TAS move with ΔT); the geometric-
@@ -169,20 +169,26 @@ not part of the Bash framework's runtime:
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).
-- **`scripts/post/plot/`** — a Matplotlib wrapper package (`plotting/`) providing styled figure helpers
-  (`use_style`, `plot_line`, `plot_with_band`, `plot_bar`, `save_figure`, etc.) across three profiles
-  (`notebook`/`slides`/`paper`), plus a dict-driven `batch.py` for multi-source curve comparisons
-  (CFD/analytics/experimental data across flight points) and a `dispersion/` submodule.
+- **`tools/cfd-plot/`** — a Matplotlib wrapper package (import name `cfd_plot`) providing styled
+  figure helpers (`use_style`, `plot_line`, `plot_with_band`, `plot_bar`, `save_figure`, etc.) across
+  three profiles (`notebook`/`slides`/`paper`), plus a dict-driven `batch.py` for multi-source curve
+  comparisons (CFD/analytics/experimental data across flight points) and a `cfd_plot.dispersion`
+  submodule (needs SciPy — `.[dispersion]` extra). `cfd-perf` and `cfd-atm` import it *optionally*
+  via their `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they
+  stay deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).
+  mypy runs here at `check_untyped_defs` level, not `strict` like the other packages — see TODO.md.
 
-Each has its own `pyproject.toml` (setuptools, Python ≥3.12) with a `dev` extra (`pytest`, `ruff`,
-`mypy`/`pytest-cov`). Install and test one in isolation, e.g.:
+Each has its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.12) with a `dev` extra
+(`pytest`, `ruff`, `mypy`/`pytest-cov`). There is no workspace tool, no lockfile and no
+`requirements.txt` anywhere: you `cd` into a package, install it editable into a venv, and run the
+tools directly. Install and test one in isolation, e.g.:
 
 ```bash
 cd tools/cfd-perf && pip install -e ".[dev]" && pytest
-cd scripts/post/plot && pip install -e ".[dev]" && pytest
+cd tools/cfd-plot && pip install -e ".[dev]" && pytest
 ```
 
-`scripts/post/plot` also has an end-to-end fixture/example generator at
+`tools/cfd-plot` also has an end-to-end fixture/example generator at
 `tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py`.
 
 ## Testing the Bash framework

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exemple cfd-atm : tracer les iso-Vc (et iso-TAS) via le package `plotting`.
+"""Exemple cfd-atm : tracer les iso-Vc (et iso-TAS) via le package `cfd_plot`.
 
 Produit trois figures dans ``SORTIE/`` :
 
@@ -11,8 +11,8 @@ Produit trois figures dans ``SORTIE/`` :
    se séparent selon le modèle.
 3. ``profils_temperature`` — les profils T(z) des quatre modèles.
 
-Le package `plotting` est résolu depuis ``$CFD_FRAMEWORK/scripts/post/plot``
-(exporter ``CFD_FRAMEWORK`` avant de lancer). À défaut, on retombe sur Matplotlib.
+Le style maison vient du paquet `cfd-plot` (``pip install -e tools/cfd-plot``).
+S'il n'est pas installé, on retombe sur Matplotlib brut.
 """
 
 from __future__ import annotations

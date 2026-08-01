@@ -4,7 +4,7 @@
 Loads three post-processed CSV sources, builds the configuration dictionaries,
 and generates SVG comparison curves for every flight point and sweep polar.
 
-Usage (from ``scripts/post/plot/``)::
+Usage (from ``tools/cfd-plot/``)::
 
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --output-base /tmp/batch_out
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from plotting import (
+from cfd_plot import (
     batch_compare_flight_points,
     batch_plot,
     discover_flight_point_values,
@@ -165,9 +165,7 @@ def _build_flight_point_dict(configuration_dict: dict) -> dict:
 
 def include_curve(source_key, flight_point, x_key, y_key, fixed_sweeps):
     """Demo hook: omit the EXP reference series from CA polars."""
-    if y_key == "CA" and source_key == "EXP":
-        return False
-    return True
+    return not (y_key == "CA" and source_key == "EXP")
 
 
 def on_before_save(fig, ax, context):

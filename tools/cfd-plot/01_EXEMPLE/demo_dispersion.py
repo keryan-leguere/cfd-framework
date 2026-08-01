@@ -1,7 +1,7 @@
 """
 demo_dispersion.py — Runnable showcase for the ``dispersion`` package.
 
-Run from ``scripts/post/plot``::
+Run from ``tools/cfd-plot``::
 
     PYTHONPATH=. python demo_dispersion.py
 
@@ -21,7 +21,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from dispersion import (
+from cfd_plot import print_file_report, save_figure, set_suptitle, style_context, use_style
+from cfd_plot.dispersion import (
     DispersionSpec,
     QuantityDispersion,
     plot_dispersion_cdf,
@@ -29,7 +30,6 @@ from dispersion import (
     plot_dispersion_matrix,
     plot_dispersion_type,
 )
-from plotting import print_file_report, save_figure, set_suptitle, style_context, use_style
 
 # ---------------------------------------------------------------------------
 # Global style + reproducibility
@@ -115,7 +115,7 @@ type_specs = [
 
 with style_context("notebook"):
     fig_gal, axes_gal = plt.subplots(2, 3, figsize=(13, 6))
-    for ax, spec in zip(axes_gal.ravel(), type_specs):
+    for ax, spec in zip(axes_gal.ravel(), type_specs, strict=True):
         plot_dispersion_type(spec, ax=ax)
     set_suptitle(fig_gal, "Dispersion type shapes — types 1 to 6", fontsize=12)
 

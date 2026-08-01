@@ -84,11 +84,14 @@ def _generate_figures(
     results: dict,
     output_dir: Path,
 ) -> None:
-    """Generate diagnostic figures if the ``plotting`` package is available."""
+    """Generate diagnostic figures if the ``cfd-plot`` package is installed."""
     try:
         from cfd_stats.reports.plotter import StatisticsPlotter
     except ImportError:
-        console.print("[yellow]Skipping figures: 'plotting' package not found on sys.path.[/]")
+        console.print(
+            "[yellow]Skipping figures: 'cfd-plot' is not installed "
+            "(pip install -e tools/cfd-plot).[/]"
+        )
         return
 
     plotter = StatisticsPlotter(df, coeff_cols, iter_col, results)

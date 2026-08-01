@@ -44,5 +44,8 @@ Thumbs.db
 *.log
 
 # Project-generated / scratch outputs
-scripts/post/plot/tests/E2E_MULTIPLE_PLOTTING/output/
-scripts/post/plot/tests/E2E_MULTIPLE_PLOTTING/resultat_test/
+tools/cfd-plot/tests/E2E_MULTIPLE_PLOTTING/output/
+tools/cfd-plot/tests/E2E_MULTIPLE_PLOTTING/resultat_test/
+tools/cfd-plot/01_EXEMPLE/SORTIE/
+tools/cfd-plot/01_EXEMPLE/output/
+tools/cfd-plot/01_EXEMPLE/demo_output/

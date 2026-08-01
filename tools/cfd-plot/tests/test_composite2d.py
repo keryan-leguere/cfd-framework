@@ -1,13 +1,14 @@
 """Tests for composite2d combined plots."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting import plot_contour_quiver
+from cfd_plot import plot_contour_quiver
 
 
 @pytest.fixture()

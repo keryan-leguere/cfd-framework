@@ -2,8 +2,8 @@
 """Régénère les figures illustratives des documents (dossier ``FIGURES/``).
 
 À relancer uniquement quand le modèle ou les constantes changent. Les figures
-sont versionnées dans le dépôt. Exporter ``CFD_FRAMEWORK`` pour bénéficier du
-style du package ``plotting`` (sinon Matplotlib brut).
+sont versionnées dans le dépôt. Installer ``cfd-plot`` (``pip install -e
+tools/cfd-plot``) pour bénéficier du style maison ; sinon Matplotlib brut.
 
     python3 00_DOC/generer_figures.py
 """

@@ -14,8 +14,9 @@ from cfd_stats.core.quality import compute_quality_metrics
 from cfd_stats.reports.console import ConsoleReporter
 from cfd_stats.utils.dataframe import load_dataframe
 
-# StatisticsPlotter requires the external ``plotting`` package; import
-# lazily so the rest of cfd_stats works without it.
+# StatisticsPlotter requires the sibling ``cfd-plot`` package
+# (``pip install -e tools/cfd-plot``); import lazily so the rest of
+# cfd_stats works without it.
 try:
     from cfd_stats.reports.plotter import StatisticsPlotter
 except ImportError:

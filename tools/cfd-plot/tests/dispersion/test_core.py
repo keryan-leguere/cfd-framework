@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from dispersion.core import (
+from cfd_plot.dispersion.core import (
     DISP_TYPE_LABELS,
     DispersionSpec,
     QuantityDispersion,

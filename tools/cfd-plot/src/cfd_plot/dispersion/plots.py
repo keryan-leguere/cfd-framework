@@ -1,11 +1,10 @@
 """
-dispersion.plots — Matplotlib visualization for dispersion analyses.
+cfd_plot.dispersion.plots — Matplotlib visualization for dispersion analyses.
 
-Styling is delegated to the companion ``plotting`` package, which must be on
-the Python path (e.g. run from ``scripts/post/plot`` with ``PYTHONPATH=.``).
-When a function creates its own figure it applies the ``"notebook"`` style
-profile via :func:`plotting.style_context`; when an external ``ax`` is
-supplied the caller controls the style.
+Styling is delegated to the parent :mod:`cfd_plot` package. When a function
+creates its own figure it applies the ``"notebook"`` style profile via
+:func:`cfd_plot.style_context`; when an external ``ax`` is supplied the caller
+controls the style.
 
 All functions are composable:
 
@@ -30,12 +29,10 @@ import numpy as np
 from matplotlib.patches import Rectangle
 from scipy.stats import gaussian_kde, norm, truncnorm
 
-from .core import DispersionSpec, QuantityDispersion, sigma
-
 # ---------------------------------------------------------------------------
-# Plotting package — styling helpers
+# Parent package — styling helpers
 # ---------------------------------------------------------------------------
-from plotting import (
+from .. import (
     add_textbox,
     annotate_point,
     apply_oldschool_axes,
@@ -43,6 +40,7 @@ from plotting import (
     set_title,
     style_context,
 )
+from .core import DispersionSpec, QuantityDispersion, sigma
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -53,7 +51,9 @@ _PROFILE = "notebook"
 _SIGMA_THEORY: dict[int, float] = {1: 68.27, 2: 95.45, 3: 99.73}
 
 # Per-type default colours — tab10 palette indexed by type int 1–6
-_TAB10 = plt.cm.tab10.colors
+# tab10 is a ListedColormap, which carries `.colors`; the stub types the
+# lookup as the Colormap base class.
+_TAB10 = plt.cm.tab10.colors  # type: ignore[attr-defined]
 _TYPE_COLORS: dict[int, tuple] = {i + 1: _TAB10[i] for i in range(6)}
 
 # Offsets (pts from annotation xy) for the 6 sigma marks on the CDF
@@ -205,10 +205,11 @@ def plot_dispersion_type(
     """
     own_fig = ax is None
     with _ctx(own_fig):
-        if own_fig:
+        if ax is None:
             fig, ax = plt.subplots(figsize=(3.8, 3.0))
         else:
-            fig = ax.get_figure()
+            # An Axes passed in by a caller always belongs to a real Figure.
+            fig = ax.get_figure()  # type: ignore[assignment]
 
         c = _type_color(spec.disp_type, color)
         moy = float(spec.moy)
@@ -357,10 +358,11 @@ def plot_dispersion_pdf(
     """
     own_fig = ax is None
     with _ctx(own_fig):
-        if own_fig:
+        if ax is None:
             fig, ax = plt.subplots(figsize=(9, 5.5), layout="none")
         else:
-            fig = ax.get_figure()
+            # An Axes passed in by a caller always belongs to a real Figure.
+            fig = ax.get_figure()  # type: ignore[assignment]
 
         c = color if color is not None else "C0"
         samples = qty.sample(n, rng=rng)
@@ -449,7 +451,7 @@ def plot_dispersion_cdf(
     """Empirical CDF with ±σ / ±2σ / ±3σ sigma marks and coverage textbox.
 
     The CDF value at each ±kσ position is annotated with an arrow using
-    :func:`plotting.annotate_point`.  Empirical coverage probabilities are
+    :func:`cfd_plot.annotate_point`.  Empirical coverage probabilities are
     shown in the stats textbox.  The ±kσ positions are also labelled on
     the x-axis.
 
@@ -472,10 +474,11 @@ def plot_dispersion_cdf(
     """
     own_fig = ax is None
     with _ctx(own_fig):
-        if own_fig:
+        if ax is None:
             fig, ax = plt.subplots(figsize=(9, 5.5), layout="none")
         else:
-            fig = ax.get_figure()
+            # An Axes passed in by a caller always belongs to a real Figure.
+            fig = ax.get_figure()  # type: ignore[assignment]
 
         c = color if color is not None else "C0"
         samples = qty.sample(n, rng=rng)
@@ -506,7 +509,7 @@ def plot_dispersion_cdf(
                     ax.scatter([xpos], [cdf_val],
                                color=c, s=50, edgecolors="white", linewidths=1.0, zorder=6)
 
-                    # Arrow annotation via plotting helper
+                    # Arrow annotation via cfd_plot helper
                     klab = "" if k == 1 else str(k)
                     sign_char = "+" if sign > 0 else "\u2212"
                     label_text = f"{sign_char}{klab}\u03c3\nP = {cdf_val:.1%}"
@@ -654,7 +657,7 @@ def plot_dispersion_matrix(
 
         prop_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-        for idx, (qty, samples) in enumerate(zip(qty_list, all_samples)):
+        for idx, (qty, samples) in enumerate(zip(qty_list, all_samples, strict=True)):
             row, col = divmod(idx, nc)
             ax = axes[row, col]
             c = prop_colors[idx % len(prop_colors)]

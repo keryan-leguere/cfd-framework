@@ -1,7 +1,7 @@
-# plotting — Matplotlib figure template (styles + helpers)
+# cfd_plot — Matplotlib figure template (styles + helpers)
 #
 # Usage:
-#   from plotting import use_style, save_figure, plot_line
+#   from cfd_plot import use_style, save_figure, plot_line
 #
 from .mpl_template import (
     BODY_FONT,

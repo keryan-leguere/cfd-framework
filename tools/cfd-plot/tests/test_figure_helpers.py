@@ -1,17 +1,23 @@
 """Tests for figure-level legend and shared colorbar helpers."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting import (
+from cfd_plot import (
+    add_reference_lines,
     add_shared_colorbar,
     make_figure_legend,
+    plot_bar,
     plot_contourf,
     plot_line,
+    plot_with_band,
+    set_subtitle,
+    set_title,
     sync_axes_limits,
     use_style,
 )
@@ -120,7 +126,7 @@ class TestAddSharedColorbar:
 
     def test_invalid_location(self, twin_contour_fig):
         fig, (ax1, ax2), cf = twin_contour_fig
-        with pytest.raises(ValueError, match="location=.*not supported"):
+        with pytest.raises(ValueError, match=r"location=.*not supported"):
             add_shared_colorbar(fig, cf, axes=[ax1, ax2], location="top")
 
     def test_single_axes(self, twin_contour_fig):
@@ -262,3 +268,162 @@ class TestSyncAxesLimits:
         raw_lo, raw_hi = self._raw_y_bounds()
         assert lo == pytest.approx(raw_lo, abs=1e-6)
         assert hi == pytest.approx(raw_hi, abs=1e-6)
+
+
+class TestSetSubtitle:
+    """Regression cover for set_subtitle.
+
+    It used to call ``ax.title.get_pad()`` / ``set_pad()``, which do not exist
+    on ``matplotlib.text.Text`` — every call raised AttributeError. The pad
+    lives on the Axes, and bumping it must not reset the title's styling.
+    """
+
+    def test_returns_a_text_and_does_not_raise(self):
+        fig, ax = plt.subplots()
+        set_title(ax, "Normal force")
+        txt = set_subtitle(ax, "M = 0.7")
+        assert txt.get_text() == "M = 0.7"
+        plt.close(fig)
+
+    def test_title_pad_grows_to_make_room(self):
+        # layout="none": a constrained/tight layout engine re-places the title
+        # and would absorb the pad change we are asserting on.
+        fig, ax = plt.subplots(layout="none")
+        set_title(ax, "Normal force")
+        fig.canvas.draw()
+        before = ax.title.get_window_extent(fig.canvas.get_renderer()).y0
+        set_subtitle(ax, "M = 0.7")
+        fig.canvas.draw()
+        after = ax.title.get_window_extent(fig.canvas.get_renderer()).y0
+        assert after > before
+        plt.close(fig)
+
+    def test_title_font_properties_survive(self):
+        fig, ax = plt.subplots()
+        set_title(ax, "Normal force")
+        size, weight, color = (
+            ax.title.get_fontsize(),
+            ax.title.get_fontweight(),
+            ax.title.get_color(),
+        )
+        set_subtitle(ax, "M = 0.7")
+        assert ax.title.get_fontsize() == size
+        assert ax.title.get_fontweight() == weight
+        assert ax.title.get_color() == color
+        plt.close(fig)
+
+    def test_subtitle_is_smaller_than_title(self):
+        fig, ax = plt.subplots()
+        set_title(ax, "Normal force")
+        txt = set_subtitle(ax, "M = 0.7")
+        assert txt.get_fontsize() < ax.title.get_fontsize()
+        plt.close(fig)
+
+
+class TestSyncAxesLimitsNonLineArtists:
+    """sync_axes_limits used to scan only Line2D artists.
+
+    Anything else — scatter, bars, fill_between (so the band of
+    plot_with_band), images — was invisible to it, so panels were either left
+    unsynced or, worse, synced to the range of whichever panel happened to
+    contain a line, silently clipping the others.
+    """
+
+    X = np.linspace(0, 10, 50)
+
+    def _pair(self, build_left, build_right):
+        fig, axes = plt.subplots(1, 2)
+        build_left(axes[0])
+        build_right(axes[1])
+        sync_axes_limits(axes, which="y")
+        return fig, axes
+
+    def test_scatter_is_scanned(self):
+        y = np.sin(self.X)
+        fig, axes = self._pair(
+            lambda ax: ax.scatter(self.X, y),
+            lambda ax: ax.scatter(self.X, 9 * y),
+        )
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+        assert axes[0].get_ylim()[1] >= 8.9
+        plt.close(fig)
+
+    def test_bars_are_scanned(self):
+        fig, axes = self._pair(
+            lambda ax: plot_bar(ax, list("abc"), [1, 2, 3]),
+            lambda ax: plot_bar(ax, list("abc"), [10, 20, 30]),
+        )
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+        assert axes[0].get_ylim()[1] >= 30.0
+        plt.close(fig)
+
+    def test_bars_keep_their_zero_baseline(self):
+        """Sticky edges: padding must not push the baseline below zero."""
+        fig, axes = self._pair(
+            lambda ax: plot_bar(ax, list("abc"), [1, 2, 3]),
+            lambda ax: plot_bar(ax, list("abc"), [10, 20, 30]),
+        )
+        assert axes[0].get_ylim()[0] == 0.0
+        plt.close(fig)
+
+    def test_fill_between_is_scanned(self):
+        fig, axes = self._pair(
+            lambda ax: ax.fill_between(self.X, -1, 1),
+            lambda ax: ax.fill_between(self.X, -9, 9),
+        )
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+        assert axes[0].get_ylim()[1] >= 9.0
+        plt.close(fig)
+
+    def test_uncertainty_band_is_not_clipped(self):
+        """plot_with_band's band must fit inside the synced range."""
+        y = np.sin(self.X)
+        fig, axes = plt.subplots(1, 2)
+        plot_with_band(axes[0], self.X, y, y_low=y - 5, y_high=y + 5)
+        plot_line(axes[1], self.X, y)
+        sync_axes_limits(axes, which="y")
+        lo, hi = axes[0].get_ylim()
+        assert lo <= -6.0 and hi >= 6.0
+        plt.close(fig)
+
+    def test_mixed_line_and_scatter_uses_the_larger_range(self):
+        """The silently-wrong case: a line panel must not clip a scatter panel."""
+        y = np.sin(self.X)
+        fig, axes = self._pair(
+            lambda ax: plot_line(ax, self.X, y),
+            lambda ax: ax.scatter(self.X, 9 * y),
+        )
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+        assert axes[0].get_ylim()[1] >= 8.9
+        plt.close(fig)
+
+    def test_images_are_scanned_through_their_extent(self):
+        fig, axes = self._pair(
+            lambda ax: ax.imshow(np.random.rand(4, 4), extent=(0, 1, 0, 1)),
+            lambda ax: ax.imshow(np.random.rand(4, 4), extent=(0, 1, 0, 20)),
+        )
+        assert axes[0].get_ylim() == axes[1].get_ylim()
+        assert axes[0].get_ylim()[1] >= 20.0
+        plt.close(fig)
+
+    def test_reference_spans_are_ignored_like_reference_lines(self):
+        y = np.sin(self.X)
+        fig, axes = plt.subplots(1, 2)
+        plot_line(axes[0], self.X, y)
+        axes[0].axhspan(100.0, 200.0, color="0.9")
+        add_reference_lines(axes[0], hlines=[50.0])
+        plot_line(axes[1], self.X, y)
+        sync_axes_limits(axes, which="y")
+        assert axes[0].get_ylim()[1] < 5.0
+        plt.close(fig)
+
+    def test_invisible_artists_are_skipped(self):
+        y = np.sin(self.X)
+        fig, axes = plt.subplots(1, 2)
+        plot_line(axes[0], self.X, y)
+        hidden = axes[0].scatter(self.X, 500 * y)
+        hidden.set_visible(False)
+        plot_line(axes[1], self.X, y)
+        sync_axes_limits(axes, which="y")
+        assert axes[0].get_ylim()[1] < 5.0
+        plt.close(fig)

@@ -1,0 +1,114 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-plot"
+version = "1.0.0"
+description = "Matplotlib figure template: house styles, 1D/2D helpers and batch curve comparison for CFD post-processing."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    # Required, not optional: cfd_plot/__init__.py re-exports batch.py,
+    # which imports pandas at module level.
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+# cfd_plot.dispersion, and the interpolation helpers in field2d.py.
+dispersion = ["scipy>=1.11"]
+# Pretty terminal tables from print_file_report and batch reporting.
+rich = ["rich>=13.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "scipy>=1.11",
+    "rich>=13.0",
+    "pandas-stubs",
+    "scipy-stubs",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_plot = ["fonts/*.otf", "fonts/*.ttf", "styles/*.mplstyle"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "E741",   # ambiguous variable name (x, y, l common in plotting)
+    "B006",   # mutable default argument in function — intentional for dict defaults
+    "SIM108", # ternary operator — readability preference
+    "RUF012", # mutable class variable — not relevant here
+]
+
+# French docs, report and figure labels legitimately use en dashes, minus
+# signs, multiplication signs, curly apostrophes and non-breaking spaces;
+# they are not homoglyph mistakes. The Greek letters are physics symbols
+# (σ standard deviation, α angle of attack, ρ density, ν viscosity, µ mean),
+# not Latin lookalikes.
+allowed-confusables = ["–", "−", "×", "’", " ", "σ", "α", "ρ", "ν", "µ"]
+
+[tool.ruff.lint.per-file-ignores]
+# The public API is grouped by topic (styles, 2D scalar, 2D vector, batch, …)
+# with section banners. That grouping is documentation — don't alphabetise it.
+"src/cfd_plot/__init__.py" = ["I001", "RUF022"]
+"src/cfd_plot/dispersion/__init__.py" = ["RUF022"]
+"01_EXEMPLE/demo_plotting.py" = [
+    "E402",   # module-level import not at top — notebook-style cells
+    "E702",   # multiple statements on one line — compact xlabel/ylabel pairs
+    "I001",   # unsorted imports — cells import as needed
+]
+"tests/**" = [
+    "SIM300",  # `value == pytest.approx(expected)` reads naturally; don't flip it
+    "RUF059",  # `fig, ax = plot_x(...)` — unpacking the unused `fig` documents the API
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_plot"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+# NOT `strict = true`, unlike the sibling packages. cfd-plot predates them and
+# its public helpers are largely unannotated: strict currently reports ~132
+# missing-annotation errors (no-untyped-def / type-arg / no-any-return). The
+# settings below are everything strict gives us that the code already
+# satisfies — in particular `check_untyped_defs`, which type-checks the bodies
+# of unannotated functions. Tightening to full strict is tracked in TODO.md.
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*", "mpl_toolkits.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

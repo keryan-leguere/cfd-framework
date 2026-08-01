@@ -1,7 +1,7 @@
 """
 dispersion — Statistical dispersion visualisation for Monte Carlo analyses.
 
-Run from ``scripts/post/plot`` with ``PYTHONPATH=.``::
+Run from ``tools/cfd-plot`` with ``PYTHONPATH=.``::
 
     python demo_dispersion.py
     pytest dispersion/tests -q

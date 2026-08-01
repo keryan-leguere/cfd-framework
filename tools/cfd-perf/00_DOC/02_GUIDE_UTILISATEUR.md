@@ -191,7 +191,6 @@ pip download cfd-perf -d wheels/
 pip install --no-index --find-links wheels/ -e .
 ```
 
-Les figures utilisent la bibliothèque interne `plotting`
-(`scripts/post/plot`), trouvée automatiquement via `$CFD_FRAMEWORK` ou
-l'arborescence du dépôt. Si elle est absente, cfd-perf bascule sur Matplotlib
-nu : le style change, les chiffres non.
+Les figures utilisent le paquet voisin `cfd-plot` (`tools/cfd-plot`) quand il
+est installé (`pip install -e tools/cfd-plot`). S'il ne l'est pas, cfd-perf
+bascule sur Matplotlib nu : le style change, les chiffres non.

@@ -8,7 +8,7 @@ Provides two dataclasses:
 
 Usage example::
 
-    from dispersion import QuantityDispersion, DispersionSpec
+    from cfd_plot.dispersion import QuantityDispersion, DispersionSpec
 
     Cm_alpha = QuantityDispersion(
         name="Cm_alpha",

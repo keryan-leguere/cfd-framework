@@ -73,7 +73,7 @@ flight_point_dict:{
 
 ## Workflow and tasks:
 1. I already have some postprocessing scriopt to transform my data into a df, so it sould be assumed that i already have the configuration_dict.
-The first is to create fake data in /scripts/post/plot/tests/E2E_MULTIPLE_PLOTTING. You will the header of typcal post-processsed file. 
+The first is to create fake data in /tools/cfd-plot/tests/E2E_MULTIPLE_PLOTTING. You will the header of typcal post-processsed file. 
 Create 3 files, with this header and some dummy data (like 30 lines).
 
 2. You will create a python script to test the bash plot wrapper. It needs to create the configuration_dict by loading the created csv. It needs to create all the dict explained previously. It will also take the base file path to save the pictures.
@@ -84,3 +84,24 @@ Create 3 files, with this header and some dummy data (like 30 lines).
 
 
 
+
+---
+
+## Maintenance / dette technique
+
+Ces deux points ne bloquent rien, mais restent ouverts après le passage de la
+bibliothèque en paquet `cfd-plot` installable (layout `src/`, août 2026) :
+
+1. **`mypy --strict`.** `pyproject.toml` configure mypy en mode intermédiaire
+   (`check_untyped_defs` + quelques garde-fous), qui passe proprement. Le mode
+   `strict = true` des paquets voisins (`cfd-perf`, `cfd-atm`) remonte encore
+   ~132 erreurs, presque toutes des annotations manquantes sur les helpers
+   publics (`no-untyped-def`, `type-arg`, `no-any-return`). À faire module par
+   module, en commençant par `_grid.py` et `prep.py` (les plus petits).
+
+2. **`ruff format`.** Le formateur n'a jamais tourné sur ce code : 22 fichiers
+   sur 29 seraient reformatés. La commande est `ruff format .`, mais elle doit
+   faire l'objet d'un commit séparé et dédié — mélangée à un changement de
+   fond, elle rend la relecture impossible. Attention : certains alignements
+   manuels (dictionnaires de décalages dans `dispersion/plots.py`) seront
+   perdus.

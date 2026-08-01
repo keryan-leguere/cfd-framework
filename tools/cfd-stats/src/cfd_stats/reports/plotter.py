@@ -1,4 +1,4 @@
-"""Figure generation using the ``plotting`` package.
+"""Figure generation using the ``cfd_plot`` package.
 
 Produces three diagnostic figures per coefficient:
 
@@ -6,8 +6,11 @@ Produces three diagnostic figures per coefficient:
 2. Periodicity analysis (signal + markers, FFT, autocorrelation, mean cycle)
 3. Statistical distribution (histogram, Q-Q plot)
 
-The ``plotting`` package must be importable (i.e. on ``sys.path``).
-If it is not available the module raises :class:`ImportError` at import time.
+``cfd-plot`` is a sibling package in this repository, not a PyPI release, so it
+cannot be declared as a normal dependency — install it with
+``pip install -e tools/cfd-plot``. Unlike cfd-perf/cfd-atm there is no
+Matplotlib fallback here: this module raises :class:`ImportError` at import
+time when the package is missing.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats as sp_stats
 
-from plotting import (
+from cfd_plot import (
     add_reference_lines,
     add_textbox,
     make_legend,

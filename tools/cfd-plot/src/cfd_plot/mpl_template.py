@@ -37,10 +37,11 @@ import subprocess
 from collections.abc import Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.artist import Artist
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
@@ -160,7 +161,7 @@ def new_figure(
     profile: str | None = None,
     figsize: tuple[float, float] | None = None,
     **subplots_kw,
-) -> tuple[Figure, any]:
+) -> tuple[Figure, Any]:
     """Create a new figure (thin wrapper around ``plt.subplots``).
 
     Parameters
@@ -325,10 +326,11 @@ def make_figure_legend(
     elif not hasattr(axes, "__iter__"):
         axes = [axes]
 
-    handles, labels = [], []
+    handles: list[Artist] = []
+    labels: list[str] = []
     seen: set[str] = set()
     for ax in axes:
-        for h, lbl in zip(*ax.get_legend_handles_labels()):
+        for h, lbl in zip(*ax.get_legend_handles_labels(), strict=True):
             if dedupe and lbl in seen:
                 continue
             seen.add(lbl)
@@ -336,7 +338,9 @@ def make_figure_legend(
             labels.append(lbl)
 
     merged = {**_LEGEND_DEFAULTS, **kwargs}
-    leg = fig.legend(
+    # `loc` is a plain str here (Matplotlib accepts any location string at
+    # runtime); the stub narrows it to a Literal union.
+    leg = fig.legend(  # type: ignore[call-overload]
         handles,
         labels,
         loc=loc,
@@ -419,12 +423,12 @@ def add_shared_colorbar(
             x0 = max(b.x1 for b in bboxes) + pad
             y0 = min(b.y0 for b in bboxes)
             y1 = max(b.y1 for b in bboxes)
-            cax = fig.add_axes([x0, y0, pct, y1 - y0])
+            cax = fig.add_axes((x0, y0, pct, y1 - y0))
         elif location == "bottom":
             x0 = min(b.x0 for b in bboxes)
             x1 = max(b.x1 for b in bboxes)
             y0 = min(b.y0 for b in bboxes) - pad
-            cax = fig.add_axes([x0, y0 - pct, x1 - x0, pct])
+            cax = fig.add_axes((x0, y0 - pct, x1 - x0, pct))
         else:
             raise ValueError(
                 f"location={location!r} not supported; use 'right' or 'bottom'"
@@ -445,16 +449,27 @@ def add_shared_colorbar(
 def sync_axes_limits(axes, *, which: str = "y", margin: float | None = None) -> None:
     """Give every axis in *axes* the same data-driven limits.
 
-    For each requested dimension, scans every axis's plotted curves for their
+    For each requested dimension, scans every axis's plotted data for its
     min/max, takes the overall min/max across *all* axes, pads it the same
     way Matplotlib's own autoscale would, and applies that shared range to
     every individual axis — so panels sharing a figure (e.g. subplots
     comparing several flight points) become directly comparable.
 
-    Only ``Line2D`` artists plotted in data coordinates are scanned (i.e. real
-    curves from ``ax.plot`` / :func:`plot_line`); reference lines added via
-    ``ax.axhline``/``ax.axvline`` use a blended transform and are ignored so
-    they don't skew the bounds.
+    Every kind of drawn data is scanned, not just curves:
+
+    - **lines** — ``ax.plot`` / :func:`plot_line`, and the line part of
+      ``ax.errorbar``;
+    - **collections** — ``ax.scatter``, ``ax.fill_between`` (so the band of
+      :func:`plot_with_band` is included, not clipped), ``pcolormesh``, …;
+    - **patches** — ``ax.bar`` / :func:`plot_bar`;
+    - **images** — ``ax.imshow`` (via its extent).
+
+    Artists drawn in a *blended* transform are deliberately ignored, because
+    they mark a position rather than carry data: reference lines from
+    ``ax.axhline`` / ``ax.axvline`` (:func:`add_reference_lines`) and spans
+    from ``ax.axhspan`` / ``ax.axvspan``. A reference line at an arbitrary
+    value therefore cannot blow up the shared scale. Invisible artists are
+    skipped too.
 
     Parameters
     ----------
@@ -486,33 +501,102 @@ def sync_axes_limits(axes, *, which: str = "y", margin: float | None = None) -> 
         raise ValueError(f"which={which!r} not supported; use 'x', 'y', or 'both'")
     dims = ("x", "y") if which == "both" else (which,)
 
-    def _curve_bounds(ax, dim: str) -> tuple[float, float] | None:
-        spans = []
+    def _bbox_span(bbox, dim: str) -> tuple[float, float] | None:
+        lo, hi = (bbox.x0, bbox.x1) if dim == "x" else (bbox.y0, bbox.y1)
+        if not (_np.isfinite(lo) and _np.isfinite(hi)):
+            return None
+        return (lo, hi) if lo <= hi else (hi, lo)
+
+    def _data_bounds(ax, dim: str) -> tuple[float, float] | None:
+        spans: list[tuple[float, float]] = []
+
+        # Lines. A pure-data transform tells a real curve apart from an
+        # axhline/axvline, which uses a blended (axes, data) transform.
         for line in ax.get_lines():
-            if line.get_transform() is not ax.transData:
+            if not line.get_visible() or line.get_transform() is not ax.transData:
                 continue
             data = _np.asarray(
                 line.get_xdata() if dim == "x" else line.get_ydata(), dtype=float
             )
             data = data[_np.isfinite(data)]
             if data.size:
-                spans.append((data.min(), data.max()))
+                spans.append((float(data.min()), float(data.max())))
+
+        # Collections: scatter, fill_between, pcolormesh, … Their transform is
+        # not comparable to transData (scatter positions points through an
+        # *offset* transform), so ask them to project their own extent onto it
+        # — the same call Matplotlib uses to build ax.dataLim.
+        for coll in ax.collections:
+            if not coll.get_visible():
+                continue
+            try:
+                span = _bbox_span(coll.get_datalim(ax.transData), dim)
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if span is not None:
+                spans.append(span)
+
+        # Patches: bar charts. axhspan/axvspan are excluded by the transform
+        # check, consistently with axhline/axvline above.
+        for patch in ax.patches:
+            if not patch.get_visible() or patch.get_data_transform() is not ax.transData:
+                continue
+            span = _bbox_span(patch.get_path().get_extents(patch.get_patch_transform()), dim)
+            if span is not None:
+                spans.append(span)
+
+        # Images carry their extent rather than point data.
+        for image in ax.images:
+            if not image.get_visible():
+                continue
+            extent = image.get_extent()
+            span = (extent[0], extent[1]) if dim == "x" else (extent[2], extent[3])
+            if all(_np.isfinite(v) for v in span):
+                spans.append((min(span), max(span)))
+
         if not spans:
             return None
         return min(s[0] for s in spans), max(s[1] for s in spans)
 
+    def _sticky_values(ax, dim: str) -> list[float]:
+        """Values the padding must not cross, e.g. the y=0 baseline of bars."""
+        values: list[float] = []
+        for artist in (*ax.get_lines(), *ax.collections, *ax.patches, *ax.images):
+            if not artist.get_visible():
+                continue
+            edges = getattr(artist, "sticky_edges", None)
+            if edges is None:
+                continue
+            values.extend(
+                float(v)
+                for v in (edges.x if dim == "x" else edges.y)
+                if _np.isfinite(v)
+            )
+        return values
+
     for dim in dims:
-        bounds = [b for ax in axes if (b := _curve_bounds(ax, dim)) is not None]
+        bounds = [b for ax in axes if (b := _data_bounds(ax, dim)) is not None]
         if not bounds:
             continue
         lo = min(b[0] for b in bounds)
         hi = max(b[1] for b in bounds)
 
-        pad_frac = margin if margin is not None else mpl.rcParams[f"axes.{dim}margin"]
+        pad_frac = (
+            margin
+            if margin is not None
+            # Key is built at runtime; the RcParams stub only accepts literals.
+            else mpl.rcParams[f"axes.{dim}margin"]  # type: ignore[index]
+        )
         span = hi - lo
         pad = span * pad_frac if span > 0 else (abs(lo) or 1.0) * pad_frac
-        lo -= pad
-        hi += pad
+
+        # Honour sticky edges the way Matplotlib's own autoscale does, so a bar
+        # chart keeps sitting on its baseline instead of floating above it.
+        sticky = [v for ax in axes for v in _sticky_values(ax, dim)]
+        below = [v for v in sticky if v <= lo]
+        above = [v for v in sticky if v >= hi]
+        lo = max(lo - pad, max(below)) if below else lo - pad
+        hi = min(hi + pad, min(above)) if above else hi + pad
 
         for ax in axes:
             ax.set_xlim(lo, hi) if dim == "x" else ax.set_ylim(lo, hi)
@@ -700,8 +784,16 @@ def set_subtitle(ax, text: str, **kwargs) -> mpl.text.Text:
     kwargs.setdefault("fontfamily", TITLE_FONT)
     kwargs.setdefault("color", "0.40")
 
-    pad = ax.title.get_pad()
-    ax.title.set_pad(pad + fontsize + 2)
+    # The title pad lives on the Axes, not on the title Text: there is no
+    # Text.get_pad/set_pad (calling them raises AttributeError). Going through
+    # ax.set_title() is the public way to change it, but it resets the title's
+    # font properties, so save and restore them around the call.
+    pad = float(mpl.rcParams["axes.titlepad"])
+    title_fp = ax.title.get_fontproperties().copy()
+    title_color = ax.title.get_color()
+    ax.set_title(ax.get_title(), pad=pad + fontsize + 2)
+    ax.title.set_fontproperties(title_fp)
+    ax.title.set_color(title_color)
 
     trans = ax.transAxes + ScaledTranslation(
         0, pad / 72.0, ax.figure.dpi_scale_trans
@@ -1032,7 +1124,7 @@ def _declassify_axes(
         Useful keys: ``fontsize``, ``x``, ``y``, ``color``,
         ``bbox`` (dict with ``boxstyle``, ``edgecolor``, ``linewidth``, ...).
     """
-    restore = {"axes": [], "texts": []}
+    restore: dict[str, list[Any]] = {"axes": [], "texts": []}
 
     for ax in fig.get_axes():
         info: dict = {"ax": ax}

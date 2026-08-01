@@ -1,13 +1,14 @@
 """Tests for 2D structured interpolation and interpolated plotting."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting import interpolate_field2d, plot_pcolormesh_interp, use_style
+from cfd_plot import interpolate_field2d, plot_pcolormesh_interp, use_style
 
 
 @pytest.fixture(autouse=True)
@@ -76,7 +77,7 @@ class TestInterpolateField2d:
 
     def test_invalid_method_raises(self, coarse_field):
         x, y, _, _, Z = coarse_field
-        with pytest.raises(ValueError, match="method=.*not supported"):
+        with pytest.raises(ValueError, match=r"method=.*not supported"):
             interpolate_field2d(x, y, Z, method="quadratic")
 
     def test_1d_z_raises(self, coarse_field):

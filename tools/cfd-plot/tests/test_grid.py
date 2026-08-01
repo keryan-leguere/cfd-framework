@@ -3,13 +3,12 @@
 import numpy as np
 import pytest
 
-from plotting._grid import (
+from cfd_plot._grid import (
     add_colorbar,
     ensure_1d_coords,
     normalize_coords,
     normalize_vector_coords,
 )
-
 
 # ---------------------------------------------------------------------------
 # normalize_coords
@@ -41,11 +40,11 @@ class TestNormalizeCoords:
             normalize_coords([1, 2], [1, 2], np.arange(6))
 
     def test_x_shape_mismatch(self):
-        with pytest.raises(ValueError, match="x has .* elements"):
+        with pytest.raises(ValueError, match=r"x has .* elements"):
             normalize_coords(np.arange(4), np.arange(3), np.ones((3, 5)))
 
     def test_y_shape_mismatch(self):
-        with pytest.raises(ValueError, match="y has .* elements"):
+        with pytest.raises(ValueError, match=r"y has .* elements"):
             normalize_coords(np.arange(5), np.arange(2), np.ones((3, 5)))
 
     def test_2d_x_shape_mismatch(self):
@@ -86,7 +85,7 @@ class TestNormalizeVectorCoords:
             normalize_vector_coords([1, 2], [1], np.ones((1, 2)), np.arange(4))
 
     def test_uv_shape_mismatch(self):
-        with pytest.raises(ValueError, match="u shape .* != v shape"):
+        with pytest.raises(ValueError, match=r"u shape .* != v shape"):
             normalize_vector_coords(
                 [1, 2, 3], [1, 2],
                 np.ones((2, 3)), np.ones((3, 2)),

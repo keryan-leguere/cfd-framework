@@ -15,7 +15,7 @@ Mach, `Vc` (CAS), `EAS`, `TAS` — en **subsonique et supersonique**.
 ```bash
 cd tools/cfd-atm
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
-export CFD_FRAMEWORK="$(git rev-parse --show-toplevel)"   # pour les figures (package plotting)
+pip install -e ../cfd-plot   # facultatif : style maison des figures
 ```
 
 ## Utilisation

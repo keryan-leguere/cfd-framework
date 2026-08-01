@@ -131,9 +131,13 @@ mypy src
 ```
 
 Dépendances : `numpy`, `matplotlib`, `rich`, `pyyaml` — toutes en *wheels*, donc
-installables sur un calculateur isolé. Les figures utilisent la bibliothèque
-interne `plotting` (`scripts/post/plot`) si elle est trouvable, avec repli
-automatique sur Matplotlib nu.
+installables sur un calculateur isolé. Les figures utilisent le paquet voisin
+`cfd-plot` (`tools/cfd-plot`) s'il est installé, avec repli automatique sur
+Matplotlib nu :
+
+```bash
+pip install -e ../cfd-plot        # facultatif : style maison des figures
+```
 
 ## Installation sur calculateur isolé (air-gap)
 
@@ -142,14 +146,13 @@ Sur une machine sans réseau disposant déjà d'**Anaconda** (donc de `numpy`,
 copie les sources et on installe hors-ligne :
 
 ```bash
-export CFD_FRAMEWORK=/chemin/vers/CFD_FRAMEWORK   # doit contenir scripts/post/plot/
-cd "$CFD_FRAMEWORK/tools/cfd-perf"
-pip install -e . --no-deps --no-build-isolation --no-index
+cd /chemin/vers/CFD_FRAMEWORK
+pip install -e tools/cfd-plot --no-deps --no-build-isolation --no-index   # facultatif
+pip install -e tools/cfd-perf --no-deps --no-build-isolation --no-index
 ```
 
-`plotting` (les figures « style maison ») n'a rien à installer : cfd-perf le
-trouve sur le disque via `$CFD_FRAMEWORK/scripts/post/plot`. Détails et
-dépannage : [00_DOC/06_INSTALLATION_AIR_GAP.md](00_DOC/06_INSTALLATION_AIR_GAP.md).
+Détails et dépannage :
+[00_DOC/06_INSTALLATION_AIR_GAP.md](00_DOC/06_INSTALLATION_AIR_GAP.md).
 
 ## Aussi dans ce répertoire
 

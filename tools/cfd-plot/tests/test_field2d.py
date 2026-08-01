@@ -1,14 +1,15 @@
 """Tests for field2d scalar plotting functions."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting import plot_contour, plot_contourf, plot_imshow, plot_pcolormesh
-from plotting.field2d import _draw_mask_outline
+from cfd_plot import plot_contour, plot_contourf, plot_imshow, plot_pcolormesh
+from cfd_plot.field2d import _draw_mask_outline
 
 
 @pytest.fixture()

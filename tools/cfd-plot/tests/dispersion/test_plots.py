@@ -1,13 +1,14 @@
 """Smoke tests for dispersion.plots — each function must run without error."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from dispersion import (
+from cfd_plot.dispersion import (
     DispersionSpec,
     QuantityDispersion,
     plot_dispersion_cdf,

@@ -1,13 +1,14 @@
 """Tests for vector2d plotting and utility functions."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from plotting import compute_speed, plot_quiver, plot_streamplot, subsample_vectors
+from cfd_plot import compute_speed, plot_quiver, plot_streamplot, subsample_vectors
 
 
 @pytest.fixture()

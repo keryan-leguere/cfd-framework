@@ -4,14 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from plotting import (
+from cfd_plot import (
     dataframe_to_grid,
     dataframe_to_masked_grid,
     extract_slice2d,
     mask_field,
     reshape_structured2d,
 )
-
 
 # ---------------------------------------------------------------------------
 # reshape_structured2d
@@ -240,7 +239,8 @@ class TestMaskedPlotting:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        from plotting import plot_pcolormesh
+
+        from cfd_plot import plot_pcolormesh
 
         x = np.linspace(0, 1, 11)
         y = np.linspace(0, 1, 8)
@@ -256,7 +256,8 @@ class TestMaskedPlotting:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        from plotting import plot_contourf
+
+        from cfd_plot import plot_contourf
 
         x = np.linspace(-1, 1, 41)
         y = np.linspace(-1, 1, 31)
@@ -344,7 +345,8 @@ class TestExtractSlice2d:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        from plotting import plot_pcolormesh
+
+        from cfd_plot import plot_pcolormesh
 
         x, y, z, F = field_3d
         C1, C2, s = extract_slice2d(F, axis="z", coord=1.0, x=x, y=y, z=z)

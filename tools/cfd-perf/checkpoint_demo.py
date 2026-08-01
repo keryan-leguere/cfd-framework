@@ -1,32 +1,27 @@
 # %% [markdown]
 # # Intervalle optimal de check-point
-# 
+#
 # Sur les gros jobs, les pannes (nœud ou système) peuvent faire perdre tout le calcul depuis la dernière écriture de redémarrage. Le check-point (écriture d’états de reprise sur disque) limite la perte mais coûte du temps I/O. Ce module calcule **l’intervalle optimal entre deux check-points** qui maximise le temps de calcul utile attendu.
-# 
+#
 # **N = nombre de nœuds de calcul** (pas de cœurs). Les pannes sont modélisées au niveau **nœud** (panne matérielle, réseau, etc.) ; un nœud en panne met hors service tous ses cœurs.
-# 
+#
 # **Modèle :**
 # - Probabilité de survie sur $t_c$ avec $N$ nœuds : $P_N(t_c \mid \lambda) = e^{-\lambda N t_c}$ ($\lambda$ = taux de panne par nœud).
 # - Avec une durée de check-point $T_c$, la fraction du temps passée en calcul est $t_c/(t_c + T_c)$.
 # - On maximise $w(t_c) = \frac{t_c}{t_c + T_c}\, e^{-\lambda N t_c}$, d’où
 #   $$\hat{t}_c = \frac{T_c}{2}\left(\sqrt{1 + \frac{4}{\lambda N T_c}} - 1\right)$$
-# 
+#
 # Toutes les durées dans l’API sont en **heures**.
 
 # %% [markdown]
 # ## 1. Entrées
-# 
+#
 # Nombre de **nœuds** de calcul, durée d’écriture d’un check-point, et taux de panne (ou MTBF en années).
 
 # %%
-from pathlib import Path
-import sys
 import cfd_perf
 
-# Chemin vers la librairie plotting (figures soignées)
-PLOTTING_PATH = str(Path("../../scripts/post/plot").resolve())
-if PLOTTING_PATH not in sys.path:
-    sys.path.insert(0, PLOTTING_PATH)
+# Figures soignées : nécessite `pip install -e tools/cfd-plot`
 
 # Taille du job : nombre de nœuds de calcul (pas de cœurs)
 n_nodes = 8
@@ -59,13 +54,22 @@ print(f"Utilisation attendue : {util:.4f}")
 
 # %% [markdown]
 # ## 3. Courbe w(tc) et optimum
-# 
+#
 # Utilisation attendue en fonction de l’intervalle entre check-points.
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
-from plotting import use_style, new_figure, plot_line, set_title, set_suptitle, apply_oldschool_axes, make_legend, add_reference_lines
+import numpy as np
+from cfd_plot import (
+    add_reference_lines,
+    apply_oldschool_axes,
+    make_legend,
+    new_figure,
+    plot_line,
+    set_suptitle,
+    set_title,
+    use_style,
+)
 
 tc_vals_h = np.linspace(0.1, 12, 200)
 w_vals = np.array([cfd_perf.expected_utilization(tc, Tc_hours, n_nodes, lambda_per_hour) for tc in tc_vals_h])
@@ -87,7 +91,7 @@ plt.show()
 
 # %% [markdown]
 # ## 4. Sensibilité : intervalle optimal vs nombre de nœuds
-# 
+#
 # Plus le job est gros (plus de nœuds), plus l’intervalle optimal diminue (check-point plus souvent).
 
 # %%

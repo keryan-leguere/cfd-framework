@@ -120,16 +120,16 @@ class TestFigures:
     def test_uses_the_in_house_plotting_library_when_available(self):
         """The figure is a deliverable: it must carry the house style.
 
-        Skipped when ``scripts/post/plot`` is not on disk: cfd-perf is
-        designed to fall back to plain Matplotlib when copied to a cluster on
+        Skipped when the ``cfd-plot`` package is not installed: cfd-perf is
+        designed to fall back to plain Matplotlib when deployed on a cluster on
         its own (see ``report/_plotting_lib`` docstring), so its absence is a
-        supported deployment, not a failure. In the source checkout the
-        library *is* present, so this still guards discoverability there.
+        supported deployment, not a failure. In a dev environment it *is*
+        installed, so this still guards discoverability there.
         """
         from cfd_perf.report._plotting_lib import get_plotting
 
         if get_plotting() is None:
-            pytest.skip("scripts/post/plot introuvable (déploiement autonome) ; repli Matplotlib")
+            pytest.skip("cfd-plot non installé (déploiement autonome) ; repli Matplotlib")
 
     def test_labels_are_in_french(self, rec):
         fig = plot_recommendation(rec)

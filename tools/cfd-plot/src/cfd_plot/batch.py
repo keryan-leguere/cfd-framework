@@ -288,7 +288,7 @@ def build_output_path(
     """Build an output path: ``base/polar/{flight}/{fixed_sweeps}/y_vs_x``."""
     flight_specs = flight_point_specs or {}
     sweep_spec_map = sweep_specs or {}
-    parts = [Path(base), polar_prefix]
+    parts: list[str | Path] = [Path(base), polar_prefix]
 
     for key in varying_flight_keys:
         value = flight_point[key]
@@ -317,7 +317,7 @@ def build_compare_output_path(
 ) -> Path:
     """Build path for a multi-flight-point compare figure (no per-FP folders)."""
     sweep_spec_map = sweep_specs or {}
-    parts = [Path(base), polar_prefix, compare_folder]
+    parts: list[str | Path] = [Path(base), polar_prefix, compare_folder]
     for key in varying_fixed_sweep_keys:
         value = fixed_sweeps[key]
         save_name = sweep_spec_map.get(key, {}).get("save_name", key.upper())
@@ -988,13 +988,13 @@ def _run_jobs(
         if show_progress and _RICH and Progress is not None and _console is not None:
             with Progress(*_progress_columns(), console=_console, transient=False) as progress:
                 task_id = progress.add_task(task_desc, total=total)
-                for job, future in zip(jobs, futures):
+                for job, future in zip(jobs, futures, strict=True):
                     progress.update(task_id, description=_job_label(job))
                     written_paths.extend(future.result())
                     progress.advance(task_id)
             return written_paths
 
-        for index, (job, future) in enumerate(zip(jobs, futures), start=1):
+        for index, (job, future) in enumerate(zip(jobs, futures, strict=True), start=1):
             if verbose:
                 print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
             written_paths.extend(future.result())
@@ -1352,7 +1352,9 @@ def _render_one_compare_job(
     # Tune the actual active engine's padding instead of the ineffective tight_layout call.
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
-        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)
+        # h_pad is accepted by the tight/constrained engines actually in use;
+        # the base LayoutEngine.set signature does not declare it.
+        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)  # type: ignore[call-arg]
 
     written = save_figure(fig, job.output_path, formats=formats)
     plt.close(fig)
@@ -1422,13 +1424,13 @@ def _run_compare_jobs(
         if show_progress and _RICH and Progress is not None and _console is not None:
             with Progress(*_progress_columns(), console=_console, transient=False) as progress:
                 task_id = progress.add_task(task_desc, total=total)
-                for job, future in zip(jobs, futures):
+                for job, future in zip(jobs, futures, strict=True):
                     progress.update(task_id, description=_job_label(job))
                     written_paths.extend(future.result())
                     progress.advance(task_id)
             return written_paths
 
-        for index, (job, future) in enumerate(zip(jobs, futures), start=1):
+        for index, (job, future) in enumerate(zip(jobs, futures, strict=True), start=1):
             if verbose:
                 print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
             written_paths.extend(future.result())

@@ -1,6 +1,6 @@
 """Figures de scalabilité (sorties en français).
 
-Rendu via la bibliothèque interne ``plotting`` (``scripts/post/plot``) quand
+Rendu via la bibliothèque interne ``plotting`` (``tools/cfd-plot``) quand
 elle est disponible, avec repli sur Matplotlib nu sinon — cfd-perf doit rester
 utilisable copié seul sur un calculateur isolé.
 

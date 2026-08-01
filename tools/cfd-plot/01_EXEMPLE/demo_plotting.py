@@ -2,7 +2,7 @@
 # # Plotting Template — Tutorial & Quick-Reference
 #
 # This file is **both** a runnable demo and a **copy/paste template**.
-# It showcases every feature of the `plotting/` wrapper while keeping
+# It showcases every feature of the `cfd_plot` package while keeping
 # full access to Matplotlib underneath.
 #
 # ## How to use this template
@@ -45,7 +45,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from plotting import (
+from cfd_plot import (
     BODY_FONT,
     TITLE_FONT,
     add_reference_lines,
@@ -59,7 +59,6 @@ from plotting import (
     dataframe_to_masked_grid,
     dual_axis,
     extract_slice2d,
-    interpolate_field2d,
     make_figure_legend,
     make_legend,
     mask_field,
@@ -83,7 +82,6 @@ from plotting import (
     set_suptitle,
     set_title,
     style_context,
-    subsample_vectors,
     use_style,
 )
 
@@ -107,7 +105,7 @@ for profile in ["notebook", "slides", "paper"]:
     ax1.legend()
 
     plot_line(ax2, x, y_cos, marker="s", label="cos(x)")
-    set_title(ax2, "Panel B")   
+    set_title(ax2, "Panel B")
     ax2.set_xlabel("x")
     ax2.set_ylabel("f(x)")
     ax2.legend()
@@ -146,7 +144,7 @@ plt.show()
 # ## 1b. Mixed fonts — Helvetica titles + Times body
 #
 # The package bundles **TeX Gyre Heros** (≈ Helvetica) and
-# **TeX Gyre Termes** (≈ Times New Roman) in `plotting/fonts/`.
+# **TeX Gyre Termes** (≈ Times New Roman) in `cfd_plot/fonts/`.
 # They are registered automatically at import time.
 #
 # - **Body text** (axis labels, ticks, legend): TeX Gyre Termes — set via
@@ -388,7 +386,6 @@ plt.close(fig)
 # ### Side-by-side: normal vs declassified
 
 # %%
-from IPython.display import display, Image as IPImage
 
 print("=== NORMAL ===")
 display(IPImage(filename="demo_output/example_both.png"))
@@ -1108,7 +1105,7 @@ fig, ax = make_figure(
 # # Part 2 — 2D Field Visualization
 #
 # The sections below demonstrate the 2D scalar and vector field helpers
-# added to the `plotting/` package.  The same principle holds:
+# added to the `cfd_plot` package.  The same principle holds:
 # **Matplotlib is the real API.**  These helpers add validation,
 # colorbar handling, and CFD-friendly defaults.
 #
