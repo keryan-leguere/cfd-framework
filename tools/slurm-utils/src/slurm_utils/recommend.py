@@ -163,7 +163,7 @@ def _gather_partition_summaries() -> list[PartitionSummary]:
 
         idle_cpus = alloc_cpus = total_cpus = 0
         for r in rows:
-            a, i, o, t = _parse_cpus_aiot(r.cpus_aiot)
+            a, i, _o, t = _parse_cpus_aiot(r.cpus_aiot)  # A/I/O/T: Other is unused
             idle_cpus += i
             alloc_cpus += a
             total_cpus += t

@@ -87,9 +87,9 @@ def _add_recommend_parser(sub: argparse._SubParsersAction[argparse.ArgumentParse
 # -----------------------------------------------------------------------
 
 def _cmd_queue(args: argparse.Namespace) -> None:
+    from slurm_utils.display import print_jobs
     from slurm_utils.parsers import SQUEUE_FORMAT, parse_squeue
     from slurm_utils.runner import SlurmCommandError, current_user, run_slurm
-    from slurm_utils.display import print_jobs
 
     argv = ["squeue", "-o", SQUEUE_FORMAT]
     if args.job:
@@ -121,9 +121,9 @@ def _cmd_myjobs(args: argparse.Namespace) -> None:
 
 
 def _cmd_info(args: argparse.Namespace) -> None:
+    from slurm_utils.display import print_partitions
     from slurm_utils.parsers import SINFO_FORMAT, parse_sinfo
     from slurm_utils.runner import SlurmCommandError, run_slurm
-    from slurm_utils.display import print_partitions
 
     argv = ["sinfo", "-o", SINFO_FORMAT]
     if args.partition:
@@ -142,9 +142,9 @@ def _cmd_info(args: argparse.Namespace) -> None:
 
 
 def _cmd_prio(args: argparse.Namespace) -> None:
+    from slurm_utils.display import print_priority
     from slurm_utils.parsers import SPRIO_FORMAT, parse_sprio
     from slurm_utils.runner import SlurmCommandError, current_user, run_slurm
-    from slurm_utils.display import print_priority
 
     argv = ["sprio", "-o", SPRIO_FORMAT]
     if args.job:
