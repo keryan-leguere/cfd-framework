@@ -7,6 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.layout_engine import PlaceHolderLayoutEngine
 
 from cfd_plot import (
     add_reference_lines,
@@ -29,6 +30,22 @@ def _use_notebook_style():
     use_style("notebook")
     yield
     plt.close("all")
+
+
+def _freeze_layout(fig):
+    """Detach the house style's constrained layout so ``subplots_adjust`` applies.
+
+    ``fig.set_layout_engine("none")`` is not enough here: Matplotlib does not
+    drop the engine, it swaps in a ``PlaceHolderLayoutEngine`` that inherits
+    ``adjust_compatible=False`` from constrained layout. Any later
+    ``subplots_adjust`` is then skipped with a UserWarning instead of moving
+    the axes. Installing the placeholder ourselves with
+    ``adjust_compatible=True`` freezes the positions the same way *and* keeps
+    manual adjustments working.
+    """
+    fig.set_layout_engine(
+        PlaceHolderLayoutEngine(adjust_compatible=True, colorbar_gridspec=False)
+    )
 
 
 @pytest.fixture()
@@ -118,7 +135,7 @@ class TestAddSharedColorbar:
 
     def test_returns_colorbar_bottom(self, twin_contour_fig):
         fig, (ax1, ax2), cf = twin_contour_fig
-        fig.set_layout_engine("none")
+        _freeze_layout(fig)
         fig.subplots_adjust(bottom=0.25)
         cbar = add_shared_colorbar(
             fig, cf, axes=[ax1, ax2], location="bottom", label="T [K]",
@@ -152,7 +169,7 @@ class TestAddSharedColorbar:
     def test_colorbar_tight_to_axes(self, twin_contour_fig):
         """Colorbar should sit close to the rightmost axis."""
         fig, (ax1, ax2), cf = twin_contour_fig
-        fig.set_layout_engine("none")
+        _freeze_layout(fig)
         fig.subplots_adjust(right=0.90)
         cbar = add_shared_colorbar(
             fig, cf, axes=[ax1, ax2], label="tight",
