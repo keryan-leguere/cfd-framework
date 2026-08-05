@@ -1,0 +1,20 @@
+# Artefacts Python / build
+__pycache__/
+*.egg-info/
+build/
+dist/
+*.whl
+.venv/
+
+# Caches d'outils
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Sorties de l'exemple : entièrement régénérées par 01_EXEMPLE/RUN_EXEMPLE.sh,
+# et volumineuses (le plan complet fait plus d'un mégaoctet). Les entrées de
+# l'exemple — ETUDE.yaml et TRAJECTOIRES/ — sont versionnées, elles.
+01_EXEMPLE/SORTIE/
+02_E2E_TEST/

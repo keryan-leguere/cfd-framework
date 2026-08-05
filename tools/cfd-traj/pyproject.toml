@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-traj"
+version = "1.0.0"
+description = "Reduce a set of dispersed trajectories to a minimal, ready-to-run CFD design of experiments."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    # cfd-atm is a sibling package in this repository, not a PyPI release, so it
+    # cannot be listed here. It is a HARD dependency all the same: install it
+    # first with `pip install -e ../cfd-atm` (see README section 1).
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pandas-stubs",
+]
+
+[project.scripts]
+cfd-traj = "cfd_traj.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# French docs, report and figure labels legitimately use en dashes, minus
+# signs, multiplication signs, curly apostrophes and non-breaking spaces;
+# they are not homoglyph mistakes. The Greek letters are physics symbols
+# (density, total incidence, sideslip, aerodynamic roll, deflection), not
+# Latin lookalikes.
+allowed-confusables = ["–", "−", "×", "’", " ", " ", "ρ", "α", "β", "φ", "δ", "ν", "σ"]
+
+[tool.ruff.lint.per-file-ignores]
+# The `value == pytest.approx(expected)` idiom reads naturally; don't flip it.
+"tests/**" = ["SIM300"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_traj"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*", "scipy.*"]
+ignore_missing_imports = true
+
+# pandas-stubs is incomplete and noisy under --strict; pandas is deliberately
+# confined to data/ and report/ so the typed core stays clean.
+[[tool.mypy.overrides]]
+module = ["pandas.*"]
+ignore_missing_imports = true
+
+# cfd-atm (hard dependency) and cfd-plot (optional, see report/_plotting_lib.py)
+# are sibling packages in this repository, not PyPI releases, and neither ships
+# a py.typed marker.
+[[tool.mypy.overrides]]
+module = ["cfd_atm.*", "cfd_plot"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "slow: end-to-end tests that shell out to the shipped example",
+]

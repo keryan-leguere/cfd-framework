@@ -1,0 +1,108 @@
+# =====================================================================
+#  cfd-traj — exemple d'étude
+#
+#  Un lot de 24 trajectoires dispersées d'un engin cruciforme en X, et le
+#  plan de calcul minimal qu'on en tire.
+#
+#  Lancement :   bash RUN_EXEMPLE.sh
+#  Format :      ../00_DOC/03_FORMAT_ENTREE.md
+# =====================================================================
+
+etude:
+  nom: "LOT_DEMO_24_TIRS"
+  # Motif, et non simple répertoire : le fichier d'étude vit à côté des CSV,
+  # et un répertoire avalerait plus tard le plan que l'outil écrit lui-même.
+  source: "TRAJECTOIRES/tir_*.csv"
+  sortie: "SORTIE"
+
+reference:
+  longueur_m: 2.5                 # longueur de référence du Reynolds
+  surface_m2: 0.049               # documentaire
+
+atmosphere:
+  delta_t_K: 0.0                  # écart ISA appliqué au lot entier
+
+# ---------------------------------------------------------------------
+#  SYMÉTRIE
+#
+#  C4v = cruciforme : axe d'ordre 4 et quatre plans de miroir. C'est ce
+#  qui replie φ dans [0°, 45°], annule CY, Cn et Cl sur les plans de
+#  miroir, et autorise la demi-configuration sous incidence.
+#
+#  ATTENTION : le code ne peut pas détecter un groupe déclaré à tort.
+#  Déclarer C4v une configuration qui n'est que C4 replie deux attitudes
+#  physiquement distinctes l'une sur l'autre et ampute le plan de moitié.
+#  Voir l'arbre de décision de ../00_DOC/04_SYMETRIES.md.
+# ---------------------------------------------------------------------
+symetrie:
+  groupe: "C4v"
+  plan_reference_deg: 0.0         # φ = 0° : plan bissecteur entre deux voilures
+  n_azimuts: 3                    # 0°, 22,5°, 45°
+
+# ---------------------------------------------------------------------
+#  BANDES DE MACH — bornes déclarées, resserrées autour du transsonique.
+# ---------------------------------------------------------------------
+bandes:
+  bornes: [0.05, 0.80, 0.95, 1.20, 1.80, 2.50, 3.20, 4.50]
+  points_min: 20
+
+enveloppe:
+  quantile_bas: 0.001             # 0,1 % — stable, contrairement au min absolu
+  quantile_haut: 0.999            # 99,9 %
+  marge: 0.05                     # 5 % de la largeur inter-quantile, vers l'extérieur
+
+# =====================================================================
+#  PARAMÈTRES
+#
+#  Indexé par NOM DE COLONNE tel qu'il apparaît dans l'en-tête des CSV.
+#  Aucune hypothèse de nommage ni de nombre : « PARA1 », « rapport »,
+#  « TEMP_42 » sont traités à l'identique. Une colonne non déclarée
+#  reçoit un rôle auto-détecté, signalé en jaune par « inspecter ».
+#
+#    principal     dimension de grille propre
+#    conditionnel  conditionnée au Mach : bornes recalculées par bande
+#    discret       facteur à deux niveaux, appliqué par superposition
+#    mecanique     plage MÉCANIQUE déclarée, jamais la plage trajectoire
+#    ignore        présente dans les CSV, exclue de l'analyse
+# =====================================================================
+parametres:
+
+  # --- variables dérivées (noms réservés) ---
+  alpha_tot: { role: principal, niveaux: 3, unite: "deg" }
+  phi_fold:  { role: principal }                     # niveaux imposés par le groupe
+  Mach:      { role: principal, niveaux: 3 }
+  Re_ref:    { role: discret, niveaux: 2, echelle: log }
+
+  # --- braquages : plage mécanique des gouvernes ---
+  #
+  #  Restreindre les braquages aux valeurs commandées par la loi de
+  #  pilotage actuelle rendrait la base circulaire et interdirait toute
+  #  évolution du guidage-pilotage. On couvre donc la butée mécanique.
+  dl: { role: mecanique, plage: [-20.0, 20.0], niveaux: 3, unite: "deg" }
+  dm: { role: mecanique, plage: [-20.0, 20.0], niveaux: 3, unite: "deg" }
+  dn: { role: mecanique, plage: [-20.0, 20.0], niveaux: 3, unite: "deg" }
+
+  # --- colonnes génériques : nombre et noms totalement libres ---
+  PARA1: { role: conditionnel, niveaux: 3, libelle: "suit le Mach" }
+  PARA2: { role: discret, niveaux: 2, min_physique: 0.0 }
+  PARA3: { role: discret, niveaux: 2 }
+
+# ---------------------------------------------------------------------
+#  PLAN D'EXPÉRIENCES
+# ---------------------------------------------------------------------
+doe:
+  methode: "tensoriel"            # tensoriel | lhs
+  coins: true                     # inclure les coins du domaine conditionnel
+  n_lhs_par_bande: 20             # méthode lhs uniquement
+  graine: 12345                   # reproductibilité stricte
+  noeuds_max: 3000
+  fraction_discret: 0.25
+
+  # Chaque jeu est classé par la symétrie qu'il préserve, et cette
+  # classification décide de la configuration de calcul. Le piège que
+  # cela évite : un braquage de roulis calculé en demi-configuration
+  # donne un résultat faux sans le moindre message d'erreur.
+  braquages:
+    - { nom: "neutre",  dl: 0.0,  dm: 0.0,  dn: 0.0 }   # → demi-config sur un miroir
+    - { nom: "tangage", dl: 0.0,  dm: 15.0, dn: 0.0 }   # symétrique     → demi-config
+    - { nom: "roulis",  dl: 15.0, dm: 0.0,  dn: 0.0 }   # antisymétrique → config complète
