@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -93,6 +96,24 @@ class TestExample:
         with pytest.raises(SystemExit):
             main(["example", "--output", str(dest)])
         assert (dest / "keep.txt").read_text() == "mine"
+
+
+class TestModuleEntryPoint:
+    """``python -m cfd_perf`` doit valoir la commande ``cfd-perf``.
+
+    C'est la voie d'accès des installations sans script console (sources
+    atteintes par PYTHONPATH), documentée dans le README.
+    """
+
+    def test_runs_the_shipped_example(self, tmp_path):
+        src = Path(__file__).resolve().parents[1] / "src"
+        env = {**os.environ, "PYTHONPATH": str(src), "HOME": str(tmp_path)}
+        proc = subprocess.run(
+            [sys.executable, "-m", "cfd_perf", "run", str(EXAMPLE)],
+            capture_output=True, text=True, env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "Réponse" in proc.stdout
 
 
 class TestParser:
