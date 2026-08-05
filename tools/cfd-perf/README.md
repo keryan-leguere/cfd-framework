@@ -65,8 +65,9 @@ pas la mesure — il l'exploite.
   - [4.3 Installation de développement](#43-installation-de-développement)
   - [4.4 Tests, style, types](#44-tests-style-types)
   - [4.5 Regénérer les figures](#45-regénérer-les-figures)
-  - [4.6 Ajouter un adaptateur solveur](#46-ajouter-un-adaptateur-solveur)
-  - [4.7 Conventions du dépôt](#47-conventions-du-dépôt)
+  - [4.6 Regénérer le document Word de transmission](#46-regénérer-le-document-word-de-transmission)
+  - [4.7 Ajouter un adaptateur solveur](#47-ajouter-un-adaptateur-solveur)
+  - [4.8 Conventions du dépôt](#48-conventions-du-dépôt)
 - [5. Dépannage](#5-dépannage)
 - [6. Pour aller plus loin](#6-pour-aller-plus-loin)
 
@@ -1017,21 +1018,37 @@ Les figures de `00_DOC/FIGURES/` sont **versionnées** ; on ne les régénère q
 le modèle, les données d'exemple ou le style changent.
 
 ```bash
-python 00_DOC/generer_figures.py     # nécessite cfd-plot installé
+python 00_DOC/generer_figures.py                    # nécessite cfd-plot installé
+python 00_DOC/07_TRANSMISSION/generer_schemas.py    # matplotlib seul
 ```
 
-| Figure | Ce qu'elle illustre |
-|:---|:---|
-| `01_termes_modele.png` | les trois contributions du modèle, et leur croisement |
-| `02_strategies.png` | ce que chaque stratégie choisit sur la même courbe |
-| `03_decomposition.png` | la décomposition de domaine : volume vs surface |
-| `04_surface_volume.png` | le plancher de mailles par cœur, et d'où il vient |
-| `05_scalabilite_forte.png` | accélération, efficacité, point de retournement |
+| Figure | Ce qu'elle illustre | Script |
+|:---|:---|:---|
+| `01_termes_modele.png` | les trois contributions du modèle, et leur croisement | `generer_figures.py` |
+| `02_strategies.png` | ce que chaque stratégie choisit sur la même courbe | `generer_figures.py` |
+| `03_decomposition.png` | la décomposition de domaine : volume vs surface | `generer_figures.py` |
+| `04_surface_volume.png` | le plancher de mailles par cœur, et d'où il vient | `generer_figures.py` |
+| `05_scalabilite_forte.png` | accélération, efficacité, point de retournement | `generer_figures.py` |
+| `06_entrees_sorties.png` | entrées, traitement et sorties de la chaîne | `generer_schemas.py` |
+| `07_etapes.png` | l'enchaînement des étapes 0 à 6 | `generer_schemas.py` |
+| `08_archivage.png` | ce que produit la chaîne, et ce qu'on archive | `generer_schemas.py` |
+| `09_validation.png` | les trois niveaux de vérification de l'outil | `generer_schemas.py` |
 
 Les figures de sortie de l'exemple se régénèrent, elles, en rejouant l'exemple :
 `cd 01_EXEMPLE && ./RUN_EXEMPLE.sh`.
 
-### 4.6 Ajouter un adaptateur solveur
+### 4.6 Regénérer le document Word de transmission
+
+`00_DOC/07_TRANSMISSION/` contient le document de transmission de connaissance
+(problématique, traitement étape par étape, difficultés et limites) sous ses deux
+formes : la source Markdown et le `.docx` construit. Après modification de la
+source :
+
+```bash
+python 00_DOC/07_TRANSMISSION/construire_docx.py   # nécessite pandoc + python-docx
+```
+
+### 4.7 Ajouter un adaptateur solveur
 
 Un adaptateur rend la capture pilote solveur-agnostique : c'est un script bash
 **autonome** de `ADAPTATEUR/` qui source `interface.sh` et implémente le contrat.
@@ -1060,7 +1077,7 @@ Deux règles à ne pas rater : **nombres à point décimal** (`interface.sh` imp
 `LC_ALL=C`, Python relit ces valeurs) et **autonomie** (ne dépendez pas de
 `$CFD_FRAMEWORK`). Guide complet : [ADAPTATEUR/README.md](ADAPTATEUR/README.md).
 
-### 4.7 Conventions du dépôt
+### 4.8 Conventions du dépôt
 
 ```
 tools/cfd-perf/
