@@ -215,6 +215,7 @@ décision se prenne en connaissance de cause.
 
 | Fichier | Contenu |
 |:---|:---|
+| `PLAN.xlsx` | le classeur de revue : synthèse, plan, enveloppe, paramètres |
 | `PLAN.csv` | une ligne par cas de calcul |
 | `PLAN.yaml` | le même plan, groupé par bande |
 | `ENVELOPPE.csv` | une ligne par (bande, variable) |

@@ -55,6 +55,16 @@ du tube réel et non dans les coins du pavé.
 Le plan sort chiffré en **équivalents configuration complète**, c'est-à-dire en
 budget de simulation réel.
 
+### Le livrable
+
+`--excel` produit un classeur de quatre feuilles, en français : `Synthèse` —
+combien de calculs, pour quel coût, sous quelles hypothèses ; `Plan de calcul` —
+une ligne par cas, en-têtes groupés, filtres et volets figés, mise en page
+d'impression prête ; `Enveloppe` — les bornes conditionnelles qui justifient le
+plan ; `Paramètres` — le rôle de chaque colonne et la légende des
+configurations. Les cellules restent numériques : le tableau se trie, se filtre
+et se calcule.
+
 ### Les colonnes de paramètres sont génériques
 
 Les fichiers d'entrée portent huit colonnes obligatoires — `time, Mach,
@@ -87,7 +97,7 @@ frères exigent `matplotlib >= 3.8`, souvent plus récent que le Python système
 Sans `cfd-plot`, tout fonctionne : les figures sont rendues en Matplotlib nu.
 
 Python ≥ 3.12. Dépendances : `numpy`, `pandas`, `scipy`, `matplotlib`, `rich`,
-`pyyaml`.
+`pyyaml`, `openpyxl`.
 
 ---
 
@@ -112,8 +122,8 @@ cfd-traj inspecter TRAJECTOIRES --proposer
 # 2. construire l'enveloppe conditionnelle
 cfd-traj analyser ETUDE.yaml --figure SORTIE/enveloppe.png --csv SORTIE/enveloppe.csv
 
-# 3. en tirer le plan
-cfd-traj doe ETUDE.yaml --sortie SORTIE/PLAN.csv --figure SORTIE/plan.png
+# 3. en tirer le plan, et le classeur Excel de revue
+cfd-traj doe ETUDE.yaml --sortie SORTIE/PLAN.csv --excel --figure SORTIE/plan.png
 
 # 4. vérifier qu'il couvre bien les trajectoires
 cfd-traj couverture ETUDE.yaml --csv SORTIE/hors_domaine.csv
@@ -218,7 +228,7 @@ src/cfd_traj/
 ├── data/     columns.py dataset.py derive.py study.py plan_io.py
 ├── engine/   bands.py envelope.py doe.py coverage.py inspect.py
 ├── synth/    flight.py autopilot.py parametres.py lot.py
-├── report/   console.py figures.py _plotting_lib.py
+├── report/   console.py figures.py excel.py _plotting_lib.py
 └── cli/      main.py
 ```
 
@@ -239,7 +249,7 @@ CSV ──load_dataset──► TrajectoryDataset
 ### Tests
 
 ```bash
-pytest -q                                   # ~670 tests
+pytest -q                                   # ~840 tests
 pytest -q --cov=cfd_traj --cov-report=term-missing
 pytest -q -m "not slow"                     # sans les tests qui lancent un sous-processus
 ruff check . && ruff format --check .

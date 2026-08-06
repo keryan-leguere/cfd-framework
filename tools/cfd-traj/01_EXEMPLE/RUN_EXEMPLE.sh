@@ -39,9 +39,10 @@ cfd-traj analyser ETUDE.yaml \
 echo
 echo "=== 3. Plan d'expériences =============================================="
 echo "    Grille anisotrope par bande, coins inclus, coût en équivalents"
-echo "    configuration complète."
+echo "    configuration complète. Le classeur Excel est le livrable de revue."
 cfd-traj doe ETUDE.yaml \
     --sortie SORTIE/03_PLAN.csv \
+    --excel SORTIE/03_PLAN.xlsx \
     --yaml SORTIE/03_PLAN.yaml \
     --figure SORTIE/03_plan.png
 

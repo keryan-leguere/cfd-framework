@@ -94,12 +94,22 @@ tort, et l'erreur ampute le plan de moitié.
 ### 3.4 Produire le plan
 
 ```bash
-cfd-traj doe ETUDE.yaml --sortie SORTIE/PLAN.csv --figure SORTIE/plan.png
+cfd-traj doe ETUDE.yaml --sortie SORTIE/PLAN.csv --excel --figure SORTIE/plan.png
 ```
 
 Une ligne par cas de calcul : les valeurs de chaque variable, le jeu de
 braquages, la configuration de calcul, son coût relatif, les composantes nulles
 par théorème.
+
+`--excel` produit le **classeur de revue** : quatre feuilles — `Synthèse`,
+`Plan de calcul`, `Enveloppe`, `Paramètres` — en français, filtres et volets
+figés posés, mise en page d'impression prête. Sans valeur, il est écrit à côté
+du CSV avec l'extension `.xlsx` ; avec une valeur, à l'emplacement indiqué.
+C'est ce fichier qu'on pose sur la table en revue de définition.
+
+Les cellules y restent **numériques** : le tableau se trie, se filtre et se
+calcule. Ce sont les formats de nombre d'Excel qui donnent la virgule décimale
+et l'espace des milliers, sur un poste français comme ailleurs.
 
 Si le plan dépasse `doe.noeuds_max`, la commande s'arrête en code 2 **avant
 d'allouer quoi que ce soit** et propose les deux issues :

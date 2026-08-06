@@ -342,16 +342,30 @@ def cmd_doe(args: argparse.Namespace) -> int:
     written: list[Path] = []
     target = Path(args.sortie) if args.sortie else study.resolved_output() / "PLAN.csv"
     written.append(write_plan_csv(plan.to_frame(), target))
+
+    # Le classeur porte le taux de couverture dans sa feuille de synthèse : on
+    # le calcule dès qu'un classeur est demandé, même sans --couverture, pour
+    # que le livrable se suffise à lui-même.
+    result = (
+        check_coverage(ds, envelope=envelope, max_offenders=args.pires)
+        if args.couverture or args.excel is not None
+        else None
+    )
+
     if args.yaml:
         written.append(write_plan_yaml(plan.to_yaml_payload(), args.yaml))
+    if args.excel is not None:
+        from cfd_traj.report.excel import write_plan_excel
+
+        classeur = Path(args.excel) if args.excel else target.with_suffix(".xlsx")
+        written.append(write_plan_excel(plan, study, classeur, coverage=result))
     if args.figure:
         from cfd_traj.report.figures import plot_plan, save_figure
 
         written.append(save_figure(plot_plan(plan, ds, title=study.name), args.figure))
     _written(written)
 
-    if args.couverture:
-        result = check_coverage(ds, envelope=envelope, max_offenders=args.pires)
+    if args.couverture and result is not None:
         report.print_report(
             report.render_coverage(result, worst=args.pires, verbose=args.verbose), con=console
         )
@@ -510,6 +524,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--sortie", default="", help="fichier CSV du plan")
     p.add_argument("--yaml", default="", help="export YAML du plan, groupé par bande")
+    p.add_argument(
+        "--excel",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="FICHIER",
+        help="classeur Excel du plan (sans valeur : à côté du CSV, en .xlsx)",
+    )
     p.add_argument("--figure", default="", help="figure des nœuds sur le nuage")
     p.add_argument("--graine", type=int, default=None, help="surcharge doe.graine")
     p.add_argument(

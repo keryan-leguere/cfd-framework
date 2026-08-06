@@ -250,6 +250,69 @@ class TestDoe:
         assert "bandes" in yaml_target.read_text()
         assert figure.stat().st_size > 10_000
 
+    def test_it_can_write_the_review_workbook(self, tmp_path):
+        from openpyxl import load_workbook
+
+        directory = _generer(tmp_path)
+        cible = tmp_path / "PLAN.xlsx"
+
+        code = main(
+            [
+                "doe",
+                str(directory / "ETUDE.yaml"),
+                "--methode",
+                "lhs",
+                "--excel",
+                str(cible),
+            ]
+        )
+
+        assert code == EXIT_OK
+        wb = load_workbook(cible)
+        assert wb.sheetnames == ["Synthèse", "Plan de calcul", "Enveloppe", "Paramètres"]
+
+    def test_the_workbook_lands_next_to_the_csv_when_no_path_is_given(self, tmp_path):
+        directory = _generer(tmp_path)
+        csv = tmp_path / "SORTIE" / "PLAN.csv"
+
+        assert (
+            main(
+                [
+                    "doe",
+                    str(directory / "ETUDE.yaml"),
+                    "--methode",
+                    "lhs",
+                    "--sortie",
+                    str(csv),
+                    "--excel",
+                ]
+            )
+            == EXIT_OK
+        )
+
+        assert csv.with_suffix(".xlsx").exists()
+
+    def test_the_workbook_carries_the_coverage_without_asking_for_it(self, tmp_path):
+        """Le classeur doit se suffire à lui-même, --couverture ou non."""
+        from openpyxl import load_workbook
+
+        directory = _generer(tmp_path)
+        cible = tmp_path / "PLAN.xlsx"
+
+        main(["doe", str(directory / "ETUDE.yaml"), "--methode", "lhs", "--excel", str(cible)])
+
+        ws = load_workbook(cible)["Synthèse"]
+        intitules = {ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)}
+        assert "Taux de couverture des trajectoires" in intitules
+
+    def test_no_workbook_is_written_unless_asked(self, tmp_path):
+        directory = _generer(tmp_path)
+        csv = tmp_path / "SORTIE" / "PLAN.csv"
+
+        main(["doe", str(directory / "ETUDE.yaml"), "--methode", "lhs", "--sortie", str(csv)])
+
+        assert not csv.with_suffix(".xlsx").exists()
+
     def test_the_seed_makes_it_reproducible(self, tmp_path):
         directory = _generer(tmp_path)
         first = tmp_path / "A.csv"

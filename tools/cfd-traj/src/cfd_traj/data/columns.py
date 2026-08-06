@@ -259,6 +259,15 @@ class RoleDetection:
     n_unique: int = 0
 
 
+def _rho_fr(rho: float) -> str:
+    """Un coefficient de corrélation à la française : virgule décimale.
+
+    Ces chaînes de raison sont affichées telles quelles dans le rapport et dans
+    le classeur Excel ; elles font partie de l'interface, pas des traces.
+    """
+    return f"{rho:+.2f}".replace(".", ",")
+
+
 def detect_role(
     name: str,
     values: ArrayLike,
@@ -303,7 +312,7 @@ def detect_role(
         return RoleDetection(
             role=Role.CONDITIONNEL,
             scale=scale,
-            reason=f"corrélation au Mach ρ = {rho:+.2f} : conditionnée au Mach",
+            reason=f"corrélation au Mach ρ = {_rho_fr(rho)} : conditionnée au Mach",
             rho_mach=rho,
             n_unique=n_unique,
         )
@@ -311,7 +320,7 @@ def detect_role(
     return RoleDetection(
         role=Role.PRINCIPAL,
         scale=scale,
-        reason=f"corrélation au Mach ρ = {rho:+.2f} : dimension propre",
+        reason=f"corrélation au Mach ρ = {_rho_fr(rho)} : dimension propre",
         rho_mach=rho,
         n_unique=n_unique,
     )

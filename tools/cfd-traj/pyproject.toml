@@ -16,6 +16,7 @@ dependencies = [
     "matplotlib>=3.8",
     "rich>=13.0",
     "pyyaml>=6.0",
+    "openpyxl>=3.1",
     # cfd-atm is a sibling package in this repository, not a PyPI release, so it
     # cannot be listed here. It is a HARD dependency all the same: install it
     # first with `pip install -e ../cfd-atm` (see README section 1).
@@ -29,6 +30,7 @@ dev = [
     "mypy",
     "types-PyYAML",
     "pandas-stubs",
+    "types-openpyxl",
 ]
 
 [project.scripts]
