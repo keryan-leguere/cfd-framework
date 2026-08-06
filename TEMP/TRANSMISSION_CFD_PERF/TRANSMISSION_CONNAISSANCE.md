@@ -16,7 +16,7 @@ travail qu'ils distribuent. Ce document transmet la méthode retenue pour
 répondre par la mesure, l'outil qui l'automatise (`cfd-perf`), et les limites à
 connaître avant de s'appuyer dessus.
 
-![Figure 1 — Le comportement que l'on cherche à situer. À gauche, l'accélération décroche de la droite idéale ; à droite, l'efficacité chute et la part d'allocation gaspillée (en orange) devient majoritaire. Le point de retournement est la borne physique au-delà de laquelle ajouter des cœurs rallonge le calcul.](../FIGURES/05_scalabilite_forte.png){width=16.5cm}
+![Figure 1 — Le comportement que l'on cherche à situer. À gauche, l'accélération décroche de la droite idéale ; à droite, l'efficacité chute et la part d'allocation gaspillée (en orange) devient majoritaire. Le point de retournement est la borne physique au-delà de laquelle ajouter des cœurs rallonge le calcul.](FIGURES/05_scalabilite_forte.png){width=16.5cm}
 
 ```{=openxml}
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>
@@ -30,7 +30,7 @@ La chaîne est volontairement étroite : **une seule donnée réelle en entrée*
 mesures d'une petite campagne pilote. Tout le reste — modèle, contraintes,
 stratégie — n'est que de l'exploitation de ces quelques points.
 
-![Figure 2 — Vue d'ensemble des entrées, du traitement et des sorties.](../FIGURES/06_entrees_sorties.png){width=16.5cm}
+![Figure 2 — Vue d'ensemble des entrées, du traitement et des sorties.](FIGURES/06_entrees_sorties.png){width=16.5cm}
 
 | Entrée | Obligatoire | D'où elle vient |
 |:---|:---:|:---|
@@ -63,7 +63,7 @@ celui qu'on oublie : chaque sous-domaine devient plus petit, donc son rapport
 surface/volume augmente, et la part du temps passée à échanger les halos avec
 les rangs voisins grandit.
 
-![Figure 3 — Le même maillage découpé sur 1, 4, 16 puis 64 cœurs. Les traits rouges sont les interfaces entre sous-domaines : ce sont elles qu'il faut échanger à chaque itération. Le nombre de faces échangées par maille calculée passe de 0,08 à 0,58.](../FIGURES/03_decomposition.png){width=16.5cm}
+![Figure 3 — Le même maillage découpé sur 1, 4, 16 puis 64 cœurs. Les traits rouges sont les interfaces entre sous-domaines : ce sont elles qu'il faut échanger à chaque itération. Le nombre de faces échangées par maille calculée passe de 0,08 à 0,58.](FIGURES/03_decomposition.png){width=16.5cm}
 
 Le volume de travail utile décroît comme le nombre de mailles par rang, mais la
 surface à échanger ne décroît que comme sa puissance 2/3. La conséquence
@@ -71,7 +71,7 @@ pratique tient en une règle : sous ~10 000 mailles par cœur, l'échange domine
 travail du solveur. C'est le plancher retenu par défaut dans l'outil — un
 plancher, pas une cible.
 
-![Figure 4 — À gauche, la charge par cœur s'effondre à mesure qu'on ajoute des cœurs, jusqu'au plancher de 10 000 mailles. À droite, la fraction de mailles situées sur un bord de sous-domaine : à 10 000 mailles par rang, 28 % des mailles d'un rang sont des mailles de bord.](../FIGURES/04_surface_volume.png){width=16.5cm}
+![Figure 4 — À gauche, la charge par cœur s'effondre à mesure qu'on ajoute des cœurs, jusqu'au plancher de 10 000 mailles. À droite, la fraction de mailles situées sur un bord de sous-domaine : à 10 000 mailles par rang, 28 % des mailles d'un rang sont des mailles de bord.](FIGURES/04_surface_volume.png){width=16.5cm}
 
 Ces deux effets se résument en un modèle à trois termes, ajusté sur les points
 pilotes :
@@ -84,7 +84,7 @@ $$T(N_c) = t_{ser} + \frac{t_{par}}{N_c} + t_{comm} \cdot N_c^{\gamma}$$
 | $t_{par}/N_c$ | travail qui se divise parfaitement | décroît — on gagne |
 | $t_{comm} \cdot N_c^{\gamma}$ | coût des échanges MPI | croît — on perd |
 
-![Figure 5 — Les trois contributions et leur somme (bleu) sur un cas réel de 20 millions de mailles. Le minimum de la courbe bleue est exactement le croisement où le gain de parallélisme est mangé par le coût de communication.](../FIGURES/01_termes_modele.png){width=16.5cm}
+![Figure 5 — Les trois contributions et leur somme (bleu) sur un cas réel de 20 millions de mailles. Le minimum de la courbe bleue est exactement le croisement où le gain de parallélisme est mangé par le coût de communication.](FIGURES/01_termes_modele.png){width=16.5cm}
 
 L'exposant $\gamma$ n'est pas une constante universelle : il absorbe la topologie
 du réseau, le partitionneur et le solveur. Sur le cas de référence de ce
@@ -98,7 +98,7 @@ et R² = 0,9993. **Ce $\gamma$ n'est pas transposable d'une machine à l'autre.*
 
 ## 2.3 Les grandes étapes
 
-![Figure 6 — L'enchaînement complet, de la préparation à l'archivage, avec la commande et l'artefact produit à chaque étape.](../FIGURES/07_etapes.png){width=16.5cm}
+![Figure 6 — L'enchaînement complet, de la préparation à l'archivage, avec la commande et l'artefact produit à chaque étape.](FIGURES/07_etapes.png){width=16.5cm}
 
 ### ÉTAPE 0 — Préparer et vérifier les prérequis
 
@@ -212,7 +212,7 @@ efficacité et mémoire par cœur, écarte ceux qui violent une contrainte
 (mailles/cœur, RAM par nœud, nombre de nœuds, walltime, budget), puis applique la
 stratégie demandée.
 
-![Figure 7 — Même courbe, mêmes contraintes : seule la question posée change la réponse.](../FIGURES/02_strategies.png){width=16.5cm}
+![Figure 7 — Même courbe, mêmes contraintes : seule la question posée change la réponse.](FIGURES/02_strategies.png){width=16.5cm}
 
 | Stratégie | Question posée | Règle appliquée |
 |:---|:---|:---|
@@ -263,7 +263,7 @@ donne les chiffres et les réserves.
 
 ### ÉTAPE 6 — Archiver
 
-![Figure 8 — Ce que produit la chaîne, et ce qu'il faut conserver.](../FIGURES/08_archivage.png){width=16.5cm}
+![Figure 8 — Ce que produit la chaîne, et ce qu'il faut conserver.](FIGURES/08_archivage.png){width=16.5cm}
 
 Le minimum rejouable tient en trois fichiers, à versionner à côté du cas :
 `ETUDE.yaml`, la figure, le rapport daté. À partir du seul `ETUDE.yaml`,
@@ -281,7 +281,7 @@ pilote.
 
 ## 2.4 Vérification et validation de l'outil
 
-![Figure 9 — Les trois niveaux de vérification, du plus déterministe au plus réaliste.](../FIGURES/09_validation.png){width=16.5cm}
+![Figure 9 — Les trois niveaux de vérification, du plus déterministe au plus réaliste.](FIGURES/09_validation.png){width=16.5cm}
 
 Le premier niveau protège les formules : 183 tests automatisés couvrent
 l'ajustement, les contraintes, les stratégies, la lecture/écriture du YAML et la

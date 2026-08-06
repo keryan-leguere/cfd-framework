@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Construit le document Word de transmission de connaissance.
 
-    python 00_DOC/07_TRANSMISSION/construire_docx.py
+    python construire_docx.py
 
 Enchaîne pandoc (Markdown → .docx) puis une passe de mise en page que pandoc
 ne sait pas faire seul : format A4, marges de 2 cm, pied de page numéroté, et
 élargissement des images et des tableaux à la largeur utile réelle de la page
 (pandoc les dimensionne d'après son document de référence, au format US).
 
-Prérequis : ``pandoc`` et ``python-docx``. Les figures doivent exister —
-``00_DOC/generer_figures.py`` pour 01 à 05, ``generer_schemas.py`` pour 06 à 09.
+Prérequis : ``pandoc`` et ``python-docx``. Les figures doivent exister dans
+``FIGURES/`` — ``tools/cfd-perf/00_DOC/generer_figures.py`` produit 01 à 05
+(à recopier ici), ``generer_schemas.py`` produit 06 à 09.
 """
 
 from __future__ import annotations

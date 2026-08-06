@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Génère les schémas propres au document de transmission de connaissance.
 
-    python 00_DOC/07_TRANSMISSION/generer_schemas.py
+    python generer_schemas.py
 
-Écrit dans ``00_DOC/FIGURES/`` (06 à 09). Les figures 01 à 05, communes à
-toute la documentation, viennent de ``00_DOC/generer_figures.py``.
+Écrit dans ``FIGURES/`` (06 à 09). Les figures 01 à 05 sont celles de la
+documentation du paquet ; elles sont produites par
+``tools/cfd-perf/00_DOC/generer_figures.py`` et recopiées ici.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
-SORTIE = Path(__file__).resolve().parents[1] / "FIGURES"
+SORTIE = Path(__file__).resolve().parent / "FIGURES"
 
 BLEU = "#0B6FA4"
 BLEU_CLAIR = "#E3EEF5"
