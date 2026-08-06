@@ -1,24 +1,45 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=64.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cfd-perf"
-version = "1.0.0"
-description = "How many CPUs should I launch my CFD simulation on?"
-requires-python = ">=3.12"
+version = "1.1.0"
+description = "Sur combien de cœurs lancer une simulation CFD ? Modèle de scalabilité forte ajusté sur des mesures pilotes."
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
 license = { text = "MIT" }
 readme = "README.md"
+keywords = ["cfd", "hpc", "mpi", "scalability", "strong-scaling", "openfoam", "slurm"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: French",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Typing :: Typed",
+]
+# Bornes basses volontairement larges : sur un calculateur isolé on installe
+# avec les roues déjà présentes dans le cache, souvent celles de la distribution.
 dependencies = [
-    "numpy>=1.26",
-    "matplotlib>=3.8",
-    "rich>=13.0",
-    "pyyaml>=6.0",
+    "numpy>=1.20",
+    "matplotlib>=3.4",
+    "rich>=12.0",
+    "pyyaml>=5.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    "pytest>=7.0",
     "pytest-cov",
     "ruff",
     "mypy",
@@ -31,23 +52,37 @@ cfd-perf = "cfd_perf.cli.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# Les adaptateurs bash et l'exemple sont livrés *dans* le paquet : « pip install »
+# suffit, sans dépôt cloné à côté (voir src/cfd_perf/paths.py).
+[tool.setuptools.package-data]
+cfd_perf = [
+    "py.typed",
+    "ADAPTATEUR/*.sh",
+    "ADAPTATEUR/*.yaml",
+    "ADAPTATEUR/*.md",
+    "ADAPTATEUR/tests/*.sh",
+    "01_EXEMPLE/*.yaml",
+    "01_EXEMPLE/*.sh",
+]
+
 [tool.ruff]
-target-version = "py312"
+target-version = "py39"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E501"]
 
-# French docs, report and figure labels legitimately use en dashes, minus
-# signs, multiplication signs, curly apostrophes and non-breaking spaces;
-# they are not homoglyph mistakes.
+# Les docs, le rapport et les libellés de figures en français utilisent
+# légitimement tirets demi-cadratins, signes moins, signes multiplier,
+# apostrophes typographiques et espaces insécables : ce ne sont pas des
+# homoglyphes accidentels.
 allowed-confusables = ["–", "−", "×", "’", " "]
 
 [tool.ruff.lint.per-file-ignores]
-# Paired script/notebook written in jupytext cell style: each cell imports what
-# it needs, so module-level imports legitimately appear below the first cell.
-"checkpoint_demo.py" = ["E402"]
+# Script/notebook apparié écrit en cellules jupytext : chaque cellule importe ce
+# dont elle a besoin, d'où des imports légitimes après la première cellule.
+"00_DOC/checkpoint_demo.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cfd_perf"]
@@ -57,7 +92,9 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.12"
+# Pas de python_version = "3.9" : mypy ne sait plus cibler 3.9. La compatibilité
+# 3.9 est tenue par le code (voir src/cfd_perf/_compat.py) et vérifiée en
+# exécutant la suite de tests sous un interpréteur 3.9.
 strict = true
 warn_return_any = true
 warn_unused_configs = true
@@ -66,8 +103,8 @@ warn_unused_configs = true
 module = ["matplotlib.*"]
 ignore_missing_imports = true
 
-# cfd-plot is an optional sibling package (see report/_plotting_lib.py); it
-# may legitimately be absent from the environment mypy runs in.
+# cfd-plot est un paquet compagnon optionnel (voir report/_plotting_lib.py) ;
+# il peut légitimement être absent de l'environnement où mypy tourne.
 [[tool.mypy.overrides]]
 module = ["cfd_plot"]
 ignore_missing_imports = true

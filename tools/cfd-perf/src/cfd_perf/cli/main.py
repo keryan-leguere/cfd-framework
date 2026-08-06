@@ -30,21 +30,24 @@ from cfd_perf.engine.recommend import (
     Strategy,
     recommend,
 )
+from cfd_perf.paths import EXEMPLE_DIR
+from cfd_perf.report import theme
 from cfd_perf.report.console import _STRATEGY_FR, _fr_int, print_report, render_pilot_warnings
 
 console = Console()
 err_console = Console(stderr=True)
 
-EXAMPLE_DIR = Path(__file__).resolve().parents[3] / "01_EXEMPLE"
-
-_SCHEMA_HINT = "Voir 00_DOC/03_FORMAT_ENTREE.md pour le schéma du fichier d'étude."
+_SCHEMA_HINT = (
+    "Schéma du fichier d'étude : « cfd-perf example » en produit un valide, "
+    "commenté et prêt à modifier."
+)
 
 
 def _fail(message: str, *, hint: str = "") -> NoReturn:
     body = message
     if hint:
         body += f"\n\n[dim]{hint}[/]"
-    err_console.print(Panel(body, title="[bold red]Erreur[/]", border_style="red"))
+    err_console.print(Panel(body, title=f"[{theme.ERREUR}]Erreur[/]", border_style="red"))
     sys.exit(1)
 
 
@@ -109,7 +112,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         path = save_recommendation_figure(
             rec, args.figure, title=f"{study.name}  --  sur combien de cœurs ?"
         )
-        console.print(f"[dim]Figure écrite dans[/] [bold]{path}[/]\n")
+        console.print(f"[dim]Figure écrite dans[/] [{theme.VALEUR}]{path}[/]\n")
 
     if rec.choice is None:
         return 2
@@ -131,7 +134,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             f"[dim]pilote    [/] {len(study.pilot.points)} points, "
             f"{study.pilot.core_range[0]}-{study.pilot.core_range[1]} cœurs\n"
             f"[dim]stratégie [/] {_STRATEGY_FR[study.objective.strategy]}",
-            title="[bold]Contrôle[/]",
+            title=f"[{theme.TITRE}]Contrôle[/]",
             border_style="green",
         )
     )
@@ -144,8 +147,8 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_example(args: argparse.Namespace) -> int:
     """Copie l'exemple prêt à l'emploi dans un répertoire de travail."""
     dest = Path(args.output)
-    if not EXAMPLE_DIR.is_dir():
-        _fail(f"répertoire d'exemple introuvable : {EXAMPLE_DIR}")
+    if not EXEMPLE_DIR.is_dir():
+        _fail(f"répertoire d'exemple introuvable : {EXEMPLE_DIR}")
     if dest.exists() and any(dest.iterdir()):
         _fail(
             f"{dest} existe déjà et n'est pas vide",
@@ -155,7 +158,7 @@ def cmd_example(args: argparse.Namespace) -> int:
     # On copie les entrées mais pas les figures générées de SORTIE/ : tout
     # l'intérêt de l'exemple est de le lancer et de les produire soi-même.
     shutil.copytree(
-        EXAMPLE_DIR,
+        EXEMPLE_DIR,
         dest,
         dirs_exist_ok=True,
         ignore=shutil.ignore_patterns("*.png", "*.svg", "*.pdf"),
@@ -164,10 +167,10 @@ def cmd_example(args: argparse.Namespace) -> int:
     study_file = next(dest.glob("*.yaml"), None)
     console.print(
         Panel(
-            f"[green]Exemple copié dans[/] [bold]{dest}[/]\n\n"
+            f"[green]Exemple copié dans[/] [{theme.VALEUR}]{dest}[/]\n\n"
             f"[dim]Lancez-le avec :[/]\n"
             f"  cfd-perf run {study_file or dest / 'ETUDE.yaml'} --figure scalabilite.png -v",
-            title="[bold]Exemple[/]",
+            title=f"[{theme.TITRE}]Exemple[/]",
             border_style="green",
         )
     )
@@ -212,7 +215,13 @@ def _capture_submit(args: argparse.Namespace, case_dir: Path, work_dir: Path, ad
         "[dim]Quand les runs sont terminés, collectez et recommandez :[/]",
         f"  cfd-perf capture --collect --case-dir {args.case_dir}",
     ]
-    console.print(Panel("\n".join(lignes), title="[bold]Capture — soumission[/]", border_style="blue"))
+    console.print(
+        Panel(
+            "\n".join(lignes),
+            title=f"[{theme.TITRE}]Capture — soumission[/]",
+            border_style="blue",
+        )
+    )
     return 0
 
 
@@ -248,14 +257,20 @@ def _capture_collect(args: argparse.Namespace, case_dir: Path, work_dir: Path, a
         for cores, etat in res.pending:
             lignes.append(f"[dim]{cores:>6} cœurs[/]  {etat}")
         lignes += ["", "[dim]Relancez --collect plus tard.[/]"]
-        console.print(Panel("\n".join(lignes), title="[bold]Capture — en cours[/]", border_style="yellow"))
+        console.print(
+            Panel(
+                "\n".join(lignes),
+                title=f"[{theme.TITRE}]Capture — en cours[/]",
+                border_style="yellow",
+            )
+        )
         return 3
 
     if res.study_path is None:
         _fail("aucun run exploitable (tous en échec) ; rien à recommander")
 
     summary = [
-        f"[green]Étude générée :[/] [bold]{res.study_path}[/]",
+        f"[green]Étude générée :[/] [{theme.VALEUR}]{res.study_path}[/]",
         "",
         f"[dim]points pilotes[/] {len(res.points)}",
         f"[dim]mailles       [/] {_fr_int(res.num_cells)}",
@@ -263,7 +278,13 @@ def _capture_collect(args: argparse.Namespace, case_dir: Path, work_dir: Path, a
     ]
     for note in res.notes:
         summary.append(f"[yellow]! {note}[/]")
-    console.print(Panel("\n".join(summary), title="[bold]Capture — collecte[/]", border_style="green"))
+    console.print(
+        Panel(
+            "\n".join(summary),
+            title=f"[{theme.TITRE}]Capture — collecte[/]",
+            border_style="green",
+        )
+    )
 
     if args.no_run:
         return 0
@@ -281,7 +302,7 @@ def _capture_collect(args: argparse.Namespace, case_dir: Path, work_dir: Path, a
         path = save_recommendation_figure(
             rec, args.figure, title=f"{study.name}  --  sur combien de cœurs ?"
         )
-        console.print(f"[dim]Figure écrite dans[/] [bold]{path}[/]\n")
+        console.print(f"[dim]Figure écrite dans[/] [{theme.VALEUR}]{path}[/]\n")
 
     if rec.choice is None:
         return 2

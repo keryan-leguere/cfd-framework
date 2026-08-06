@@ -140,14 +140,21 @@ not part of the Bash framework's runtime:
   `cfd-perf run STUDY.yaml [--figure F.png]`, plus `check` (validate a study), `example`
   (copy a runnable example), and `capture` (automate pilot capture — see below). One YAML file
   per study; the only real input is a set of pilot measurements. Layout: `00_DOC/` (illustrated
-  docs, FR), `01_EXEMPLE/` (ready-to-run example), `ADAPTATEUR/` (solver-agnostic bash capture
-  adapters), `src/cfd_perf/{core,data,capture,engine,report,cli}/`. Terminal report and CLI are
-  Rich **in French**; figures (also French) render via the `cfd-plot` package
-  when installed, falling back to plain Matplotlib. See `tools/cfd-perf/00_DOC/01_MODELE.md`
+  docs, FR), `src/cfd_perf/{core,data,capture,engine,report,cli}/`, plus two **package-data**
+  dirs shipped inside the package so a plain `pip install` is self-sufficient:
+  `src/cfd_perf/01_EXEMPLE/` (ready-to-run example) and `src/cfd_perf/ADAPTATEUR/`
+  (solver-agnostic bash capture adapters) — both located via `src/cfd_perf/paths.py`, never
+  relative to the repo. Targets **Python 3.9+** (`src/cfd_perf/_compat.py` holds the only
+  version shim); has no dependency on `$CFD_FRAMEWORK`. Terminal report and CLI are
+  Rich **in French** and deliberately avoid bold (styles centralised in
+  `src/cfd_perf/report/theme.py`, `CFD_PERF_GRAS=1` restores it); figures (also French)
+  render via the `cfd-plot` package when installed, falling back to plain Matplotlib. See
+  `tools/cfd-perf/00_DOC/01_MODELE.md`
   for the scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
     - **Pilot capture** (`cfd-perf capture`, `00_DOC/05_CAPTURE_PILOTE.md`): two-phase
       submit→collect. `capture --coeurs "N…" --adaptateur X [--queue Q]` submits one run per
-      core count via a local bash adapter in `ADAPTATEUR/` (mirrors the framework
+      core count via a bash adapter (a shipped one, a path to your own script, or
+      `$CFD_PERF_ADAPTATEUR_DIR`; mirrors the framework
       `adaptateurs/` contract but self-contained — `interface.sh`/`mock.sh`/`OF.sh`); `capture
       --collect` reads finished runs, extracts time/iters/RAM (peak RAM = SLURM `MaxRSS ×
       NTasks`), auto-detects the machine (`hotes.yaml` fallback), writes a validated `ETUDE.yaml`,

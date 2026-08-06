@@ -10,8 +10,9 @@ from pathlib import Path
 import pytest
 
 from cfd_perf.cli.main import main
+from cfd_perf.paths import EXEMPLE_DIR
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "01_EXEMPLE" / "ONERA_M6_CRUISE.yaml"
+EXAMPLE = EXEMPLE_DIR / "ONERA_M6_CRUISE.yaml"
 
 
 class TestRun:

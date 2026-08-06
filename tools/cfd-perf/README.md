@@ -22,7 +22,7 @@ et les réserves qui vont avec.
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
-![Figure de sortie](01_EXEMPLE/SORTIE/scalabilite.png)
+![Figure de sortie](src/cfd_perf/01_EXEMPLE/SORTIE/scalabilite.png)
 
 Ce que cfd-perf **n'est pas** : un profileur, un outil de scalabilité faible, un
 prédicteur du nombre d'itérations nécessaires à la convergence. Il ne remplace
@@ -65,9 +65,8 @@ pas la mesure — il l'exploite.
   - [4.3 Installation de développement](#43-installation-de-développement)
   - [4.4 Tests, style, types](#44-tests-style-types)
   - [4.5 Regénérer les figures](#45-regénérer-les-figures)
-  - [4.6 Regénérer le document Word de transmission](#46-regénérer-le-document-word-de-transmission)
-  - [4.7 Ajouter un adaptateur solveur](#47-ajouter-un-adaptateur-solveur)
-  - [4.8 Conventions du dépôt](#48-conventions-du-dépôt)
+  - [4.6 Ajouter un adaptateur solveur](#46-ajouter-un-adaptateur-solveur)
+  - [4.7 Conventions du paquet](#47-conventions-du-paquet)
 - [5. Dépannage](#5-dépannage)
 - [6. Pour aller plus loin](#6-pour-aller-plus-loin)
 
@@ -76,9 +75,9 @@ pas la mesure — il l'exploite.
 ## En une minute
 
 ```bash
-cd tools/cfd-perf
+cd cfd-perf                                     # le répertoire de ce README
 python3 -m venv ~/.venvs/cfd-perf
-~/.venvs/cfd-perf/bin/pip install -e .          # -e obligatoire, voir §3.8
+~/.venvs/cfd-perf/bin/pip install .             # Python ≥ 3.9, aucune compilation
 mkdir -p ~/bin && ln -s ~/.venvs/cfd-perf/bin/cfd-perf ~/bin/   # ~/bin sur le PATH
 
 cfd-perf example -o mon_etude                   # exemple prêt à l'emploi
@@ -376,7 +375,7 @@ pilot:                         # LA seule donnée réelle du fichier
 
 Schéma complet, clé par clé, avec types et valeurs par défaut :
 [00_DOC/03_FORMAT_ENTREE.md](00_DOC/03_FORMAT_ENTREE.md). Exemple commenté :
-[01_EXEMPLE/ONERA_M6_CRUISE.yaml](01_EXEMPLE/ONERA_M6_CRUISE.yaml).
+[src/cfd_perf/01_EXEMPLE/ONERA_M6_CRUISE.yaml](src/cfd_perf/01_EXEMPLE/ONERA_M6_CRUISE.yaml).
 
 > **Renseignez `machine.cores_per_node`.** Sans lui, cfd-perf peut répondre
 > « 531 cœurs » — inutilisable : vous demanderez 12 nœuds (576 cœurs) et serez
@@ -498,7 +497,7 @@ stratégies.
 
 ### 2.7 Lire la figure
 
-![Figure de sortie](01_EXEMPLE/SORTIE/scalabilite.png)
+![Figure de sortie](src/cfd_perf/01_EXEMPLE/SORTIE/scalabilite.png)
 
 Quatre panneaux, quatre questions : **combien de temps ?** — **est-ce que je
 gagne vraiment ?** — **est-ce que je gaspille ?** — **combien ça coûte ?**
@@ -587,7 +586,7 @@ for note in rec.notes:                # les réserves, en clair
 ```
 
 Le paquet expose aussi `cfd_perf.core.checkpoint` (intervalle optimal de
-check-point face à un MTBF donné) — voir `checkpoint_demo.py`.
+check-point face à un MTBF donné) — voir `00_DOC/checkpoint_demo.py`.
 
 ---
 
@@ -598,9 +597,13 @@ activer d'environnement, sans exporter de variable, sans savoir où sont les
 sources. Cette section liste les méthodes possibles, du poste de travail au
 calculateur partagé multi-utilisateurs.
 
-Ce qui rend la chose facile : cfd-perf ne dépend que de **`numpy`,
-`matplotlib`, `rich`, `pyyaml`** — tous présents dans n'importe quelle Anaconda.
-Aucune compilation, aucun accès réseau nécessaire.
+Ce qui rend la chose facile : cfd-perf est un paquet Python **autonome** —
+**`numpy`, `matplotlib`, `rich`, `pyyaml`** et rien d'autre, tous présents dans
+n'importe quelle Anaconda. **Python ≥ 3.9** (celui des bases RHEL 8 / Rocky 8
+suffit), aucune compilation, aucun accès réseau nécessaire. Les adaptateurs bash
+et l'exemple sont embarqués dans le paquet : une installation classique
+(`pip install .`) donne les quatre sous-commandes, sans dépôt à conserver à
+côté.
 
 ### 3.1 Choisir sa méthode
 
@@ -635,11 +638,11 @@ Le plus simple et le plus propre pour un usage personnel : un environnement
 isolé, et un seul exécutable exposé.
 
 ```bash
-cd "$CFD_FRAMEWORK/tools"
+cd /chemin/vers/les/sources             # le répertoire qui contient cfd-perf/
 
 python3 -m venv ~/.venvs/cfd-perf
-~/.venvs/cfd-perf/bin/pip install -e cfd-plot    # facultatif : style maison des figures
-~/.venvs/cfd-perf/bin/pip install -e cfd-perf
+~/.venvs/cfd-perf/bin/pip install ./cfd-plot     # facultatif : style maison des figures
+~/.venvs/cfd-perf/bin/pip install ./cfd-perf
 
 mkdir -p ~/bin
 ln -sf ~/.venvs/cfd-perf/bin/cfd-perf ~/bin/cfd-perf
@@ -661,7 +664,7 @@ répertoire, il retrouve son venv tout seul.
 Variante sans venv, si vous assumez d'installer dans votre Python utilisateur :
 
 ```bash
-pip install --user -e "$CFD_FRAMEWORK/tools/cfd-perf"   # → ~/.local/bin/cfd-perf
+pip install --user ./cfd-perf         # → ~/.local/bin/cfd-perf
 ```
 
 `~/.local/bin` est déjà sur le `PATH` de la plupart des distributions ; sinon,
@@ -673,12 +676,11 @@ Sur un calculateur qui fournit Anaconda, toutes les dépendances sont déjà là
 installe **sans réseau et sans dépendances** :
 
 ```bash
-conda create -n cfd-perf python=3.12 numpy matplotlib pandas rich pyyaml setuptools
+conda create -n cfd-perf python=3.11 numpy matplotlib pandas rich pyyaml setuptools
 conda activate cfd-perf
 
-cd "$CFD_FRAMEWORK"
-pip install -e tools/cfd-plot --no-deps --no-build-isolation --no-index   # facultatif
-pip install -e tools/cfd-perf --no-deps --no-build-isolation --no-index
+pip install ./cfd-plot --no-deps --no-build-isolation --no-index   # facultatif
+pip install ./cfd-perf --no-deps --no-build-isolation --no-index
 ```
 
 | Drapeau | Rôle |
@@ -705,7 +707,7 @@ Arborescence type, dans un répertoire lisible par tous :
 ```
 /opt/outils/cfd-perf/
 ├── 1.0.0/
-│   ├── source/          ← copie du dépôt (cfd-perf + cfd-plot)
+│   ├── source/          ← copie des sources (cfd-perf + cfd-plot)
 │   ├── venv/            ← l'environnement, créé une fois
 │   └── bin/cfd-perf     ← le seul exécutable exposé (enrobage, §3.5)
 └── modulefiles/cfd-perf/1.0.0
@@ -716,11 +718,11 @@ Mise en place, une fois, par l'administrateur ou le référent de l'équipe :
 ```bash
 RACINE=/opt/outils/cfd-perf/1.0.0
 mkdir -p "$RACINE/bin" "$RACINE/source"
-cp -r "$CFD_FRAMEWORK/tools/cfd-perf" "$CFD_FRAMEWORK/tools/cfd-plot" "$RACINE/source/"
+cp -r cfd-perf cfd-plot "$RACINE/source/"
 
 python3 -m venv "$RACINE/venv"
-"$RACINE/venv/bin/pip" install -e "$RACINE/source/cfd-plot"
-"$RACINE/venv/bin/pip" install -e "$RACINE/source/cfd-perf"
+"$RACINE/venv/bin/pip" install "$RACINE/source/cfd-plot"
+"$RACINE/venv/bin/pip" install "$RACINE/source/cfd-perf"
 
 cat > "$RACINE/bin/cfd-perf" <<'EOF'
 #!/usr/bin/env bash
@@ -821,8 +823,8 @@ l'installation en place.
 Dans `~/.bashrc` :
 
 ```bash
-export CFD_PERF_HOME="$HOME/CFD_FRAMEWORK/tools/cfd-perf"
-export PYTHONPATH="$CFD_PERF_HOME/src:$HOME/CFD_FRAMEWORK/tools/cfd-plot/src${PYTHONPATH:+:$PYTHONPATH}"
+export CFD_PERF_HOME="$HOME/outils/cfd-perf"          # où sont les sources
+export PYTHONPATH="$CFD_PERF_HOME/src:$HOME/outils/cfd-plot/src${PYTHONPATH:+:$PYTHONPATH}"
 
 cfd-perf() { python3 -m cfd_perf "$@"; }      # une fonction, pas un alias
 ```
@@ -843,11 +845,11 @@ Quatre commandes, quel que soit le mode d'installation :
 # 1. la commande est trouvée, et c'est la bonne
 command -v cfd-perf && cfd-perf --help | head -3
 
-# 2. le moteur tourne de bout en bout sur l'exemple livré
-cfd-perf run "$CFD_PERF_HOME/01_EXEMPLE/ONERA_M6_CRUISE.yaml"
+# 2. l'exemple livré se déplie, et le moteur tourne de bout en bout
+cfd-perf example -o /tmp/verif && cfd-perf run /tmp/verif/ONERA_M6_CRUISE.yaml
 
 # 3. les figures s'écrivent (matplotlib fonctionne sans écran)
-cfd-perf run "$CFD_PERF_HOME/01_EXEMPLE/ONERA_M6_CRUISE.yaml" --figure /tmp/fig.png
+cfd-perf run /tmp/verif/ONERA_M6_CRUISE.yaml --figure /tmp/fig.png
 
 # 4. le style maison des figures est-il actif ? (facultatif)
 python3 -c "from cfd_perf.report._plotting_lib import get_plotting; \
@@ -867,16 +869,15 @@ cfd-perf capture --collect --case-dir /tmp/cas_demo
 | Symptôme | Cause | Remède |
 |:---|:---|:---|
 | `cfd-perf: command not found` après un `pip install --user` | `~/.local/bin` absent du `PATH` | `export PATH="$HOME/.local/bin:$PATH"` dans `~/.bashrc` |
-| `run` marche, mais `example` et `capture` répondent « introuvable » | installation **non éditable** : `01_EXEMPLE/` et `ADAPTATEUR/` ne sont pas empaquetés | réinstaller avec `pip install -e` |
+| `capture` répond « adaptateur introuvable » | adaptateur maison hors du paquet | passer son chemin (`-a ./MONSOLVEUR.sh`) ou exporter `CFD_PERF_ADAPTATEUR_DIR` |
 | `ModuleNotFoundError: No module named 'setuptools'` | `--no-build-isolation` dans un venv nu (Python ≥ 3.12 n'y met que `pip`) | `pip install setuptools` dans l'environnement cible |
 | `error: externally-managed-environment` | Python système protégé (PEP 668) | passer par un venv (§3.2) ou `--user` |
 | le `python3` de la session a changé | le `bin/` d'un venv a été mis sur le `PATH` | exposer un lien ou un script d'enrobage, pas le `bin/` entier (§3.2) |
 
-> **`pip install -e` n'est pas un détail de confort.** `cfd-perf example` cherche
-> `01_EXEMPLE/` et `cfd-perf capture` cherche `ADAPTATEUR/` **relativement aux
-> sources**, et ni l'un ni l'autre n'est embarqué dans le paquet installé. Une
-> installation classique (`pip install .`) laisse `run` et `check` fonctionnels
-> mais casse les deux autres sous-commandes.
+> **L'installation classique suffit.** `01_EXEMPLE/` et `ADAPTATEUR/` sont
+> embarqués dans le paquet (`src/cfd_perf/`) et localisés depuis celui-ci : les
+> quatre sous-commandes marchent après un simple `pip install .`, sans dépôt
+> conservé à côté. `-e` ne sert plus qu'au développement.
 
 ---
 
@@ -940,9 +941,8 @@ Les règles de conception qui expliquent cette structure :
   isolé sans rien télécharger.
 - **`cfd-plot` est optionnel**, via `report/_plotting_lib.py`. Absent, les
   figures sortent en Matplotlib nu : le style change, les chiffres non.
-- **Les adaptateurs sont du bash autonome.** Ils ne dépendent pas de
-  `$CFD_FRAMEWORK` et ne connaissent pas Python ; le pont est
-  `capture/adapter.py`.
+- **Les adaptateurs sont du bash autonome.** Ils ne dépendent d'aucun autre
+  projet et ne connaissent pas Python ; le pont est `capture/adapter.py`.
 
 ### 4.2 Le trajet d'une donnée
 
@@ -973,7 +973,7 @@ Trois invariants tenus par le moteur, et couverts par les tests :
 ### 4.3 Installation de développement
 
 ```bash
-cd tools/cfd-perf
+cd cfd-perf
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"          # runtime + pytest, pytest-cov, ruff, mypy
 pip install -e ../cfd-plot       # facultatif : style maison des figures
@@ -991,11 +991,19 @@ pip install -e ../cfd-plot       # facultatif : style maison des figures
 ### 4.4 Tests, style, types
 
 ```bash
-pytest                      # 184 tests (dont 1 ignoré faute de solveur)
+pytest                      # 213 tests (dont 1 ignoré faute de solveur)
 pytest --cov=cfd_perf       # couverture
 ruff check src tests
 mypy src                    # strict
-bash ADAPTATEUR/tests/test_mock_adaptateur.sh    # le contrat bash, sans Python
+bash src/cfd_perf/ADAPTATEUR/tests/test_mock_adaptateur.sh   # le contrat bash, sans Python
+```
+
+Le paquet vise **Python 3.9** ; le seul écart de version encapsulé est
+`src/cfd_perf/_compat.py`. Avant de publier, rejouez la suite sous un
+interpréteur 3.9 — c'est la seule vérification qui fasse foi :
+
+```bash
+python3.9 -m venv /tmp/v39 && /tmp/v39/bin/pip install ".[dev]" && /tmp/v39/bin/pytest
 ```
 
 Organisation des tests, en miroir du paquet :
@@ -1008,6 +1016,9 @@ Organisation des tests, en miroir du paquet :
 | `tests/report/` | rendu du rapport, figures |
 | `tests/capture/` | pont bash, manifeste, détection machine, écriture de l'étude |
 | `tests/test_cli.py` | bout en bout : `run`, `check`, `example`, `python -m cfd_perf` |
+| `tests/test_paquet.py` | autonomie : données livrées, résolution des adaptateurs |
+| `tests/test_compat.py` | compatibilité 3.9 des énumérations texte |
+| `tests/report/test_theme.py` | aucune sortie ne dépend du gras |
 
 `mypy` tourne ici en mode **strict** (contrairement à `cfd-plot`) : les nouvelles
 fonctions doivent être annotées.
@@ -1018,8 +1029,7 @@ Les figures de `00_DOC/FIGURES/` sont **versionnées** ; on ne les régénère q
 le modèle, les données d'exemple ou le style changent.
 
 ```bash
-python 00_DOC/generer_figures.py                    # nécessite cfd-plot installé
-python 00_DOC/07_TRANSMISSION/generer_schemas.py    # matplotlib seul
+python 00_DOC/generer_figures.py     # nécessite cfd-plot installé
 ```
 
 | Figure | Ce qu'elle illustre | Script |
@@ -1029,35 +1039,32 @@ python 00_DOC/07_TRANSMISSION/generer_schemas.py    # matplotlib seul
 | `03_decomposition.png` | la décomposition de domaine : volume vs surface | `generer_figures.py` |
 | `04_surface_volume.png` | le plancher de mailles par cœur, et d'où il vient | `generer_figures.py` |
 | `05_scalabilite_forte.png` | accélération, efficacité, point de retournement | `generer_figures.py` |
-| `06_entrees_sorties.png` | entrées, traitement et sorties de la chaîne | `generer_schemas.py` |
-| `07_etapes.png` | l'enchaînement des étapes 0 à 6 | `generer_schemas.py` |
-| `08_archivage.png` | ce que produit la chaîne, et ce qu'on archive | `generer_schemas.py` |
-| `09_validation.png` | les trois niveaux de vérification de l'outil | `generer_schemas.py` |
 
 Les figures de sortie de l'exemple se régénèrent, elles, en rejouant l'exemple :
-`cd 01_EXEMPLE && ./RUN_EXEMPLE.sh`.
+`cd src/cfd_perf/01_EXEMPLE && ./RUN_EXEMPLE.sh`.
 
-### 4.6 Regénérer le document Word de transmission
-
-`00_DOC/07_TRANSMISSION/` contient le document de transmission de connaissance
-(problématique, traitement étape par étape, difficultés et limites) sous ses deux
-formes : la source Markdown et le `.docx` construit. Après modification de la
-source :
-
-```bash
-python 00_DOC/07_TRANSMISSION/construire_docx.py   # nécessite pandoc + python-docx
-```
-
-### 4.7 Ajouter un adaptateur solveur
+### 4.6 Ajouter un adaptateur solveur
 
 Un adaptateur rend la capture pilote solveur-agnostique : c'est un script bash
-**autonome** de `ADAPTATEUR/` qui source `interface.sh` et implémente le contrat.
+**autonome** qui source le contrat `interface.sh` et l'implémente. Les
+adaptateurs livrés sont dans `src/cfd_perf/ADAPTATEUR/` ; le vôtre n'a pas à y
+être déposé — gardez-le près de votre cas et donnez son chemin.
 
 ```bash
-cp ADAPTATEUR/mock.sh ADAPTATEUR/MONSOLVEUR.sh   # ou OF.sh si vous en êtes proche
-$EDITOR ADAPTATEUR/MONSOLVEUR.sh
-cfd-perf capture --coeurs "4 8 16" --adaptateur MONSOLVEUR --case-dir .
+cp src/cfd_perf/ADAPTATEUR/mock.sh MONSOLVEUR.sh   # ou OF.sh si vous en êtes proche
+$EDITOR MONSOLVEUR.sh
+cfd-perf capture --coeurs "4 8 16" --adaptateur ./MONSOLVEUR.sh --case-dir .
 ```
+
+Un adaptateur posé hors du paquet source le contrat livré sans le recopier :
+
+```bash
+source "${CFD_PERF_INTERFACE:-$(dirname "${BASH_SOURCE[0]}")/interface.sh}"
+```
+
+Pour tout un répertoire d'adaptateurs maison, exportez
+`CFD_PERF_ADAPTATEUR_DIR` : `--adaptateur MONSOLVEUR` y sera cherché en premier,
+avec repli sur ceux livrés.
 
 | Fonction | Args | Sortie attendue (stdout) |
 |:---|:---|:---|
@@ -1074,13 +1081,14 @@ cfd-perf capture --coeurs "4 8 16" --adaptateur MONSOLVEUR --case-dir .
 | `adapt_cible_iterations` | `case_dir` | `study.n_iterations` de production |
 
 Deux règles à ne pas rater : **nombres à point décimal** (`interface.sh` impose
-`LC_ALL=C`, Python relit ces valeurs) et **autonomie** (ne dépendez pas de
-`$CFD_FRAMEWORK`). Guide complet : [ADAPTATEUR/README.md](ADAPTATEUR/README.md).
+`LC_ALL=C`, Python relit ces valeurs) et **autonomie** (aucune dépendance à un
+autre projet). Guide complet :
+[src/cfd_perf/ADAPTATEUR/README.md](src/cfd_perf/ADAPTATEUR/README.md).
 
-### 4.8 Conventions du dépôt
+### 4.7 Conventions du paquet
 
 ```
-tools/cfd-perf/
+cfd-perf/
 ├── 00_DOC/              documentation illustrée (FR)
 │   ├── 01_MODELE.md                le modèle et sa physique
 │   ├── 02_GUIDE_UTILISATEUR.md     méthode, lecture des résultats
@@ -1088,10 +1096,8 @@ tools/cfd-perf/
 │   ├── 05_CAPTURE_PILOTE.md        capture automatique des données pilotes
 │   ├── 06_INSTALLATION_AIR_GAP.md  calculateur isolé
 │   ├── FIGURES/                    illustrations (versionnées, regénérables)
+│   ├── checkpoint_demo.py          intervalle optimal de check-point
 │   └── generer_figures.py
-├── 01_EXEMPLE/          exemple prêt à l'exécution (données réalistes)
-├── ADAPTATEUR/          adaptateurs bash de capture (solveur-agnostiques)
-│   └── interface.sh  mock.sh  OF.sh  hotes.yaml  README.md
 ├── src/cfd_perf/        le paquet
 │   ├── core/                modèle, contraintes, check-point
 │   ├── data/                pilote, maillage, machine, fichier d'étude
@@ -1099,11 +1105,18 @@ tools/cfd-perf/
 │   ├── engine/              décision : « combien de cœurs ? »
 │   ├── report/              rapport Rich + figures (françaises)
 │   ├── cli/                 la ligne de commande
-│   └── __main__.py          « python -m cfd_perf »
+│   ├── paths.py             où sont les données livrées
+│   ├── _compat.py           les écarts entre versions de Python
+│   ├── __main__.py          « python -m cfd_perf »
+│   ├── ADAPTATEUR/          adaptateurs bash livrés (données du paquet)
+│   │   └── interface.sh  mock.sh  OF.sh  hotes.yaml  README.md
+│   └── 01_EXEMPLE/          exemple livré, déplié par « cfd-perf example »
 └── tests/
 ```
 
-- **Répertoires livrables en majuscules** (convention du framework) ; `src/` et
+- **`ADAPTATEUR/` et `01_EXEMPLE/` sont dans le paquet**, pas à côté : c'est ce
+  qui rend l'installation autonome. Ils gardent leurs noms en majuscules, qui
+  disent qu'ils sont faits pour être lus et copiés par l'utilisateur ; `src/` et
   `tests/` restent en minuscules, les noms de paquets Python devant être
   importables.
 - **Sorties utilisateur en français** (rapport, figures, messages d'erreur) ;
@@ -1124,7 +1137,8 @@ tools/cfd-perf/
 | Zone ambre sur toute la figure | le modèle extrapole hors plage pilote | ajouter un point pilote au-delà de la plage actuelle |
 | `capture --collect` renvoie 3 | des runs ne sont pas terminés | attendre et relancer ; `PILOTE/manifest.json` fait le lien entre les deux phases |
 | RAM absente du rapport | pas de SLURM, ou `peak_ram_total_gb` non fourni | normal : les contraintes mémoire sont ignorées, le reste fonctionne |
-| Figures sans style maison | `cfd-plot` non installé (ou `pandas` manquant) | `pip install -e ../cfd-plot` — purement esthétique |
+| Figures sans style maison | `cfd-plot` non installé (ou `pandas` manquant) | `pip install ../cfd-plot` — purement esthétique |
+| Titres et réponse peu lisibles | terminal rendant mal le gras | rien à faire : le rapport n'utilise plus le gras ; `CFD_PERF_GRAS=1` le rétablit |
 | `cfd-perf` introuvable, ou `example`/`capture` cassés | problème d'installation | voir [§3.8, les cinq pièges](#38-les-cinq-pièges) |
 
 Limites connues du modèle, à garder en tête avant de décider : scalabilité forte
@@ -1144,10 +1158,10 @@ des halos, et γ n'est pas transposable d'une machine à l'autre. Détail :
 | [00_DOC/03_FORMAT_ENTREE.md](00_DOC/03_FORMAT_ENTREE.md) | le schéma du fichier d'étude, clé par clé |
 | [00_DOC/05_CAPTURE_PILOTE.md](00_DOC/05_CAPTURE_PILOTE.md) | la capture automatique des données pilotes |
 | [00_DOC/06_INSTALLATION_AIR_GAP.md](00_DOC/06_INSTALLATION_AIR_GAP.md) | installation sur calculateur isolé |
-| [ADAPTATEUR/README.md](ADAPTATEUR/README.md) | écrire un adaptateur pour votre solveur |
-| [01_EXEMPLE/](01_EXEMPLE/) | l'exemple commenté, exécutable tel quel |
-| `checkpoint_demo.py` | intervalle optimal de check-point (`cfd_perf.core.checkpoint`) |
+| [src/cfd_perf/ADAPTATEUR/README.md](src/cfd_perf/ADAPTATEUR/README.md) | écrire un adaptateur pour votre solveur |
+| [src/cfd_perf/01_EXEMPLE/](src/cfd_perf/01_EXEMPLE/) | l'exemple commenté, exécutable tel quel |
+| `00_DOC/checkpoint_demo.py` | intervalle optimal de check-point (`cfd_perf.core.checkpoint`) |
 
-Paquets voisins du dépôt : **`cfd-plot`** (figures, `tools/cfd-plot`),
-**`cfd-atm`** (atmosphère et vitesses de vol), **`cfd-stats`** (convergence),
-**`slurm-utils`** (files et priorités Slurm).
+Paquet compagnon, facultatif : **`cfd-plot`** — le style maison des figures.
+cfd-perf l'utilise s'il est installé et retombe sur Matplotlib nu sinon ; il
+n'est jamais requis.

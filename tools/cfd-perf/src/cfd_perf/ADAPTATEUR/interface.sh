@@ -7,9 +7,10 @@
 #  et fournit des implémentations par défaut réutilisables (notamment la lecture
 #  de la RAM crête via SLURM).
 #
-#  Il est VOLONTAIREMENT autonome : il ne dépend pas de $CFD_FRAMEWORK et
-#  fournit ses propres primitives de log si le framework n'est pas présent, de
-#  sorte que cfd-perf reste utilisable copié seul sur un calculateur isolé.
+#  Il est VOLONTAIREMENT autonome : aucune dépendance à un autre projet, ni à
+#  une variable d'environnement pointant vers une arborescence. Il fournit ses
+#  propres primitives de log, de sorte que cfd-perf reste utilisable installé
+#  seul sur un calculateur isolé.
 #
 #  Chaque adaptateur (mock.sh, OF.sh, …) source ce fichier puis redéfinit les
 #  fonctions marquées « À IMPLÉMENTER ». Les fonctions échouent bruyamment si
@@ -24,11 +25,7 @@
 # locale de l'hôte : les valeurs capturées sont relues par Python.
 export LC_ALL=C
 
-# ── Primitives de log (réutilise le framework si disponible, sinon repli) ─────
-if [[ -n "${CFD_FRAMEWORK:-}" ]] && [[ -f "${CFD_FRAMEWORK}/lib/format.sh" ]]; then
-  # shellcheck disable=SC1091
-  source "${CFD_FRAMEWORK}/lib/format.sh"
-fi
+# ── Primitives de log (repli si l'appelant n'en fournit pas) ──────────────────
 if ! command -v _info &>/dev/null; then
   _info()   { echo "[INFO] $*" >&2; }
   _warn()   { echo "[WARN] $*" >&2; }

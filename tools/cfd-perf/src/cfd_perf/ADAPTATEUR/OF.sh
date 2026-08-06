@@ -14,7 +14,7 @@
 
 _ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "${_ICI}/interface.sh"
+source "${CFD_PERF_INTERFACE:-${_ICI}/interface.sh}"
 
 adapt_nom() { echo "OF"; }
 adapt_description() { echo "Adaptateur de capture OpenFOAM (foamRun)"; }

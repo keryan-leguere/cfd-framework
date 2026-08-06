@@ -69,19 +69,21 @@ cfd-perf capture --collect --case-dir /tmp/cas_demo/AILE_M6 --figure /tmp/cas_de
 1. **options CLI** (`--cores-per-node`, `--ram-per-node`, `--max-nodes`, `--max-walltime`) ;
 2. **détection automatique** : `scontrol show node $(hostname)` (`CPUTot`,
    `RealMemory`), sinon `nproc` et `/proc/meminfo` ;
-3. **`ADAPTATEUR/hotes.yaml`**, indexé par nom d'hôte (le préfixe le plus long
+3. **`hotes.yaml`**, indexé par nom d'hôte (le préfixe le plus long
    qui matche) ;
 4. la clé **`defaut`** de `hotes.yaml` ;
 5. les **valeurs par défaut** de cfd-perf (`cores_per_node = 1`).
 
 Toutes les commandes système sont protégées : hors calculateur, la détection
 échoue en silence et on retombe sur les niveaux suivants. Renseignez vos
-machines dans `ADAPTATEUR/hotes.yaml` pour un résultat fiable partout.
+machines dans un `hotes.yaml` à vous — désigné par `CFD_PERF_ADAPTATEUR_DIR`,
+sinon celui livré dans `src/cfd_perf/ADAPTATEUR/` — pour un résultat fiable
+partout.
 
 ## 4. RAM crête (SLURM)
 
 La RAM crête **totale** (ce que consomme le modèle mémoire) est lue après le run
-par l'implémentation par défaut de `ADAPTATEUR/interface.sh` :
+par l'implémentation par défaut de `interface.sh` :
 
 ```
 sacct -j <job_id> --format=MaxRSS,NTasks -P
@@ -95,7 +97,7 @@ surcharger `adapt_pilote_ram_crete` (le mock le fait avec une valeur synthétiqu
 
 ## 5. Le contrat d'adaptateur
 
-Chaque adaptateur est un script bash **autonome** de `ADAPTATEUR/` qui source
+Chaque adaptateur est un script bash **autonome** qui source
 `interface.sh` et implémente :
 
 | Fonction | Arguments | Écrit sur stdout / renvoie |

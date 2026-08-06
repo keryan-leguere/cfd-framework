@@ -4,7 +4,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #
 #  Vérifie le contrat de capture (adapt_pilote_*) sans solveur ni SLURM.
-#  Autonome : ne requiert pas $CFD_FRAMEWORK.
+#  Autonome : aucune dépendance hors de ce répertoire.
 #
 #  Usage :  bash ADAPTATEUR/tests/test_mock_adaptateur.sh
 # ═══════════════════════════════════════════════════════════════════════════════

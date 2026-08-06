@@ -19,14 +19,15 @@ from cfd_perf.core.model import ScalingModel
 from cfd_perf.data.pilot import PilotSeries
 from cfd_perf.data.study import Study
 from cfd_perf.engine.recommend import Candidate, Recommendation, Strategy
+from cfd_perf.report import theme
 
 console = Console()
 
 _QUALITY_STYLE = {
-    "excellent": "bold green",
-    "good": "green",
-    "marginal": "yellow",
-    "poor": "bold red",
+    "excellent": theme.OK,
+    "good": theme.OK,
+    "marginal": theme.ATTENTION,
+    "poor": theme.ERREUR,
 }
 
 _VERDICT_FR = {
@@ -108,12 +109,12 @@ def render_answer(rec: Recommendation) -> Panel:
     if rec.choice is None:
         return Panel(
             Text.from_markup(
-                "[bold red]Aucune configuration réalisable.[/]\n\n"
+                f"[{theme.ERREUR}]Aucune configuration réalisable.[/]\n\n"
                 "Tous les nombres de cœurs de la plage de recherche violent une "
                 "contrainte matérielle. Le tableau ci-dessous indique laquelle ; "
                 "relâchez la contrainte bloquante ou élargissez la recherche.",
             ),
-            title="[bold]Réponse[/]",
+            title=f"[{theme.TITRE}]Réponse[/]",
             border_style="red",
             box=ROUNDED,
         )
@@ -123,14 +124,14 @@ def render_answer(rec: Recommendation) -> Panel:
 
     headline = Text()
     headline.append("Lancer sur ", style="dim")
-    headline.append(f"{c.cores} cœurs", style="bold green")
+    headline.append(f"{c.cores} cœurs", style=theme.ACCENT)
     if cpn > 1:
-        headline.append(f"  =  {c.nodes} nœuds de {cpn} cœurs", style="green")
+        headline.append(f"  =  {c.nodes} nœuds de {cpn} cœurs", style=theme.DISCRET)
 
     facts = Table.grid(padding=(0, 2))
     facts.add_column(style="dim", justify="right")
     facts.add_column()
-    facts.add_row("Durée", f"[bold]{format_duration(c.runtime_hours)}[/]")
+    facts.add_row("Durée", f"[{theme.VALEUR}]{format_duration(c.runtime_hours)}[/]")
     facts.add_row("Coût", f"{_fr_int(c.core_hours)} h·cœur")
     facts.add_row("Accélération", f"{_fr(c.speedup, 1)}× vs {rec.model.ref_cores} cœurs")
     facts.add_row("Efficacité", f"{_pct(c.efficiency)}  ({_pct(c.efficiency_loss)} perdu)")
@@ -141,7 +142,7 @@ def render_answer(rec: Recommendation) -> Panel:
     body = Group(headline, Text(), facts)
     return Panel(
         body,
-        title=f"[bold]Réponse[/]  [dim]({_STRATEGY_FR[rec.strategy]} : "
+        title=f"[{theme.TITRE}]Réponse[/]  [dim]({_STRATEGY_FR[rec.strategy]} : "
         f"{_STRATEGY_BLURB[rec.strategy]})[/]",
         border_style="green",
         box=ROUNDED,
@@ -157,9 +158,11 @@ def render_notes(rec: Recommendation) -> Panel | None:
     for i, note in enumerate(items):
         if i:
             body.append("\n")
-        body.append("! ", style="bold yellow")
+        body.append("! ", style=theme.ATTENTION)
         body.append(note)
-    return Panel(body, title="[bold]À lire[/]", border_style="yellow", box=ROUNDED)
+    return Panel(
+        body, title=f"[{theme.TITRE}]À lire[/]", border_style="yellow", box=ROUNDED
+    )
 
 
 def render_alternatives(rec: Recommendation) -> Table | None:
@@ -177,9 +180,9 @@ def render_alternatives(rec: Recommendation) -> Table | None:
         return None
 
     table = Table(
-        title="[bold]Alternatives[/]",
+        title=f"[{theme.TITRE}]Alternatives[/]",
         box=SIMPLE_HEAD,
-        header_style="bold cyan",
+        header_style=theme.ENTETE,
         title_justify="left",
         pad_edge=False,
     )
@@ -192,7 +195,7 @@ def render_alternatives(rec: Recommendation) -> Table | None:
 
     ref = rec.choice
     table.add_row(
-        "[bold green]recommandé[/]",
+        f"[{theme.ACCENT}]recommandé[/]",
         str(ref.cores),
         format_duration(ref.runtime_hours),
         f"{_fr_int(ref.core_hours)} h·cœur",
@@ -240,7 +243,7 @@ def render_model(model: ScalingModel, pilot: PilotSeries) -> Panel:
         "Pilote", f"{q.n_points} points, {pilot.core_range[0]}-{pilot.core_range[1]} cœurs"
     )
 
-    breakdown = Table(box=SIMPLE_HEAD, header_style="bold cyan", pad_edge=False)
+    breakdown = Table(box=SIMPLE_HEAD, header_style=theme.ENTETE, pad_edge=False)
     breakdown.add_column("Terme")
     breakdown.add_column("Signification", style="dim")
     breakdown.add_column("Valeur", justify="right")
@@ -255,7 +258,7 @@ def render_model(model: ScalingModel, pilot: PilotSeries) -> Panel:
 
     return Panel(
         Group(grid, Text(), breakdown),
-        title="[bold]Modèle de scalabilité[/]",
+        title=f"[{theme.TITRE}]Modèle de scalabilité[/]",
         border_style="cyan",
         box=ROUNDED,
     )
@@ -268,9 +271,9 @@ def render_pilot_check(model: ScalingModel, pilot: PilotSeries) -> Table:
     mesures pilotes, cela se voit ici en chiffres avant même d'ouvrir une figure.
     """
     table = Table(
-        title="[bold]Modèle vs mesures pilotes[/]",
+        title=f"[{theme.TITRE}]Modèle vs mesures pilotes[/]",
         box=SIMPLE_HEAD,
-        header_style="bold magenta",
+        header_style=theme.ENTETE_ALT,
         title_justify="left",
         pad_edge=False,
     )
@@ -310,10 +313,10 @@ def render_curve(rec: Recommendation, *, max_rows: int = 14) -> Table:
         cands = [cands[i] for i in sorted(picked)]
 
     table = Table(
-        title=f"[bold]Courbe de scalabilité[/] [dim]({len(rec.candidates)} candidats évalués, "
-        f"{len(rec.feasible)} réalisables)[/]",
+        title=f"[{theme.TITRE}]Courbe de scalabilité[/] [dim]({len(rec.candidates)} "
+        f"candidats évalués, {len(rec.feasible)} réalisables)[/]",
         box=SIMPLE_HEAD,
-        header_style="bold cyan",
+        header_style=theme.ENTETE,
         title_justify="left",
         pad_edge=False,
     )
@@ -328,14 +331,14 @@ def render_curve(rec: Recommendation, *, max_rows: int = 14) -> Table:
     for c in cands:
         is_choice = rec.choice is not None and c.cores == rec.choice.cores
         if is_choice:
-            status = "[bold green]← recommandé[/]"
+            status = f"[{theme.ACCENT}]← recommandé[/]"
         elif c.is_feasible:
             status = "[dim]ok[/]"
         else:
             labels = [_VIOLATION_LABEL.get(v.code, v.code) for v in c.violations]
             status = f"[red]{', '.join(labels)}[/]"
 
-        row = [f"[bold]{c.cores}[/]" if is_choice else str(c.cores)]
+        row = [f"[{theme.ACCENT}]{c.cores}[/]" if is_choice else str(c.cores)]
         if rec.machine.cores_per_node > 1:
             row.append(str(c.nodes))
         row.extend(
@@ -357,7 +360,7 @@ def render_inputs(study: Study) -> Panel:
     grid.add_column()
 
     mesh = study.mesh
-    grid.add_row("Étude", f"[bold]{study.name}[/]")
+    grid.add_row("Étude", f"[{theme.VALEUR}]{study.name}[/]")
     grid.add_row("Maillage", f"{_fr_int(mesh.num_cells)} mailles")
     if mesh.total_ram_gb is not None:
         source = _MEM_SOURCE_FR.get(mesh.mem_source, mesh.mem_source)
@@ -373,7 +376,9 @@ def render_inputs(study: Study) -> Panel:
             details.append(f"max {m.max_nodes} nœuds")
         grid.add_row("Machine", f"{m.name}  [dim]({', '.join(details)})[/]")
 
-    return Panel(grid, title="[bold]Données d'entrée[/]", border_style="blue", box=ROUNDED)
+    return Panel(
+        grid, title=f"[{theme.TITRE}]Données d'entrée[/]", border_style="blue", box=ROUNDED
+    )
 
 
 def render_pilot_warnings(pilot: PilotSeries) -> Panel | None:
@@ -387,7 +392,10 @@ def render_pilot_warnings(pilot: PilotSeries) -> Panel | None:
         body.append("- ", style="dim")
         body.append(issue)
     return Panel(
-        body, title="[bold]Qualité des données pilotes[/]", border_style="yellow", box=ROUNDED
+        body,
+        title=f"[{theme.TITRE}]Qualité des données pilotes[/]",
+        border_style="yellow",
+        box=ROUNDED,
     )
 
 

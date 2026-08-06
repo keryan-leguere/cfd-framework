@@ -18,7 +18,7 @@ SORTIE="SORTIE"
 
 if ! command -v cfd-perf >/dev/null 2>&1; then
     echo "cfd-perf introuvable. Installez-le d'abord :" >&2
-    echo "    cd $(dirname "$ICI") && pip install -e \".[dev]\"" >&2
+    echo "    pip install cfd-perf        # ou : pip install /chemin/vers/cfd-perf" >&2
     exit 1
 fi
 

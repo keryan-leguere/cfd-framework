@@ -1,0 +1,6 @@
+include LICENSE
+include README.md
+recursive-include src/cfd_perf/ADAPTATEUR *
+recursive-include src/cfd_perf/01_EXEMPLE *
+recursive-exclude src/cfd_perf/01_EXEMPLE/SORTIE *
+global-exclude __pycache__ *.py[cod]

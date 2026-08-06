@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cfd_perf.capture.adapter import BashAdapter, CaptureError
@@ -37,7 +37,7 @@ def _timestamp() -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 @dataclass(frozen=True)

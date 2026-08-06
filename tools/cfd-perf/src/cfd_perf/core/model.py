@@ -43,13 +43,13 @@ air-gapped cluster with nothing but a wheel cache.
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
 import numpy.typing as npt
 
+from cfd_perf._compat import StrEnum
 from cfd_perf.data.pilot import PilotSeries
 
 # All numeric arrays here are wall-times / core counts / coefficients: float64.
@@ -65,7 +65,7 @@ MIN_POINTS_FOR_COMM = 3
 _EPS = 1e-12
 
 
-class ModelKind(enum.StrEnum):
+class ModelKind(StrEnum):
     """Which functional form was fitted."""
 
     AMDAHL_COMM = "amdahl+comm"

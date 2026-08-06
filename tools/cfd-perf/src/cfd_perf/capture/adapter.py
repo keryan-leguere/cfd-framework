@@ -15,9 +15,9 @@ import os
 import subprocess
 from pathlib import Path
 
-# ADAPTATEUR/ est à la racine du sous-projet : src/cfd_perf/capture/adapter.py
-# -> parents[3] == tools/cfd-perf
-ADAPTATEUR_DIR = Path(__file__).resolve().parents[3] / "ADAPTATEUR"
+from cfd_perf.paths import ADAPTATEUR_DIR, ENV_ADAPTATEUR_DIR, adaptateur_dir
+
+__all__ = ["ADAPTATEUR_DIR", "BashAdapter", "CaptureError"]
 
 _DEFAULT_TIMEOUT_S = 120
 
@@ -29,27 +29,54 @@ class CaptureError(RuntimeError):
 class BashAdapter:
     """Enveloppe typée autour d'un adaptateur bash.
 
-    Résolution de l'identifiant : ``<dir>/<id>.sh`` puis ``<dir>/<id>/adaptateur.sh``
-    (même convention que le framework).
+    *adapter_id* est soit le chemin d'un script (``mon_solveur.sh``, absolu ou
+    relatif), soit un nom cherché dans le répertoire d'adaptateurs sous la
+    forme ``<dir>/<id>.sh`` puis ``<dir>/<id>/adaptateur.sh``.
+
+    Le répertoire cherché est ``$CFD_PERF_ADAPTATEUR_DIR`` s'il est défini,
+    sinon celui livré avec le paquet : un adaptateur maison n'a jamais à être
+    déposé dans le site-packages.
     """
 
     def __init__(self, adapter_id: str, *, adapter_dir: Path | None = None) -> None:
         self.adapter_id = adapter_id
-        self.adapter_dir = adapter_dir or ADAPTATEUR_DIR
+        self.adapter_dir = adapter_dir or adaptateur_dir()
         self.path = self._resolve()
 
     def _resolve(self) -> Path:
-        flat = self.adapter_dir / f"{self.adapter_id}.sh"
-        nested = self.adapter_dir / self.adapter_id / "adaptateur.sh"
-        for candidate in (flat, nested):
-            if candidate.is_file():
-                return candidate
+        direct = Path(self.adapter_id).expanduser()
+        if direct.suffix == ".sh" or direct.is_absolute() or len(direct.parts) > 1:
+            if direct.is_file():
+                return direct.resolve()
+            raise CaptureError(f"adaptateur introuvable : {direct}")
+
+        recherche = [self.adapter_dir]
+        if self.adapter_dir != ADAPTATEUR_DIR:
+            recherche.append(ADAPTATEUR_DIR)  # repli sur les adaptateurs livrés
+        for base in recherche:
+            for candidate in (base / f"{self.adapter_id}.sh", base / self.adapter_id / "adaptateur.sh"):
+                if candidate.is_file():
+                    return candidate
         raise CaptureError(
-            f"adaptateur « {self.adapter_id} » introuvable dans {self.adapter_dir} "
-            f"(cherché : {flat.name}, {self.adapter_id}/adaptateur.sh)"
+            f"adaptateur « {self.adapter_id} » introuvable dans "
+            f"{', '.join(str(d) for d in recherche)} (cherché : {self.adapter_id}.sh, "
+            f"{self.adapter_id}/adaptateur.sh). Passez le chemin du script, ou pointez "
+            f"{ENV_ADAPTATEUR_DIR} vers votre répertoire d'adaptateurs."
         )
 
     # -- appel générique ----------------------------------------------------
+
+    def _env(self) -> dict[str, str]:
+        """Environnement des sous-processus bash.
+
+        ``CFD_PERF_INTERFACE`` permet à un adaptateur maison, posé n'importe où,
+        de sourcer le contrat livré avec le paquet sans en recopier une version.
+        """
+        env = dict(os.environ)
+        env["LC_ALL"] = "C"  # point décimal, indépendant de la locale de l'hôte
+        env[ENV_ADAPTATEUR_DIR] = str(self.adapter_dir)
+        env["CFD_PERF_INTERFACE"] = str(ADAPTATEUR_DIR / "interface.sh")
+        return env
 
     def _call(
         self,
@@ -58,9 +85,7 @@ class BashAdapter:
         timeout: int = _DEFAULT_TIMEOUT_S,
     ) -> str:
         """Source l'adaptateur puis exécute ``fn args…`` ; renvoie stdout (strippé)."""
-        env = dict(os.environ)
-        env["LC_ALL"] = "C"  # point décimal, indépendant de la locale de l'hôte
-        env["CFD_PERF_ADAPTATEUR_DIR"] = str(self.adapter_dir)
+        env = self._env()
 
         cmd = [
             "bash",
@@ -119,8 +144,7 @@ class BashAdapter:
         return self._call("adapt_nom")
 
     def verifier_installation(self) -> bool:
-        env = dict(os.environ)
-        env["LC_ALL"] = "C"
+        env = self._env()
         proc = subprocess.run(
             ["bash", "-c", 'source "$1"; adapt_verifier_installation', "_", str(self.path)],
             capture_output=True,

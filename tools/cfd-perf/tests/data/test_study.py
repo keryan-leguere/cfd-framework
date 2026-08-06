@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
 
 import pytest
 
 from cfd_perf.data.study import StudyError, load_study, parse_study
 from cfd_perf.engine.recommend import Strategy
+from cfd_perf.paths import EXEMPLE_DIR
 
-EXAMPLE = Path(__file__).resolve().parents[2] / "01_EXEMPLE" / "ONERA_M6_CRUISE.yaml"
+EXAMPLE = EXEMPLE_DIR / "ONERA_M6_CRUISE.yaml"
 
 MINIMAL = {
     "study": {"name": "t", "n_iterations": 1000},

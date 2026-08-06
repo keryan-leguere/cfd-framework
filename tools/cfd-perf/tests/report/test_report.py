@@ -7,7 +7,6 @@ way: the answer, the caveats, and the fit quality must all reach the user.
 from __future__ import annotations
 
 import io
-from pathlib import Path
 
 import matplotlib
 import pytest
@@ -19,10 +18,11 @@ from cfd_perf.core.constraints import Constraints
 from cfd_perf.core.model import fit_model
 from cfd_perf.data.study import load_study
 from cfd_perf.engine.recommend import Strategy, recommend
+from cfd_perf.paths import EXEMPLE_DIR
 from cfd_perf.report.console import format_duration, print_report
 from cfd_perf.report.figures import plot_recommendation, save_recommendation_figure
 
-EXAMPLE = Path(__file__).resolve().parents[2] / "01_EXEMPLE" / "ONERA_M6_CRUISE.yaml"
+EXAMPLE = EXEMPLE_DIR / "ONERA_M6_CRUISE.yaml"
 
 
 @pytest.fixture

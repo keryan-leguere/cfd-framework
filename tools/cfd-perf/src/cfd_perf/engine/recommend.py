@@ -15,9 +15,9 @@ the report can show what the other choices would have cost.
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass, field
 
+from cfd_perf._compat import StrEnum
 from cfd_perf.core import constraints as cons
 from cfd_perf.core.model import ScalingModel
 from cfd_perf.data.machine import Machine
@@ -27,7 +27,7 @@ from cfd_perf.data.pilot import PilotSeries
 DEFAULT_MAX_EFFICIENCY_LOSS = 0.30
 
 
-class Strategy(enum.StrEnum):
+class Strategy(StrEnum):
     """How to pick among feasible core counts."""
 
     EFFICIENCY = "efficiency"

@@ -15,13 +15,18 @@ l'orchestre (boucle sur les cœurs, machine, YAML, recommandation).
 | `hotes.yaml` | paramètres machine par hôte (repli de la détection auto) |
 | `tests/test_mock_adaptateur.sh` | test bash autonome du mock |
 
-Résolution : `cfd-perf capture --adaptateur X` cherche `ADAPTATEUR/X.sh` puis
-`ADAPTATEUR/X/adaptateur.sh`.
+Résolution de `cfd-perf capture --adaptateur X` :
+
+1. si `X` est un chemin de script (`./MONSOLVEUR.sh`, absolu ou relatif), il est
+   pris tel quel — c'est la voie recommandée pour un adaptateur maison ;
+2. sinon `X.sh` puis `X/adaptateur.sh` sont cherchés dans
+   `$CFD_PERF_ADAPTATEUR_DIR` s'il est défini, puis dans le répertoire livré
+   avec le paquet.
 
 ## Écrire un adaptateur pour votre solveur
 
 1. Copiez `mock.sh` (ou `OF.sh` si vous êtes proche d'OpenFOAM) vers
-   `ADAPTATEUR/MONSOLVEUR.sh`.
+   `MONSOLVEUR.sh`, près de votre cas ou dans votre `$CFD_PERF_ADAPTATEUR_DIR`.
 2. Gardez l'en-tête qui source `interface.sh` :
 
    ```bash
@@ -57,7 +62,10 @@ Résolution : `cfd-perf capture --adaptateur X` cherche `ADAPTATEUR/X.sh` puis
 - **Nombres à point décimal.** `interface.sh` impose `LC_ALL=C` : gardez-le, et
   laissez `awk`/`printf` produire des points (jamais de virgule décimale), car
   Python relit ces valeurs.
-- **Autonomie.** Ne dépendez pas de `$CFD_FRAMEWORK`. `interface.sh` fournit des
+- **Autonomie.** Ne dépendez d'aucun autre projet. Un adaptateur posé hors du
+  paquet source le contrat livré sans le recopier :
+  `source "${CFD_PERF_INTERFACE:-$(dirname "${BASH_SOURCE[0]}")/interface.sh}"`
+  (`CFD_PERF_INTERFACE` est exporté par cfd-perf). `interface.sh` fournit des
   `_info/_warn/_error` de repli si le framework est absent (installation isolée).
 - **RAM par défaut.** Ne réimplémentez `adapt_pilote_ram_crete` que si votre
   mesure diffère du `sacct MaxRSS × NTasks` fourni.

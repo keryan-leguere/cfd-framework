@@ -3,13 +3,14 @@
 Ordre de priorité (le premier défini gagne, champ par champ) :
     1. surcharges explicites (options CLI)
     2. détection automatique (scontrol / nproc / /proc/meminfo)
-    3. ADAPTATEUR/hotes.yaml, indexé par nom d'hôte (préfixe le plus long)
+    3. hotes.yaml (celui de l'utilisateur, sinon celui livré avec le paquet),
+       indexé par nom d'hôte (préfixe le plus long)
     4. la clé « defaut » de hotes.yaml
     5. valeurs par défaut de Machine (cores_per_node=1)
 
 Toutes les commandes système sont protégées (shutil.which + try/except) : hors
 calculateur, la détection échoue silencieusement et on retombe sur les valeurs
-suivantes. Aucune dépendance vers d'autres sous-projets.
+suivantes. Aucune dépendance vers un autre paquet.
 """
 
 from __future__ import annotations
@@ -23,10 +24,9 @@ from typing import Any
 
 import yaml
 
-from cfd_perf.capture.adapter import ADAPTATEUR_DIR
 from cfd_perf.data.machine import Machine
+from cfd_perf.paths import hotes_file
 
-HOTES_YAML = ADAPTATEUR_DIR / "hotes.yaml"
 _SCONTROL_TIMEOUT_S = 10
 
 
@@ -126,7 +126,7 @@ def detect_machine(
 ) -> Machine:
     """Construit un `Machine` du mieux possible. Ne lève jamais sur l'absence d'infos."""
     ov = overrides or MachineOverrides()
-    hotes = _load_hotes(hotes_path or HOTES_YAML)
+    hotes = _load_hotes(hotes_path or hotes_file())
     hostname = socket.gethostname()
     entry = _hotes_entry(hotes, hostname)
 

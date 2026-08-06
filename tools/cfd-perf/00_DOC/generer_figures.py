@@ -449,8 +449,8 @@ def main() -> int:
     plotting = get_plotting()
     if plotting is None:
         print(
-            "ERREUR : bibliothèque 'plotting' introuvable.\n"
-            "Exportez CFD_FRAMEWORK ou lancez ce script depuis le dépôt.",
+            "ERREUR : paquet « cfd-plot » introuvable.\n"
+            "Installez-le : pip install ../cfd-plot",
             file=sys.stderr,
         )
         return 1

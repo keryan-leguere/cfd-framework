@@ -16,7 +16,7 @@
 
 _ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "${_ICI}/interface.sh"
+source "${CFD_PERF_INTERFACE:-${_ICI}/interface.sh}"
 
 # Constantes de la loi synthétique (secondes par itération).
 _MOCK_N_ITER=200

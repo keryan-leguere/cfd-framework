@@ -33,7 +33,7 @@ from cfd_perf.engine.recommend import (
     recommend,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "Candidate",

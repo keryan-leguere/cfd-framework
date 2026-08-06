@@ -176,21 +176,23 @@ for note in rec.notes:
 ## 7. Installation
 
 ```bash
-cd tools/cfd-perf
+cd cfd-perf
 pip install -e ".[dev]"
 pytest
 ```
 
-Dépendances : `numpy`, `matplotlib`, `rich`, `pyyaml` — toutes disponibles en
-*wheels*, donc installables hors ligne :
+Python ≥ 3.9. Dépendances : `numpy`, `matplotlib`, `rich`, `pyyaml` — toutes
+disponibles en *wheels*, donc installables hors ligne :
 
 ```bash
 # sur un poste connecté
-pip download cfd-perf -d wheels/
+pip download numpy matplotlib rich pyyaml -d wheels/
 # puis, sur le calculateur isolé
-pip install --no-index --find-links wheels/ -e .
+pip install --no-index --find-links wheels/ ./cfd-perf
 ```
 
-Les figures utilisent le paquet voisin `cfd-plot` (`tools/cfd-plot`) quand il
-est installé (`pip install -e tools/cfd-plot`). S'il ne l'est pas, cfd-perf
-bascule sur Matplotlib nu : le style change, les chiffres non.
+Détail de l'installation hors ligne : [06_INSTALLATION_AIR_GAP.md](06_INSTALLATION_AIR_GAP.md).
+
+Les figures utilisent le paquet compagnon `cfd-plot` quand il est installé
+(`pip install ../cfd-plot`). S'il ne l'est pas, cfd-perf bascule sur Matplotlib
+nu : le style change, les chiffres non.
