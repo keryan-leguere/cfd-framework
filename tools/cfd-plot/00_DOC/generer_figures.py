@@ -34,6 +34,7 @@ from cfd_plot import (
     discover_flight_point_values,
     dual_axis,
     extract_slice2d,
+    fill_between_curves,
     interpolate_field2d,
     make_figure_legend,
     make_legend,
@@ -62,6 +63,8 @@ from cfd_plot import (
 from cfd_plot.dispersion import (
     DispersionSpec,
     QuantityDispersion,
+    band_from_dispersion,
+    plot_dispersion_band,
     plot_dispersion_cdf,
     plot_dispersion_dashboard,
     plot_dispersion_matrix,
@@ -73,7 +76,7 @@ ICI = __import__("pathlib").Path(__file__).resolve().parent
 FIGURES = ICI / "FIGURES"
 DPI = 110
 
-RNG = np.random.default_rng(12345)
+SEED = 12345
 
 
 def _write(fig, name: str) -> None:
@@ -91,7 +94,10 @@ def _polar():
     alpha = np.linspace(-4, 16, 21)
     cn_sa = 0.11 * alpha + 0.004 * alpha**2
     cn_kw = 0.108 * alpha + 0.0035 * alpha**2
-    cn_exp = cn_sa + RNG.normal(0, 0.02, alpha.size)
+    # A generator local to the call, not a module-level one: with a shared
+    # stream the noise depends on how many figures ran before this one, so
+    # inserting a new figure silently churns every later PNG in the repo.
+    cn_exp = cn_sa + np.random.default_rng(SEED).normal(0, 0.02, alpha.size)
     return alpha, cn_sa, cn_kw, cn_exp
 
 
@@ -163,6 +169,44 @@ def fig_line_helpers() -> None:
     set_title(axes[2], "plot_bar")
 
     _write(fig, "02_1d_helpers")
+
+
+# ---------------------------------------------------------------------------
+# 02b — filling between two curves
+# ---------------------------------------------------------------------------
+
+def fig_fill_between() -> None:
+    """The three modes, on the same pair of curves so they compare directly."""
+    use_style("notebook")
+    alpha, cn_sa, cn_kw, _ = _polar()
+    delta = cn_sa - cn_kw
+
+    fig, axes = new_figure(1, 3, figsize=(15, 4.2))
+
+    fill_between_curves(axes[0], alpha, cn_sa, cn_kw, label="gap")
+    axes[0].set_ylabel(r"$C_N$ [-]")
+    set_title(axes[0], "two curves")
+    make_legend(axes[0])
+
+    fill_between_curves(axes[1], alpha, delta, label=r"$\Delta C_N$")
+    add_reference_lines(axes[1], hlines=[0.0])
+    axes[1].set_ylabel(r"$\Delta C_N$ [-]")
+    set_title(axes[1], "down to the zero baseline")
+    make_legend(axes[1])
+
+    fill_between_curves(
+        axes[2], alpha, delta, signed=True,
+        signed_labels=("SA above", "SA below"),
+    )
+    add_reference_lines(axes[2], hlines=[0.0])
+    axes[2].set_ylabel(r"$\Delta C_N$ [-]")
+    set_title(axes[2], "signed=True")
+    make_legend(axes[2], loc="upper left")
+
+    for ax in axes:
+        ax.set_xlabel(r"$\alpha$ [deg]")
+
+    _write(fig, "02b_fill_between")
 
 
 # ---------------------------------------------------------------------------
@@ -567,6 +611,40 @@ def fig_dispersion() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 18b — a dispersion propagated along a sweep, correlated vs independent
+# ---------------------------------------------------------------------------
+
+def fig_dispersion_band() -> None:
+    """The distinction the module docstring insists on, drawn side by side.
+
+    Both panels use the *same* dispersion and produce near-identical
+    envelopes; only what lies inside them differs. That is exactly why the
+    realisations are worth drawing.
+    """
+    alpha, cn_sa, _, _ = _polar()
+    bias = DispersionSpec(disp_type=5, moy=0.0, var=0.02)
+    scale = DispersionSpec(disp_type=6, moy=0.0, var=0.10)
+
+    with style_context("notebook"):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
+        for ax, correlated, titre in (
+            (axes[0], True, "correlated=True — one error tilts the whole curve"),
+            (axes[1], False, "correlated=False — an independent error per point"),
+        ):
+            band = band_from_dispersion(
+                alpha, cn_sa, bias=bias, scale=scale,
+                n=20000, correlated=correlated, rng=np.random.default_rng(3),
+            )
+            plot_dispersion_band(ax, band, label=r"$C_N$ (mean)", realisations=15)
+            ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
+            set_title(ax, titre, loc="left", fontsize=10)
+            make_legend(ax, loc="upper left")
+        sync_axes_limits(axes, which="y")
+        set_suptitle(fig, "band_from_dispersion — same envelope, different realisations")
+    _write(fig, "18b_dispersion_band")
+
+
+# ---------------------------------------------------------------------------
 # 19/20 — batch plotting, driven from the E2E CSV fixtures
 # ---------------------------------------------------------------------------
 
@@ -647,6 +725,7 @@ def main() -> None:
     print(f"Writing figures to {FIGURES}")
     fig_styles()
     fig_line_helpers()
+    fig_fill_between()
     fig_annotations()
     fig_axes_helpers()
     fig_sync_axes_limits()
@@ -660,6 +739,7 @@ def main() -> None:
     fig_prep()
     fig_declassify()
     fig_dispersion()
+    fig_dispersion_band()
     fig_batch()
     print("Done.")
 

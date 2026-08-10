@@ -46,6 +46,7 @@ from cfd_plot import (
     apply_oldschool_axes,
     compute_speed,
     dual_axis,
+    fill_between_curves,
     make_figure_legend,
     make_legend,
     mask_field,
@@ -70,6 +71,8 @@ from cfd_plot import (
 from cfd_plot.dispersion import (
     DispersionSpec,
     QuantityDispersion,
+    band_from_dispersion,
+    plot_dispersion_band,
     plot_dispersion_pdf,
     plot_dispersion_type,
 )
@@ -346,4 +349,58 @@ def test_dispersion_pdf():
         scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),
     )
     fig, _ = plot_dispersion_pdf(qty, n=20000, rng=np.random.default_rng(0))
+    return fig
+
+
+@pytest.mark.mpl_image_compare(**MPL)
+def test_dispersion_band_along_a_sweep():
+    """A dispersed polar: mean, envelope, dashed nominal, and realisations.
+
+    Sampled, so the generator is seeded. Correlated draws are what make the
+    spaghetti curves smooth here — if that ever regresses to independent
+    sampling they go ragged and this comparison fails.
+    """
+    band = band_from_dispersion(
+        ALPHA, CN_SA,
+        bias=DispersionSpec(disp_type=5, moy=0.0, var=0.02),
+        scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),
+        n=20000, rng=np.random.default_rng(0),
+    )
+    fig, ax = new_figure(figsize=(6.5, 4.5))
+    plot_dispersion_band(ax, band, label=r"$C_N$ (moyenne)", realisations=15)
+    ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
+    set_title(ax, "Polaire dispersée")
+    make_legend(ax, loc="upper left")
+    return fig
+
+
+# --------------------------------------------------------------------------
+# Filling between two curves
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.mpl_image_compare(**MPL)
+def test_fill_between_curves_plain():
+    """One fill, two boundary lines, all sharing the cycle colour."""
+    fig, ax = new_figure(figsize=(6.5, 4))
+    fill_between_curves(ax, ALPHA, CN_SA, CN_KW, label="écart")
+    ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
+    set_title(ax, "Écart entre deux modèles")
+    make_legend(ax)
+    return fig
+
+
+@pytest.mark.mpl_image_compare(**MPL)
+def test_fill_between_curves_signed():
+    """Two fills split at the crossings, coloured by which curve is on top."""
+    fig, ax = new_figure(figsize=(6.5, 4))
+    delta = CN_SA - CN_KW
+    fill_between_curves(
+        ax, ALPHA, delta, 0.0, signed=True,
+        signed_labels=("SA au-dessus", "SA en dessous"),
+    )
+    add_reference_lines(ax, hlines=[0.0])
+    ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$\Delta C_N$ (-)")
+    set_title(ax, "Écart signé")
+    make_legend(ax, loc="upper left")
     return fig

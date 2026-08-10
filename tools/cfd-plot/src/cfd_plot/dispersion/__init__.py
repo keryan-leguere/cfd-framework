@@ -22,6 +22,13 @@ Plotting
     plot_dispersion_cdf       — empirical CDF with percentile guides
     plot_dispersion_dashboard — 3-panel figure (bias | PDF | scale)
     plot_dispersion_matrix    — grid of PDF subplots for a quantity list
+
+Along a sweep
+~~~~~~~~~~~~~
+    band_from_dispersion      — propagate one bias/scale pair along a curve
+    band_from_quantities      — propagate a per-point dispersion along a curve
+    DispersionBand            — the resulting nominal / mean / envelope / cloud
+    plot_dispersion_band      — draw a DispersionBand (mean + envelope + nominal)
 """
 
 from .core import (
@@ -30,6 +37,12 @@ from .core import (
     QuantityDispersion,
     dispersion_type_label,
     sigma,
+)
+from .curve import (
+    DispersionBand,
+    band_from_dispersion,
+    band_from_quantities,
+    plot_dispersion_band,
 )
 from .plots import (
     plot_dispersion_cdf,
@@ -46,6 +59,11 @@ __all__ = [
     "DISP_TYPE_LABELS",
     "dispersion_type_label",
     "sigma",
+    # Along a sweep
+    "DispersionBand",
+    "band_from_dispersion",
+    "band_from_quantities",
+    "plot_dispersion_band",
     # Plots
     "plot_dispersion_cdf",
     "plot_dispersion_dashboard",

@@ -10,6 +10,7 @@ Provides:
     apply_marker_style(line)      — retrofit marker style on an existing Line2D
     make_legend(ax, ...)          — legend with old-style frame defaults
     plot_with_band(ax, ...)       — line + shaded uncertainty band
+    fill_between_curves(ax, ...)  — shade the area between two curves
     add_reference_lines(ax, ...)  — horizontal / vertical reference lines
     sync_axes_limits(axes, ...)   — match x/y limits across subplots to their shared data range
     apply_oldschool_axes(ax)      — cosmetic polish (spines, ticks, legend)
@@ -670,6 +671,137 @@ def plot_with_band(
         )
 
     return line, poly
+
+
+# Default colours of the signed mode: warm where the first curve is above the
+# second, cold where it is below. Deliberately the two ends of a diverging
+# scale, so "which one wins here" reads without consulting the legend.
+_SIGNED_COLORS: tuple[str, str] = ("tab:red", "tab:blue")
+
+
+def fill_between_curves(
+    ax,
+    x,
+    y1,
+    y2=0.0,
+    *,
+    color=None,
+    alpha: float = 0.15,
+    label: str | None = None,
+    lines: bool = True,
+    line_kwargs: dict | None = None,
+    signed: bool = False,
+    signed_colors: tuple[Any, Any] = _SIGNED_COLORS,
+    signed_labels: tuple[str | None, str | None] = (None, None),
+    **fill_kwargs,
+) -> tuple[list[Line2D], list[mpl.collections.PolyCollection]]:
+    """Shade the area between two curves.
+
+    Where :func:`plot_with_band` shades an *uncertainty band around a central
+    line*, this shades the *gap between two curves that both matter* — a
+    baseline against a modified configuration, a CFD result against wind-tunnel
+    data, an envelope's upper and lower bounds.  Neither curve is privileged
+    and there is no central line.
+
+    Returns ``(lines, polys)``: the boundary ``Line2D`` artists (empty when
+    ``lines=False``) and the ``PolyCollection`` fills (one, or two in signed
+    mode).
+
+    Parameters
+    ----------
+    y1 : array-like
+        First curve.
+    y2 : array-like or float
+        Second curve, or a constant to fill down to.  Defaults to ``0.0``,
+        which shades a signed quantity against its zero baseline.
+    color : optional
+        Colour of the fill *and* of both boundary lines.  When omitted, the
+        next colour of the property cycle is used for all three, so the group
+        reads as one object.  In signed mode the fills take *signed_colors*
+        instead and this only sets the boundary lines, which default to the
+        axes' own edge colour.
+    alpha : float
+        Opacity of the shaded area.  Boundary lines are always opaque.
+    label : str, optional
+        Legend entry for the fill.  Boundary lines are never labelled; pass
+        ``line_kwargs={"label": ...}`` if you want them in the legend too.
+    lines : bool
+        Draw the two boundary curves.  ``False`` shades the area only, which
+        is what you want when the curves are already plotted.
+    line_kwargs : dict, optional
+        Forwarded to ``ax.plot`` for both boundaries.  Markers are off by
+        default: boundaries are read as regions, not as sampled measurements.
+    signed : bool
+        Split the fill in two, coloured by which curve is on top.  This is the
+        useful mode for "where does A beat B?" comparisons.
+    signed_colors, signed_labels : 2-tuples
+        ``(above, below)`` colours and legend entries for the signed mode,
+        where *above* means ``y1 >= y2``.
+    **fill_kwargs
+        Forwarded to ``ax.fill_between`` (``zorder``, ``hatch``, ``where``, …).
+    """
+    import numpy as _np
+
+    x = _np.asarray(x, dtype=float)
+    y1 = _np.asarray(y1, dtype=float)
+    y2 = _np.broadcast_to(_np.asarray(y2, dtype=float), x.shape)
+
+    polys: list[mpl.collections.PolyCollection] = []
+
+    if signed:
+        above, below = signed_colors
+        lab_above, lab_below = signed_labels
+        # interpolate=True makes the fill stop exactly at the crossing points
+        # instead of at the last sample before them, which otherwise leaves
+        # visible notches wherever the two curves swap places.
+        for cond, col, lab in (
+            (y1 >= y2, above, lab_above),
+            (y1 < y2, below, lab_below),
+        ):
+            polys.append(
+                ax.fill_between(
+                    x, y1, y2,
+                    where=cond, interpolate=True,
+                    color=col, alpha=alpha, label=lab,
+                    **fill_kwargs,
+                )
+            )
+        # In signed mode the *fills* carry the meaning, so the boundaries must
+        # not compete with them: both get one neutral colour rather than two
+        # successive cycle colours, which would read as unrelated series.
+        line_color = color if color is not None else mpl.rcParams["axes.edgecolor"]
+    else:
+        # Passing no colour lets fill_between draw from the property cycle;
+        # we then read the colour back so the boundary lines match it.
+        if color is not None:
+            fill_kwargs["color"] = color
+        polys.append(
+            ax.fill_between(x, y1, y2, alpha=alpha, label=label, **fill_kwargs)
+        )
+        line_color = color if color is not None else _facecolor_rgb(polys[0])
+
+    drawn: list[Line2D] = []
+    if lines:
+        lk: dict[str, Any] = dict(marker="", linewidth=mpl.rcParams["lines.linewidth"])
+        if line_color is not None:
+            lk["color"] = line_color
+        lk.update(line_kwargs or {})
+        for y in (y1, y2):
+            drawn.extend(ax.plot(x, y, **lk))
+
+    return drawn, polys
+
+
+def _facecolor_rgb(poly) -> tuple[float, float, float] | None:
+    """RGB of a filled collection, alpha dropped, or None if it has no face.
+
+    ``get_facecolor()`` returns an ``(N, 4)`` array with the *fill* alpha
+    already baked in; boundary lines want the same hue at full opacity.
+    """
+    face = poly.get_facecolor()
+    if len(face) == 0:
+        return None
+    return tuple(float(c) for c in face[0][:3])  # type: ignore[return-value]
 
 
 def add_reference_lines(

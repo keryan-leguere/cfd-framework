@@ -13,6 +13,7 @@ from .mpl_template import (
     apply_marker_style,
     apply_oldschool_axes,
     dual_axis,
+    fill_between_curves,
     make_figure_legend,
     make_legend,
     new_figure,
@@ -90,6 +91,7 @@ __all__ = [
     "use_style",
     # 1D plot helpers
     "apply_marker_style",
+    "fill_between_curves",
     "plot_bar",
     "plot_line",
     "plot_with_band",

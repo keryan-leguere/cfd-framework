@@ -46,7 +46,7 @@ Three things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 239 tests
+pytest                       # 315 tests
 ```
 
 | Extra | Pulls | Needed for |
@@ -176,6 +176,44 @@ plot_with_band(ax, alpha, cn, y_low=cn - 2 * sigma, y_high=cn + 2 * sigma,
 
 `apply_marker_style(line)` retrofits the same marker treatment onto a `Line2D` you created
 with plain `ax.plot`.
+
+### `fill_between_curves`
+
+![fill between curves](00_DOC/FIGURES/02b_fill_between.png)
+
+```python
+fill_between_curves(ax, x, y1, y2=0.0, *, color=None, alpha=0.15, label=None,
+                    lines=True, line_kwargs=None, signed=False,
+                    signed_colors=("tab:red", "tab:blue"), signed_labels=(None, None),
+                    **fill_kwargs) -> (list[Line2D], list[PolyCollection])
+```
+
+Where `plot_with_band` shades an *uncertainty band around a central line*, this shades the
+*gap between two curves that both matter* — a baseline against a modified configuration,
+CFD against wind-tunnel data, the upper and lower bounds of an envelope. Neither curve is
+privileged and there is no central line.
+
+```python
+fill_between_curves(ax, alpha, cn_sa, cn_kw, label="gap")     # between two curves
+fill_between_curves(ax, alpha, cn_sa - cn_kw)                 # down to the zero baseline
+fill_between_curves(ax, alpha, cn_sa, cn_kw, lines=False)     # shading only
+```
+
+The fill and both boundaries share one colour — the next of the cycle unless you pass
+`color` — so the group reads as a single object. Only the fill is labelled; pass
+`line_kwargs={"label": …}` if you want a boundary in the legend too. Boundaries carry no
+markers by default: they delimit a region rather than report measurements.
+
+**`signed=True`** splits the fill in two, coloured by which curve is on top — the useful
+mode for "where does A beat B?". `interpolate=True` is applied for you so each half stops
+exactly at the crossings instead of at the last sample before them. Here the fills carry
+the meaning, so both boundaries drop to one neutral colour rather than competing for
+attention:
+
+```python
+fill_between_curves(ax, alpha, cn_sa - cn_kw, signed=True,
+                    signed_labels=("SA above", "SA below"))
+```
 
 ---
 
@@ -802,6 +840,74 @@ fig, axes = plot_dispersion_matrix([qty, qty2, qty3], n=20000, ncols=3, share_x=
 Pass `rng=np.random.default_rng(seed)` for reproducible sampling; without it the legacy
 `np.random` global state is used, so `np.random.seed(...)` still works.
 
+### Along a sweep
+
+The figures above answer *"how is one dispersed quantity distributed?"*. This answers the
+question that reaches a deliverable: *"what does my **polar** look like once the
+coefficients are dispersed?"*. The dispersion is Monte-Carlo-sampled at every point of the
+sweep, the cloud reduced to an envelope, and the result handed to `plot_with_band`.
+
+```python
+band_from_dispersion(x, nominal, *, bias, scale, n=20000, interval="percentile",
+                     coverage=None, k=None, correlated=True, rng=None) -> DispersionBand
+band_from_quantities(x, quantities, *, n=20000, interval="percentile",
+                     coverage=None, k=None, rng=None) -> DispersionBand
+plot_dispersion_band(ax, band, *, label=None, band_label=None, color=None,
+                     show_nominal=True, realisations=0, ...) -> dict[str, Artist]
+```
+
+```python
+from cfd_plot.dispersion import DispersionSpec, band_from_dispersion, plot_dispersion_band
+
+band = band_from_dispersion(
+    alpha, cn_nominal,
+    bias=DispersionSpec(disp_type=5, moy=0.0, var=0.02),    # additive
+    scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),   # multiplicative
+)
+plot_dispersion_band(ax, band, label=r"$C_N$", realisations=15)
+```
+
+Use **`band_from_dispersion`** when one bias/scale pair applies to the whole sweep, and
+**`band_from_quantities`** when each point carries its own `QuantityDispersion` — a
+coefficient whose uncertainty grows past stall, say, or a table of per-flight-point
+tolerances. The nominal is then read from the quantities themselves.
+
+#### Correlated or independent — the choice that matters
+
+![dispersion band](00_DOC/FIGURES/18b_dispersion_band.png)
+
+A calibration error on a coefficient is normally *the same error* at every point of a
+sweep: one realisation shifts or tilts the whole curve coherently. That is the default,
+`correlated=True`, and its realisations are smooth curves. Drawing an independent error per
+point instead models a per-point noise such as an unconverged residual, and its realisations
+are ragged.
+
+Both panels above use the same dispersion and produce the same envelope; only what lies
+*inside* it differs — which is why `realisations=N` is worth switching on. Only the
+correlated envelope can be read as "the true curve lies in here", which is usually the
+claim being made.
+
+#### Reading the result
+
+`DispersionBand` is a frozen dataclass carrying `x`, `nominal`, `mean`, `low`, `high` and
+the full `samples` cloud of shape `(n, npts)`, plus `std`, `half_width`, `n_samples` and a
+`label` (`"95 %"`, `"±2σ"`, …). Keeping the cloud means you can re-reduce it without
+resampling:
+
+```python
+band.reduce(interval="sigma", level=1.0)     # same cloud, ±1σ instead of 95 %
+```
+
+`interval="percentile"` (default, set with `coverage=`) reduces to a coverage interval;
+`interval="sigma"` (set with `k=`) to mean ± *k*·σ. Prefer percentiles: types 5 and 6 are
+*truncated* Gaussians, so mean ± 2σ overstates their envelope. Passing the knob that
+belongs to the other mode raises rather than being silently ignored.
+
+`plot_dispersion_band` draws the mean curve with its envelope and overlays the nominal
+dashed, so the bias introduced by an off-centre component (`moy != 0`) stays visible
+instead of being hidden by the very band that reports it. When the dispersion is centred
+the two coincide — itself a useful confirmation.
+
 A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/demo_dispersion.py).
 
 ---
@@ -811,7 +917,7 @@ A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/dem
 | Group | Functions |
 |:---|:---|
 | **Style** | `use_style`, `style_context`, `new_figure`, `register_fonts`, `BODY_FONT`, `TITLE_FONT` |
-| **1D** | `plot_line`, `plot_with_band`, `plot_bar`, `apply_marker_style` |
+| **1D** | `plot_line`, `plot_with_band`, `fill_between_curves`, `plot_bar`, `apply_marker_style` |
 | **2D scalar** | `plot_contour`, `plot_contourf`, `plot_pcolormesh`, `plot_imshow`, `plot_pcolormesh_interp`, `interpolate_field2d` |
 | **2D vector** | `plot_quiver`, `plot_streamplot`, `compute_speed`, `subsample_vectors` |
 | **2D composite** | `plot_contour_quiver` |
@@ -822,6 +928,7 @@ A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/dem
 | **Export** | `save_figure`, `print_file_report` |
 | **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
 | **Dispersion** | `cfd_plot.dispersion`: `DispersionSpec`, `QuantityDispersion`, `plot_dispersion_{type,pdf,cdf,dashboard,matrix}`, `sigma`, `dispersion_type_label` |
+| **Dispersion → curves** | `cfd_plot.dispersion`: `band_from_dispersion`, `band_from_quantities`, `DispersionBand`, `plot_dispersion_band` |
 
 ---
 
@@ -854,7 +961,7 @@ tools/cfd-plot/
 ```
 
 ```bash
-pytest                              # 239 tests
+pytest                              # 315 tests
 pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src
@@ -863,7 +970,7 @@ python3 00_DOC/generer_figures.py   # rebuild the README pictures
 
 ### Image regression tests
 
-`tests/test_images.py` renders 18 figures and compares them pixel-wise against
+`tests/test_images.py` renders 21 figures and compares them pixel-wise against
 `tests/baseline/`, via [pytest-mpl](https://pytest-mpl.readthedocs.io). The rest
 of the suite checks *structure* — a call returns a `Line2D`, limits match, a
 colorbar exists — and is structurally blind to what the figure looks like, which
