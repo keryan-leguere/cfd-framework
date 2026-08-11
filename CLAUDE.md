@@ -173,6 +173,28 @@ not part of the Bash framework's runtime:
   inversion is a hand-rolled bisection. Key physics note documented in `02_GRANDEURS_VITESSE.md`:
   on a Mach–zp chart iso-Vc are temperature-invariant (only iso-TAS move with ΔT); the geometric-
   altitude diagram (A) is where the temperature model shifts the iso-Vc curves.
+- **`tools/cfd-nozzle/`** — quasi-1D toolbox for convergent-divergent (de Laval) nozzles. Answers
+  "which regime does this nozzle run in, what does it deliver, and what contour should I draw?".
+  Layout mirrors cfd-atm: `00_DOC/` (FR docs `01_MODELE_QUASI_1D.md`, `02_CHOCS_ET_DETENTES.md`,
+  `03_REGIMES_ET_PERFORMANCES.md`, `04_GEOMETRIES.md` + `generer_figures.py`),
+  `src/cfd_nozzle/{core,data,report,cli}/`, and `src/cfd_nozzle/01_EXEMPLE/` shipped as
+  **package data** (located via `paths.py`, copied by `cfd-nozzle example`). Dual CLI front-end:
+  flag subcommands (`iso`, `choc`, `oblique`, `detente`, `tuyere`, `geometrie`, `moc`) plus
+  `run`/`check` on a YAML case file (`data/case.py`). Core is pure NumPy (no SciPy):
+  `core/numerics.py` holds the only root finder. Notable design points, all documented and tested:
+    - **Performance uses the Sutton decomposition** (`00_DOC/03`): `c* = η_c*·√(R·T0)/Γ`,
+      `ṁ = p0·At/c*`, `F = Cf·p0·At`, `Isp = Cf·c*/g0`. The original script applied η_c* twice
+      contradictorily (ṁ×η *and* c*×η), breaking `c* ≡ p0·At/ṁ` by η²; the invariant is now a test.
+    - **MOC** (`core/moc.py`) does planar **and** axisymmetric (δ = 0/1 source term), via the
+      inverse method (kernel → exit characteristic → Goursat region → wall streamline). The
+      expansion fan **must** be graded, `θ_i = θ_max·(i/n)^3` (`FAN_EXPONENT`): a uniform fan is
+      singular at the sonic corner (x_axis ∝ θ^(1/3)) and refining it diverges outright in
+      axisymmetric. Validated envelope: M_exit ≤ 4 axisymmetric, ≤ 5 planar (γ = 1.4), checked
+      against ε = A/A*(M_exit) to < 0.03 %; outside it a RuntimeError says so.
+    - `rao_angles` θe correction had an inherited sign error (a shorter bell must end *less*
+      aligned, so θn and θe move together) — fixed and tested.
+  Terminal report is Rich **in French** and avoids bold (`report/theme.py`, `CFD_NOZZLE_GRAS=1`
+  restores it); figures use `cfd-plot` when installed, else plain Matplotlib.
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).

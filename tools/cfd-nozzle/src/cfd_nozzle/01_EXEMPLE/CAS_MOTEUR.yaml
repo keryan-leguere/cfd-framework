@@ -1,0 +1,46 @@
+# =====================================================================
+#  cfd-nozzle — fichier de cas
+#
+#  Un cas décrit UNE tuyère et UN point de fonctionnement, pour que
+#  l'étude soit reproductible et puisse vivre dans le dépôt du cas CFD
+#  à côté du maillage.
+#
+#      cfd-nozzle check CAS_MOTEUR.yaml       # valider
+#      cfd-nozzle run   CAS_MOTEUR.yaml       # analyser
+#      cfd-nozzle run   CAS_MOTEUR.yaml --figure SORTIE
+# =====================================================================
+
+tuyere:
+  nom: "MOTEUR_DEMO_LOX_RP1"
+
+  # Gaz : soit un nom de la bibliothèque, soit le couple gamma / r.
+  # Les gaz de propergol de la bibliothèque sont des ORDRES DE GRANDEUR ;
+  # pour un dimensionnement réel, prendre gamma et r d'un calcul
+  # d'équilibre (CEA, RPA) aux conditions de chambre.
+  gaz: lox_rp1
+  # gamma: 1.22
+  # r: 345.0
+
+  # Géométrie : donner le diamètre au col OU l'aire au col.
+  diametre_col: 0.20          # m
+  # aire_col: 0.0314159       # m²
+  rapport_section: 16.0       # ε = Ae/At
+
+  # Rendements. eta_cstar est le rendement de combustion
+  # (c*_réel / c*_idéal) : le baisser augmente le débit nécessaire pour
+  # tenir p0 et fait chuter l'Isp d'autant.
+  eta_cstar: 0.96
+
+  # lambda_divergence : perte par divergence. Laisser à null pour la
+  # déduire du contour ((1 + cos θe)/2 pour un galbe).
+  lambda_divergence: null
+
+fonctionnement:
+  p0: 100.0e+5                # Pa — pression de chambre
+  t0: 3500.0                  # K  — température de chambre
+  pa: 1.013e+5                # Pa — pression ambiante (niveau de la mer)
+
+geometrie:
+  type: bell                  # bell | conique
+  pourcentage_longueur: 80.0  # % de la longueur d'un cône à 15° (bell)
+  demi_angle: 15.0            # ° — conique uniquement

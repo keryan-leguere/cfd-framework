@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-nozzle"
+version = "1.0.0"
+description = "Quasi-1D nozzle toolbox: isentropic flow, shocks, de Laval regimes, performance and contour design."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+]
+
+[project.scripts]
+cfd-nozzle = "cfd_nozzle.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_nozzle = ["01_EXEMPLE/*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Script d'origine, remplacé par le package : conservé pour référence.
+extend-exclude = ["00_DOC/nozzle_toolbox_origine.py"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# French docs, report and figure labels legitimately use en dashes, minus
+# signs, multiplication signs, curly apostrophes and non-breaking spaces; they
+# are not homoglyph mistakes. The Greek letters are physics symbols (ρ density,
+# ν Prandtl-Meyer function, μ Mach angle, θ/β flow and shock angles, ε area
+# ratio, γ heat-capacity ratio), not Latin lookalikes.
+allowed-confusables = ["–", "−", "×", "’", " ", "ρ", "ν", "μ", "θ", "β", "ε", "γ", "α", "δ", "λ", "σ"]
+
+[tool.ruff.lint.per-file-ignores]
+# The `value == pytest.approx(expected)` idiom reads naturally; don't flip it.
+"tests/**" = ["SIM300"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_nozzle"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*"]
+ignore_missing_imports = true
+
+# cfd-plot is an optional sibling package (see report/_plotting_lib.py); it may
+# legitimately be absent from the environment mypy runs in.
+[[tool.mypy.overrides]]
+module = ["cfd_plot"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
