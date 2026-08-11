@@ -140,11 +140,16 @@ def build_sequence(
 ) -> list[Path]:
     """Expand *frames* into the exact list of images to encode, in order.
 
-    Holds are implemented by **repeating a frame**, not by per-frame delays.
+    Holds are expressed by **repeating a frame**, not by per-frame delays.
     A repeated identical frame costs almost nothing in either container (GIF
     inter-frame compression and H.264 both collapse it to a near-empty delta),
     and it keeps the encoders on a single constant frame rate — variable delays
     are where GIF writers disagree with each other and with browsers.
+
+    What the two backends then write out differs, harmlessly: ffmpeg keeps the
+    repeats, while Pillow merges consecutive identical frames and rolls their
+    delay into the survivor. Playback time is identical either way, which is
+    the contract; the frame count is not.
 
     The holds are applied *before* the mirror, so a boomerang lingers at its
     turning point as well as at its ends.

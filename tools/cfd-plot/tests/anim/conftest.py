@@ -84,6 +84,23 @@ def gif_frame_count(path) -> int:
         return im.n_frames
 
 
+def gif_duration_ms(path) -> int:
+    """Total playback time of one loop, in milliseconds.
+
+    This — not the frame count — is what a hold or a boomerang is *for*, and
+    it is the only measure the two backends agree on. Pillow collapses
+    consecutive identical frames and rolls their delay into the survivor, so a
+    five-frame hold becomes one frame held five times as long; ffmpeg keeps the
+    repeats. Both play for exactly the same time, which is the contract.
+    """
+    total = 0
+    with Image.open(path) as im:
+        for f in range(im.n_frames):
+            im.seek(f)
+            total += im.info.get("duration", 0)
+    return total
+
+
 def gif_info(path) -> dict:
     with Image.open(path) as im:
         return {"size": im.size, "n_frames": im.n_frames, **im.info}

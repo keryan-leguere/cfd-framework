@@ -9,7 +9,7 @@ from PIL import Image
 from cfd_plot.anim import PRESETS, AnimPreset, ffmpeg_available, frames_to_gif, frames_to_mp4
 from cfd_plot.anim import encode as enc
 
-from .conftest import BACKENDS, gif_frame_count, gif_info, gif_palettes
+from .conftest import BACKENDS, gif_duration_ms, gif_frame_count, gif_info, gif_palettes
 
 
 class TestPresets:
@@ -99,13 +99,28 @@ class TestGifEncoding:
         out = frames_to_gif(frame_files, tmp_path / "a.gif", backend=backend, fps=20, hold_last=0.0)
         assert gif_info(out)["duration"] == pytest.approx(50, abs=10)
 
-    def test_hold_last_lengthens_the_encoded_sequence(self, frame_files, tmp_path):
-        out = frames_to_gif(frame_files, tmp_path / "a.gif", fps=10, hold_last=0.5)
-        assert gif_frame_count(out) == len(frame_files) + 5
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_hold_last_lengthens_the_playback(self, frame_files, tmp_path, backend):
+        # Asserted in milliseconds, not frames: Pillow merges the repeated
+        # frames of a hold into one longer delay while ffmpeg keeps them, and
+        # the playback time is the thing a hold actually promises.
+        out = frames_to_gif(frame_files, tmp_path / "a.gif", fps=10, hold_last=0.5, backend=backend)
+        assert gif_duration_ms(out) == pytest.approx(1000, abs=20)
 
-    def test_boomerang_doubles_the_sequence(self, frame_files, tmp_path):
-        out = frames_to_gif(frame_files, tmp_path / "a.gif", hold_last=0.0, boomerang=True)
-        assert gif_frame_count(out) == 2 * len(frame_files) - 2
+    @pytest.mark.parametrize("backend", BACKENDS)
+    def test_boomerang_roughly_doubles_the_playback(self, frame_files, tmp_path, backend):
+        plain = frames_to_gif(frame_files, tmp_path / "p.gif", fps=10, hold_last=0.0, backend=backend)
+        both_ways = frames_to_gif(frame_files, tmp_path / "b.gif", fps=10, hold_last=0.0, boomerang=True, backend=backend)
+        # 5 frames out and 3 back (the endpoints are not repeated).
+        assert gif_duration_ms(plain) == pytest.approx(500, abs=20)
+        assert gif_duration_ms(both_ways) == pytest.approx(800, abs=20)
+
+    @pytest.mark.skipif(not ffmpeg_available(), reason="ffmpeg not installed")
+    def test_ffmpeg_holds_by_repeating_frames(self, frame_files, tmp_path):
+        # The representation, where it is guaranteed. Pillow reaches the same
+        # playback time by a different route, so this is ffmpeg-only.
+        out = frames_to_gif(frame_files, tmp_path / "a.gif", fps=10, hold_last=0.5, backend="ffmpeg")
+        assert gif_frame_count(out) == len(frame_files) + 5
 
     def test_suffix_is_added_when_missing(self, frame_files, tmp_path):
         out = frames_to_gif(frame_files, tmp_path / "noext", hold_last=0.0)
@@ -138,7 +153,14 @@ class TestFrameInputTypes:
         assert gif_frame_count(out) == 4
 
     def test_accepts_a_mixture(self, tmp_path, frame_files):
-        mixed = [frame_files[0], np.zeros((30, 40, 3), np.uint8), Image.new("RGB", (40, 30))]
+        # The three must differ: Pillow drops a frame identical to the one
+        # before it, and `Image.new("RGB", ...)` defaults to black — the same
+        # thing np.zeros produces.
+        mixed = [
+            frame_files[0],
+            np.full((30, 40, 3), 90, np.uint8),
+            Image.new("RGB", (40, 30), (200, 10, 10)),
+        ]
         out = frames_to_gif(mixed, tmp_path / "a.gif", hold_last=0.0)
         assert gif_frame_count(out) == 3
 
@@ -188,7 +210,8 @@ class TestBackendSelection:
         with pytest.raises(RuntimeError, match="no ffmpeg binary"):
             frames_to_gif(frame_files, tmp_path / "a.gif", backend="ffmpeg")
 
-    def test_a_failing_ffmpeg_surfaces_its_own_message(self, frame_files, tmp_path, monkeypatch):
+    @pytest.mark.skipif(not ffmpeg_available(), reason="ffmpeg not installed")
+    def test_a_failing_ffmpeg_surfaces_its_own_message(self, frame_files, tmp_path):
         # A bad filter argument is the realistic failure mode; the point is that
         # ffmpeg's stderr reaches the caller instead of an empty output file.
         with pytest.raises(RuntimeError, match="ffmpeg failed"):

@@ -49,7 +49,7 @@ Four things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 452 tests
+pytest                       # 455 tests
 ```
 
 | Extra | Pulls | Needed for |
@@ -998,11 +998,12 @@ with animate(fig, "run.gif", preset="slides") as anim:
 print(anim.result)   # run.gif — 140 frames at 20 fps (7.0 s), 1280x512 px, 167 kB
 ```
 
-`capture(hold=...)` and `hold_first`/`hold_last` are implemented by *repeating* a frame,
+`capture(hold=...)` and `hold_first`/`hold_last` are expressed by *repeating* a frame,
 not by per-frame delays: a repeated identical frame costs almost nothing in either
 container, and variable delays are where GIF writers disagree with each other and with
-browsers. `animate_frames(fig, update, n, path)` is the callback form for when every
-frame really is a pure function of an index.
+browsers. (ffmpeg keeps the repeats; Pillow merges them into one longer delay. Same
+playback time — do not assert on GIF frame count.) `animate_frames(fig, update, n, path)`
+is the callback form for when every frame really is a pure function of an index.
 
 ### Presets
 
@@ -1102,7 +1103,7 @@ tools/cfd-plot/
 ```
 
 ```bash
-pytest                              # 452 tests
+pytest                              # 455 tests
 pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src

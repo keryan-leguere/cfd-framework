@@ -50,6 +50,16 @@ jobs:
       # that only exercise the house-style figure path when it is importable,
       # and silently *skip* otherwise. Installing it unconditionally keeps
       # those tests meaningful instead of quietly passing.
+      # cfd_plot.anim prefers ffmpeg for GIF (one palette for the whole
+      # sequence, via palettegen/paletteuse) and requires it for MP4. Without
+      # it the suite still passes — it falls back to the Pillow encoder and
+      # skips the rest — but the *primary* encoder would then never be
+      # exercised in CI, which is how the fallback ends up better tested than
+      # the real path.
+      - name: Install ffmpeg (cfd-plot animation encoder)
+        if: matrix.package == 'cfd-plot'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Install cfd-plot (optional dependency of the other packages)
         run: pip install -e tools/cfd-plot
 
