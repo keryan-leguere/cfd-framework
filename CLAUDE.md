@@ -138,7 +138,8 @@ not part of the Bash framework's runtime:
 
 - **`tools/cfd-perf/`** — answers "how many CPUs should I launch on?" for steady RANS runs.
   `cfd-perf run STUDY.yaml [--figure F.png]`, plus `check` (validate a study), `example`
-  (copy a runnable example), and `capture` (automate pilot capture — see below). One YAML file
+  (copy a runnable example), `shim` (see below), and `capture` (automate pilot capture — see
+  below). One YAML file
   per study; the only real input is a set of pilot measurements. Layout: `00_DOC/` (illustrated
   docs, FR), `src/cfd_perf/{core,data,capture,engine,report,cli}/`, plus two **package-data**
   dirs shipped inside the package so a plain `pip install` is self-sufficient:
@@ -151,6 +152,15 @@ not part of the Bash framework's runtime:
   render via the `cfd-plot` package when installed, falling back to plain Matplotlib. See
   `tools/cfd-perf/00_DOC/01_MODELE.md`
   for the scaling model (`fit_model` → `ScalingModel`, `recommend` → `Recommendation`).
+    - **Broken console script** (`cfd-perf shim`, `src/cfd_perf/cli/shim.py`, README §3.7):
+      pip bakes `sys.executable` into the console script, which is wrong wherever that path
+      isn't valid — Python served from an Apptainer/Singularity `.sif` via `module load`
+      (pip runs *inside* the image and records a container-internal path), a moved venv, or
+      an interpreter path over the kernel's 127-byte `#!` limit. `shim` writes an
+      interpreter-free bash launcher (`exec "${CFD_PERF_PYTHON:-python3}" -m cfd_perf "$@"`)
+      into `~/bin` and reports every `cfd-perf` on `$PATH` with its shebang status, since a
+      dead script in `~/.local/bin` will shadow the launcher. `python -m cfd_perf` is always
+      the zero-install equivalent; `01_EXEMPLE/RUN_EXEMPLE.sh` falls back to it on its own.
     - **Pilot capture** (`cfd-perf capture`, `00_DOC/05_CAPTURE_PILOTE.md`): two-phase
       submit→collect. `capture --coeurs "N…" --adaptateur X [--queue Q]` submits one run per
       core count via a bash adapter (a shipped one, a path to your own script, or

@@ -111,6 +111,42 @@ Noter la disparition de `--no-deps` : ici on *veut* que pip résolve les
 dépendances, simplement depuis `roues/` au lieu de PyPI. `--no-index` garantit
 qu'il n'ira jamais sur le réseau.
 
+## Si Python vient d'une image conteneur (`.sif`)
+
+Beaucoup de calculateurs isolés distribuent Python par **image
+Apptainer/Singularity** : `module load python/3.9` monte une `.sif` au lieu
+d'exposer un interpréteur du disque. L'installation se passe alors ainsi :
+
+```bash
+module load python/3.9
+pip install -e .        # « … n'a pas les droits sur le site-packages partagé »
+                        # → pip bascule tout seul sur --user, et réussit
+```
+
+L'import fonctionne (`$HOME` est monté dans l'image : le `site-packages`
+utilisateur est le même dedans et dehors), mais **la commande, elle, peut être
+morte** :
+
+```
+bash: /home/moi/.local/bin/cfd-perf: /opt/python/3.9/bin/python3: bad interpreter: No such file or directory
+```
+
+`pip` grave dans le script console le chemin de l'interpréteur qui a lancé
+l'installation. Ici c'est un chemin *interne à l'image*, invisible depuis
+l'hôte. Deux réponses :
+
+```bash
+python -m cfd_perf run ETUDE.yaml     # équivalent exact, marche toujours
+
+python -m cfd_perf shim               # ou, une fois pour toutes : ~/bin/cfd-perf
+export PATH="$HOME/bin:$PATH"         # dans ~/.bashrc
+```
+
+Le lanceur écrit par `shim` résout `python3` sur le `PATH` au moment de
+l'appel : il suit le module chargé au lieu d'un chemin figé. Il affiche aussi
+les `cfd-perf` concurrents du `PATH` — un script console mort dans
+`~/.local/bin` masque volontiers le lanceur. Détail : README §3.7.
+
 ## Dépannage
 
 | Symptôme | Cause | Remède |
@@ -120,6 +156,7 @@ qu'il n'ira jamais sur le réseau.
 | `ModuleNotFoundError: numpy` (etc.) | Anaconda incomplet, ou `--no-deps` sur un Python nu | `conda install numpy matplotlib pandas rich pyyaml` depuis votre canal local, ou passer par les roues (ci-dessus) |
 | `error: externally-managed-environment` | Python système protégé (PEP 668) | créer un venv : `python3 -m venv .venv && source .venv/bin/activate` |
 | `ModuleNotFoundError: No module named 'setuptools'` | `--no-build-isolation` dans un venv nu (Python ≥ 3.12 n'y met que `pip`) | `pip install setuptools` dans l'environnement cible |
+| `cfd-perf` : `bad interpreter: No such file or directory` | `pip` a gravé un chemin d'interpréteur invalide ici (Python en conteneur, venv déplacé, chemin > 127 octets) | `python -m cfd_perf shim`, puis `export PATH="$HOME/bin:$PATH"` |
 | `cfd-perf capture -a MONSOLVEUR` : « adaptateur introuvable » | adaptateur maison hors du paquet | donner son chemin (`-a ./MONSOLVEUR.sh`) ou exporter `CFD_PERF_ADAPTATEUR_DIR` |
 
 Voir aussi : [02_GUIDE_UTILISATEUR.md](02_GUIDE_UTILISATEUR.md),

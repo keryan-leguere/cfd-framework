@@ -57,8 +57,9 @@ pas la mesure — il l'exploite.
   - [3.4 Option C — installation partagée + `module`](#34-option-c--installation-partagée--module)
   - [3.5 Option D — script d'enrobage bash](#35-option-d--script-denrobage-bash)
   - [3.6 Option E — `PYTHONPATH`, sans aucune installation](#36-option-e--pythonpath-sans-aucune-installation)
-  - [3.7 Vérifier que l'installation est saine](#37-vérifier-que-linstallation-est-saine)
-  - [3.8 Les cinq pièges](#38-les-cinq-pièges)
+  - [3.7 Option F — Python fourni par une image conteneur (`.sif`)](#37-option-f--python-fourni-par-une-image-conteneur-sif)
+  - [3.8 Vérifier que l'installation est saine](#38-vérifier-que-linstallation-est-saine)
+  - [3.9 Les pièges classiques](#39-les-pièges-classiques)
 - [4. Développement](#4-développement)
   - [4.1 Architecture](#41-architecture)
   - [4.2 Le trajet d'une donnée](#42-le-trajet-dune-donnée)
@@ -520,6 +521,7 @@ non, ne décidez pas sur cette figure.
 cfd-perf run     ETUDE.yaml [options]     répond à la question de dimensionnement
 cfd-perf check   ETUDE.yaml               valide le fichier et la qualité du pilote
 cfd-perf example [-o RÉP]                 copie l'exemple prêt à l'emploi
+cfd-perf shim    [-o RÉP]                 écrit un lanceur qui ne dépend pas de pip
 cfd-perf capture [options]                capture automatique des données pilotes
 ```
 
@@ -619,6 +621,8 @@ côté.
       ├─ la machine a « module » (Lmod / env-modules) ────► C. module
       ├─ pas de module, mais un /usr/local/bin ───────────► D. script d'enrobage
       └─ interdiction d'installer quoi que ce soit ───────► E. PYTHONPATH
+
+   La commande existe mais meurt en « bad interpreter » ?  ► F. cfd-perf shim
 ```
 
 | | Méthode | Pour qui | Prérequis | L'utilisateur tape | Piège principal |
@@ -628,9 +632,12 @@ côté.
 | **C** | installation partagée + `module` | équipe, cluster | Lmod / env-modules | `module load cfd-perf` puis `cfd-perf …` | droits sur l'arbre de modules |
 | **D** | script d'enrobage | équipe, sans module | un répertoire du `PATH` en écriture | `cfd-perf …` | chemin en dur dans le script |
 | **E** | `PYTHONPATH` seul | machine verrouillée | rien | `cfd-perf …` (via fonction/script) | pas de script console : `python -m` |
+| **F** | lanceur `cfd-perf shim` | Python en conteneur (`.sif`) | une installation déjà faite | `cfd-perf …` | `~/bin` doit primer sur `~/.local/bin` |
 
 > **Recommandation :** **A** pour un poste, **C** pour un calculateur partagé.
 > **E** est le filet de sécurité : il fonctionne sans rien installer du tout.
+> **F** n'est pas une méthode d'installation mais un correctif : il répare une
+> commande installée que `pip` a rendue inutilisable (§3.7).
 
 ### 3.2 Option A — venv dédié + lien dans `~/bin`
 
@@ -837,7 +844,65 @@ cfd-perf() { python3 -m cfd_perf "$@"; }      # une fonction, pas un alias
 Cette voie suppose que le `python3` de la machine dispose déjà de `numpy`,
 `matplotlib`, `rich` et `pyyaml` — ce qui est le cas de toute Anaconda.
 
-### 3.7 Vérifier que l'installation est saine
+### 3.7 Option F — Python fourni par une image conteneur (`.sif`)
+
+Cas fréquent sur calculateur : `module load python/3.11` ne charge pas un Python
+posé sur le disque mais une **image Apptainer/Singularity** (`.sif`).
+`pip install` réussit — souvent en repli sur `--user`, faute de droits d'écriture
+sur le `site-packages` partagé — et pourtant la commande refuse de démarrer :
+
+```
+$ cfd-perf run mon_etude.yaml
+bash: /home/moi/.local/bin/cfd-perf: /opt/python/3.11/bin/python3: bad interpreter: No such file or directory
+```
+
+**Pourquoi.** `pip` grave dans le script console le chemin absolu de
+l'interpréteur qui a lancé l'installation (`sys.executable`). Ici ce chemin est
+*interne à l'image* : il n'existe que le temps de l'exécution du conteneur. Le
+paquet, lui, est correctement installé — `$HOME` étant monté dans l'image, le
+`site-packages` utilisateur est le même des deux côtés. **Seul le script console
+est inutilisable.** Même symptôme si un venv est déplacé après coup, ou si le
+chemin de l'interpréteur dépasse 127 octets, limite du noyau sur la ligne `#!`.
+
+**Contournement immédiat**, valable partout, sans rien installer :
+
+```bash
+python -m cfd_perf run mon_etude.yaml        # strictement équivalent
+```
+
+**Remède, une fois pour toutes :**
+
+```bash
+python -m cfd_perf shim                      # écrit ~/bin/cfd-perf
+export PATH="$HOME/bin:$PATH"                # à mettre dans ~/.bashrc
+```
+
+`shim` écrit un lanceur bash qui ne grave aucun interpréteur : il résout
+`python3` sur le `PATH` **au moment de l'appel**. La commande suit donc
+l'environnement chargé — module, image, venv, conda — au lieu d'un chemin figé à
+l'installation.
+
+| Option | Effet |
+|:---|:---|
+| `--output`, `-o RÉP` | où écrire le lanceur (défaut : `~/bin`) |
+| `--force` | remplace un lanceur déjà présent |
+
+La commande liste au passage **tous les `cfd-perf` du `PATH`, dans l'ordre où le
+shell les trouve**, et signale ceux dont l'interpréteur a disparu. C'est le
+second piège du scénario : un script console mort placé plus tôt dans le `PATH`
+(typiquement `~/.local/bin`) masque le lanceur. Deux issues — placer `~/bin`
+avant, ou désinstaller (`pip uninstall cfd-perf` avec le Python qui l'a posé).
+
+| Variable | Rôle |
+|:---|:---|
+| `CFD_PERF_PYTHON` | impose l'interpréteur appelé par le lanceur (défaut : le `python3` du `PATH`) |
+| `CFD_PERF_ADAPTATEUR_DIR` | répertoire de vos adaptateurs `capture` maison |
+
+> **Le lanceur ne charge aucun module.** Si `python3` n'existe pas sans
+> `module load`, ajoutez la ligne `module load …` en tête du lanceur — un
+> emplacement commenté est prévu — ou exportez `CFD_PERF_PYTHON`.
+
+### 3.8 Vérifier que l'installation est saine
 
 Quatre commandes, quel que soit le mode d'installation :
 
@@ -864,11 +929,12 @@ mkdir -p /tmp/cas_demo && cfd-perf capture --coeurs "8 16 32" -a mock --case-dir
 cfd-perf capture --collect --case-dir /tmp/cas_demo
 ```
 
-### 3.8 Les cinq pièges
+### 3.9 Les pièges classiques
 
 | Symptôme | Cause | Remède |
 |:---|:---|:---|
 | `cfd-perf: command not found` après un `pip install --user` | `~/.local/bin` absent du `PATH` | `export PATH="$HOME/.local/bin:$PATH"` dans `~/.bashrc` |
+| `bad interpreter: No such file or directory` | `pip` a gravé un chemin d'interpréteur invalide ici (Python en conteneur, venv déplacé) | `python -m cfd_perf shim` (§3.7) |
 | `capture` répond « adaptateur introuvable » | adaptateur maison hors du paquet | passer son chemin (`-a ./MONSOLVEUR.sh`) ou exporter `CFD_PERF_ADAPTATEUR_DIR` |
 | `ModuleNotFoundError: No module named 'setuptools'` | `--no-build-isolation` dans un venv nu (Python ≥ 3.12 n'y met que `pip`) | `pip install setuptools` dans l'environnement cible |
 | `error: externally-managed-environment` | Python système protégé (PEP 668) | passer par un venv (§3.2) ou `--user` |
@@ -926,7 +992,8 @@ sauf les adaptateurs bash.
                            │
    ┌───────────────────────▼──────────────┐
    │  cli/main.py  run · check · example  │
-   │               · capture              │
+   │               · shim · capture       │
+   │  cli/shim.py   lanceur de secours    │
    │  __main__.py  « python -m cfd_perf » │
    └──────────────────────────────────────┘
 ```
@@ -991,7 +1058,7 @@ pip install -e ../cfd-plot       # facultatif : style maison des figures
 ### 4.4 Tests, style, types
 
 ```bash
-pytest                      # 213 tests (dont 1 ignoré faute de solveur)
+pytest                      # 238 tests (dont 1 ignoré faute de solveur)
 pytest --cov=cfd_perf       # couverture
 ruff check src tests
 mypy src                    # strict
@@ -1019,6 +1086,7 @@ Organisation des tests, en miroir du paquet :
 | `tests/test_paquet.py` | autonomie : données livrées, résolution des adaptateurs |
 | `tests/test_compat.py` | compatibilité 3.9 des énumérations texte |
 | `tests/report/test_theme.py` | aucune sortie ne dépend du gras |
+| `tests/cli/test_shim.py` | lanceur : lecture des shebangs, diagnostic du `PATH` |
 
 `mypy` tourne ici en mode **strict** (contrairement à `cfd-plot`) : les nouvelles
 fonctions doivent être annotées.
@@ -1104,7 +1172,7 @@ cfd-perf/
 │   ├── capture/             adaptateur, machine, manifeste, orchestration
 │   ├── engine/              décision : « combien de cœurs ? »
 │   ├── report/              rapport Rich + figures (françaises)
-│   ├── cli/                 la ligne de commande
+│   ├── cli/                 la ligne de commande (`main.py`, `shim.py`)
 │   ├── paths.py             où sont les données livrées
 │   ├── _compat.py           les écarts entre versions de Python
 │   ├── __main__.py          « python -m cfd_perf »
@@ -1139,7 +1207,8 @@ cfd-perf/
 | RAM absente du rapport | pas de SLURM, ou `peak_ram_total_gb` non fourni | normal : les contraintes mémoire sont ignorées, le reste fonctionne |
 | Figures sans style maison | `cfd-plot` non installé (ou `pandas` manquant) | `pip install ../cfd-plot` — purement esthétique |
 | Titres et réponse peu lisibles | terminal rendant mal le gras | rien à faire : le rapport n'utilise plus le gras ; `CFD_PERF_GRAS=1` le rétablit |
-| `cfd-perf` introuvable, ou `example`/`capture` cassés | problème d'installation | voir [§3.8, les cinq pièges](#38-les-cinq-pièges) |
+| `cfd-perf` introuvable, ou `example`/`capture` cassés | problème d'installation | voir [§3.9, les pièges classiques](#39-les-pièges-classiques) |
+| `cfd-perf` : « bad interpreter » | Python en conteneur (`.sif`) : `pip` a gravé un chemin interne à l'image | `python -m cfd_perf shim` ([§3.7](#37-option-f--python-fourni-par-une-image-conteneur-sif)) |
 
 Limites connues du modèle, à garder en tête avant de décider : scalabilité forte
 uniquement, RANS stationnaire (coût par itération constant), `n_iterations` est

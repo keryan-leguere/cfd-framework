@@ -3,6 +3,7 @@
     cfd-perf run ETUDE.yaml [--figure SORTIE.png] [--strategy ...] [-v]
     cfd-perf check ETUDE.yaml
     cfd-perf example [--output RÉP]
+    cfd-perf shim [--output RÉP]
 
 Les erreurs sont affichées comme un court panneau Rich nommant le fichier et le
 problème, jamais une trace d'appels : le public est un ingénieur CFD qui
@@ -22,6 +23,7 @@ from rich.panel import Panel
 
 from cfd_perf.capture import BashAdapter, CaptureError, MachineOverrides, collect, submit
 from cfd_perf.capture.study_writer import ObjectiveSpec
+from cfd_perf.cli import shim
 from cfd_perf.core.model import ModelKind, fit_model
 from cfd_perf.data.study import Study, StudyError, load_study
 from cfd_perf.engine.recommend import (
@@ -171,6 +173,69 @@ def cmd_example(args: argparse.Namespace) -> int:
             f"[dim]Lancez-le avec :[/]\n"
             f"  cfd-perf run {study_file or dest / 'ETUDE.yaml'} --figure scalabilite.png -v",
             title=f"[{theme.TITRE}]Exemple[/]",
+            border_style="green",
+        )
+    )
+    return 0
+
+
+def _etat_commande(chemin: Path) -> str:
+    """Décrit, en une cellule colorée, ce qu'un « cfd-perf » du PATH lancera."""
+    interpreteur = shim.interpreter_of(chemin)
+    if interpreteur is None:
+        return "[dim]lanceur shell[/]"
+    if shim.interpreter_exists(interpreteur):
+        return f"[dim]{interpreteur}[/]"
+    return f"[{theme.ERREUR}]interpréteur absent : {interpreteur}[/]"
+
+
+def cmd_shim(args: argparse.Namespace) -> int:
+    dest = Path(args.output).expanduser()
+    try:
+        lanceur = shim.write_launcher(dest, force=args.force)
+    except FileExistsError:
+        _fail(
+            f"{dest / shim.LAUNCHER_NAME} existe déjà",
+            hint="Passez --force pour le remplacer.",
+        )
+    except OSError as exc:
+        _fail(f"écriture impossible dans {dest} : {exc}")
+
+    lignes = [
+        f"[{theme.OK}]Lanceur écrit :[/]",
+        f"  [{theme.VALEUR}]{lanceur}[/]",
+        "",
+        "[dim]Il appelle « python3 -m cfd_perf » : l'interpréteur est résolu à[/]",
+        "[dim]chaque appel, pas gravé à l'installation.[/]",
+    ]
+
+    if not shim.dir_is_on_path(dest):
+        lignes += [
+            "",
+            f"[{theme.ATTENTION}]Ce répertoire n'est pas sur le PATH.[/] Ajoutez à ~/.bashrc :",
+            f'  [{theme.VALEUR}]export PATH="{dest}:$PATH"[/]',
+        ]
+
+    trouvees = shim.commands_on_path()
+    if trouvees:
+        lignes += ["", "[dim]« cfd-perf » sur le PATH, dans l'ordre où le shell les trouve :[/]"]
+        for rang, chemin in enumerate(trouvees):
+            marque = "▸" if rang == 0 else " "
+            lignes.append(f"  {marque} [{theme.VALEUR}]{chemin}[/]")
+            lignes.append(f"      {_etat_commande(chemin)}")
+        if not shim.is_runnable(trouvees[0]):
+            lignes += [
+                "",
+                f"[{theme.ATTENTION}]La première de la liste est celle qui gagne, et elle est"
+                " cassée.[/]",
+                "[dim]Placez le lanceur avant elle dans le PATH, ou supprimez-la[/]",
+                "[dim](« pip uninstall cfd-perf » avec le Python qui l'a installée).[/]",
+            ]
+
+    console.print(
+        Panel(
+            "\n".join(lignes),
+            title=f"[{theme.TITRE}]Lanceur[/]",
             border_style="green",
         )
     )
@@ -375,6 +440,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", "-o", default="cfd-perf-exemple", help="répertoire de destination"
     )
     p_ex.set_defaults(func=cmd_example)
+
+    p_shim = sub.add_parser(
+        "shim",
+        help="écrit un lanceur « cfd-perf » indépendant de l'interpréteur gravé par pip",
+    )
+    p_shim.add_argument(
+        "--output", "-o", default="~/bin", help="répertoire du lanceur (défaut : ~/bin)"
+    )
+    p_shim.add_argument(
+        "--force", action="store_true", help="remplace un lanceur déjà présent"
+    )
+    p_shim.set_defaults(func=cmd_shim)
 
     p_cap = sub.add_parser(
         "capture",
