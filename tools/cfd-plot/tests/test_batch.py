@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -86,6 +88,33 @@ def sample_configuration_dict() -> dict:
 def _close_figures():
     yield
     plt.close("all")
+
+
+# Minimal axis / sweep / flight-point dictionaries for tests that only need a
+# batch run to happen at all, and assert something other than its output.
+_CN_AXIS = {
+    "CN": {
+        "col_name": "CN",
+        "literal_name": "Normal force coefficient",
+        "symbol": r"$C_N$",
+        "unit": "-",
+        "y_save_name": "CN",
+    },
+}
+_ALPHA_SWEEP = {
+    "alpha": {
+        "col_name": "alpha",
+        "literal_name": "Angle of attack",
+        "symbol": r"$\alpha$",
+        "unit": "deg",
+        "x_save_name": "alpha",
+        "polar_prefix": "ALPHA_POLAR",
+    },
+}
+_EMPTY_FLIGHT_POINTS = {
+    key: {"values": [], "label": key, "save_name": key.upper()}
+    for key in ("Mach", "Altitude_m", "beta", "DL", "DM", "DN")
+}
 
 
 class TestDiscoverFlightPointValues:
@@ -655,3 +684,87 @@ class TestBatchCompareFlightPoints:
             {"beta": {"save_name": "BETA"}},
         )
         assert path == Path("/tmp/out/ALPHA_POLAR/COMPARE/BETA_2/CN_vs_alpha")
+
+
+class TestBackendIsNotHijacked:
+    """The package must never switch the caller's Matplotlib backend.
+
+    Regression: batch.py used to call ``matplotlib.use("Agg")`` at module
+    scope, and cfd_plot/__init__.py re-exports batch — so a plain
+    ``import cfd_plot`` silently forced Agg on the whole session. In Spyder,
+    Jupyter or IPython that yields "FigureCanvasAgg is non-interactive" and no
+    figure ever appears. The same call inside the render functions clobbered
+    the backend again on every serial ``batch_plot``, which is the default
+    (``n_jobs=1``).
+
+    The "template" backend is used as the sentinel: it is a real built-in
+    backend, it is not Agg, and it needs no display, so these tests are safe
+    on a headless CI runner.
+    """
+
+    def test_importing_the_package_leaves_the_backend_alone(self):
+        # A subprocess is required: cfd_plot is already imported here, so the
+        # import-time side effect could not be observed in this process.
+        code = (
+            "import matplotlib; matplotlib.use('template');"
+            "import cfd_plot;"
+            "print(matplotlib.get_backend())"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        )
+        assert out.stdout.strip().lower() == "template"
+
+    def test_a_serial_batch_run_leaves_the_backend_alone(
+        self, sample_configuration_dict, tmp_path
+    ):
+        previous = matplotlib.get_backend()
+        matplotlib.use("template")
+        try:
+            written = batch_plot(
+                configuration_dict=sample_configuration_dict,
+                y_axis_dict=_CN_AXIS,
+                sweep_dict=_ALPHA_SWEEP,
+                flight_point_dict=_EMPTY_FLIGHT_POINTS,
+                output_base=tmp_path,
+                formats=("svg",),
+                report=False,
+            )
+            assert written, "the run must actually have produced figures"
+            assert matplotlib.get_backend().lower() == "template"
+        finally:
+            matplotlib.use(previous)
+
+    def test_a_parallel_batch_run_leaves_the_parent_backend_alone(
+        self, sample_configuration_dict, tmp_path
+    ):
+        """Workers still get Agg — from the pool initializer, not the parent."""
+        previous = matplotlib.get_backend()
+        matplotlib.use("template")
+        try:
+            written = batch_plot(
+                configuration_dict=sample_configuration_dict,
+                y_axis_dict=_CN_AXIS,
+                sweep_dict=_ALPHA_SWEEP,
+                flight_point_dict=_EMPTY_FLIGHT_POINTS,
+                output_base=tmp_path,
+                formats=("svg",),
+                report=False,
+                n_jobs=2,
+            )
+            assert written
+            assert matplotlib.get_backend().lower() == "template"
+        finally:
+            matplotlib.use(previous)
+
+    def test_the_worker_initializer_selects_a_headless_backend(self):
+        """What the pool runs in each worker, checked in an isolated process."""
+        code = (
+            "import matplotlib; matplotlib.use('template');"
+            "from cfd_plot.batch import _init_worker; _init_worker();"
+            "print(matplotlib.get_backend())"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        )
+        assert out.stdout.strip().lower() == "agg"

@@ -22,9 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
-
-matplotlib.use("Agg")
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -37,6 +34,18 @@ from .mpl_template import (
     set_title,
     use_style,
 )
+
+# NOTE: do *not* call matplotlib.use("Agg") in this module. It is re-exported by
+# cfd_plot/__init__.py, so an import-time backend switch applies to anyone who
+# merely writes `import cfd_plot` — silently breaking interactive sessions
+# (Spyder, Jupyter, IPython: "FigureCanvasAgg is non-interactive", and no window
+# ever appears) and closing figures the user already had open, since
+# matplotlib.use() forces a switch_backend() that calls close("all").
+#
+# Only the batch *worker processes* need a headless backend, and they get it
+# from _init_worker() below. Everything else honours whatever backend the caller
+# chose. Batch rendering is safe under a GUI backend anyway: every figure is
+# closed right after being saved and none is ever shown.
 
 try:
     from rich.console import Console
@@ -882,6 +891,23 @@ def _progress_columns() -> list[Any]:
     ]
 
 
+def _init_worker() -> None:
+    """Force a headless backend inside one batch worker process.
+
+    Passed as the ``initializer`` of the process pools below, so it runs once
+    per worker at start-up and never in the parent. A worker has no display of
+    its own, and under the default *fork* start method it would otherwise
+    inherit a live GUI backend from the parent — which is precisely the setup
+    that deadlocks or crashes in a child process.
+
+    Being an initializer rather than a call inside the render functions is what
+    keeps the caller's session intact: those functions also run in-process when
+    ``n_jobs=1`` (the default), where switching the global backend would break
+    interactive plotting for everything the user does afterwards.
+    """
+    matplotlib.use("Agg")
+
+
 def _render_one_job(
     job: _BatchPlotJob,
     style_profile: str,
@@ -889,7 +915,6 @@ def _render_one_job(
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
 ) -> list[Path]:
     """Render and export a single batch plot job (safe for process workers)."""
-    matplotlib.use("Agg")
     use_style(style_profile)
 
     fig, ax = plt.subplots()
@@ -980,7 +1005,7 @@ def _run_jobs(
             )
         return written_paths
 
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
         futures = [
             executor.submit(_render_one_job, job, style_profile, formats, on_before_save)
             for job in jobs
@@ -1293,7 +1318,6 @@ def _render_one_compare_job(
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
 ) -> list[Path]:
     """Render a multi-panel compare figure (safe for process workers)."""
-    matplotlib.use("Agg")
     use_style(style_profile)
 
     n_panels = len(job.panels)
@@ -1414,7 +1438,7 @@ def _run_compare_jobs(
             )
         return written_paths
 
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
         futures = [
             executor.submit(
                 _render_one_compare_job, job, style_profile, formats, on_before_save

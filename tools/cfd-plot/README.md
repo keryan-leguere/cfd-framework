@@ -46,7 +46,7 @@ Three things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 315 tests
+pytest                       # 319 tests
 ```
 
 | Extra | Pulls | Needed for |
@@ -961,7 +961,7 @@ tools/cfd-plot/
 ```
 
 ```bash
-pytest                              # 315 tests
+pytest                              # 319 tests
 pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src
@@ -1022,5 +1022,6 @@ this codebase.
 | Fonts look wrong / fall back to DejaVu | bundled fonts not registered | `register_fonts()`; check `src/cfd_plot/fonts/` was installed as package data |
 | EMF export silently produces SVG | Inkscape not on `PATH` | install Inkscape, or export SVG/PDF |
 | Image tests pass but never catch anything | `pytest` without `--mpl` builds figures without comparing | run `pytest --mpl` |
-| `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.0.1 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
+| `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.1.0 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
 | Title overlaps the subtitle | `set_subtitle` called before `set_title` | call `set_title` first |
+| `FigureCanvasAgg is non-interactive`, no window in Spyder / Jupyter / IPython | pre-1.1.0 `batch.py` called `matplotlib.use("Agg")` at import, so `import cfd_plot` forced a headless backend on the whole session | fixed — upgrade, then **restart the kernel** (the old backend is sticky in a running one) |
