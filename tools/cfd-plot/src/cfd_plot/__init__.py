@@ -73,6 +73,20 @@ from .batch import (
     varying_flight_keys,
 )
 
+# --- Animation (GIF / MP4) ---------------------------------------------------
+from .anim import (
+    PRESETS,
+    AnimationResult,
+    AnimPreset,
+    Animator,
+    animate,
+    animate_frames,
+    animate_sweep,
+    ffmpeg_available,
+    frames_to_gif,
+    frames_to_mp4,
+)
+
 from .prep import (
     dataframe_to_grid,
     dataframe_to_masked_grid,
@@ -124,6 +138,17 @@ __all__ = [
     "iter_fixed_sweep_combinations",
     "iter_flight_points",
     "varying_flight_keys",
+    # Animation (GIF / MP4)
+    "AnimPreset",
+    "AnimationResult",
+    "Animator",
+    "PRESETS",
+    "animate",
+    "animate_frames",
+    "animate_sweep",
+    "ffmpeg_available",
+    "frames_to_gif",
+    "frames_to_mp4",
     # Data preparation
     "dataframe_to_grid",
     "dataframe_to_masked_grid",

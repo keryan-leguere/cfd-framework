@@ -25,6 +25,7 @@ from cfd_plot import (
     add_reference_lines,
     add_shared_colorbar,
     add_textbox,
+    animate_sweep,
     annotate_point,
     apply_oldschool_axes,
     batch_compare_flight_points,
@@ -685,6 +686,44 @@ def _batch_config():
     return configuration_dict, y_axis_dict, sweep_dict, flight_point_dict
 
 
+def fig_animation() -> None:
+    """The two shapes of curve animation, as GIFs the README embeds directly.
+
+    Deliberately on the ``readme`` preset: these are checked into the
+    repository, so weight matters more than resolution.
+    """
+    alpha, cn_sa, _, _ = _polar()
+
+    with style_context("notebook"):
+        animate_sweep(
+            alpha, cn_sa, FIGURES / "21_animation_reveal.gif",
+            reveal=True, preset="readme", figsize=(6.4, 4.0),
+            xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)",
+            title="animate_sweep(reveal=True)",
+        )
+    print("  21_animation_reveal.gif")
+
+    # One polar per Mach number, previous ones left faded — the accumulating
+    # family plot you would otherwise build by hand, frame by frame.
+    mach = np.linspace(0.30, 0.85, 12)
+    polars = np.array([(0.11 + 0.09 * (m - 0.3)) * alpha + 0.004 * alpha**2 for m in mach])
+
+    with style_context("notebook"):
+        animate_sweep(
+            alpha, polars, FIGURES / "21b_animation_sweep.gif",
+            labels=[f"M = {m:.2f}" for m in mach],
+            keep_previous=True, boomerang=True,
+            preset="readme", figsize=(6.4, 4.0),
+            xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)",
+            title="animate_sweep",
+        )
+    print("  21b_animation_sweep.gif")
+
+
+# ---------------------------------------------------------------------------
+# 19/20 — batch plotting (continued)
+# ---------------------------------------------------------------------------
+
 def fig_batch() -> None:
     import shutil
 
@@ -741,6 +780,7 @@ def main() -> None:
     fig_dispersion()
     fig_dispersion_band()
     fig_batch()
+    fig_animation()
     print("Done.")
 
 

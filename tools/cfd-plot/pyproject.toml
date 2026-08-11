@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cfd-plot"
-version = "1.1.0"
-description = "Matplotlib figure template: house styles, 1D/2D helpers and batch curve comparison for CFD post-processing."
+version = "1.2.0"
+description = "Matplotlib figure template: house styles, 1D/2D helpers, batch curve comparison and GIF/MP4 animation for CFD post-processing."
 requires-python = ">=3.12"
 license = { text = "MIT" }
 readme = "README.md"
@@ -15,6 +15,10 @@ dependencies = [
     # Required, not optional: cfd_plot/__init__.py re-exports batch.py,
     # which imports pandas at module level.
     "pandas>=2.0",
+    # Matplotlib already pulls Pillow in, but cfd_plot.anim imports it
+    # directly (GIF encoding, frame introspection), so it is declared rather
+    # than relied on transitively.
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
@@ -75,6 +79,9 @@ allowed-confusables = ["–", "−", "×", "’", " ", "σ", "α", "ρ", "ν", "
 # with section banners. That grouping is documentation — don't alphabetise it.
 "src/cfd_plot/__init__.py" = ["I001", "RUF022"]
 "src/cfd_plot/dispersion/__init__.py" = ["RUF022"]
+# Grouped by layer (sugar / engine / encoder / presets), which is how the
+# module is meant to be read. Alphabetising it would hide that.
+"src/cfd_plot/anim/__init__.py" = ["RUF022"]
 "01_EXEMPLE/demo_plotting.py" = [
     "E402",   # module-level import not at top — notebook-style cells
     "E702",   # multiple statements on one line — compact xlabel/ylabel pairs

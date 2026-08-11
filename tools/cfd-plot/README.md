@@ -5,12 +5,14 @@ white-filled markers, thick legend borders, bundled TeX Gyre fonts) **without hi
 underlying API**. Every helper takes and returns ordinary Matplotlib objects, so you can
 always drop back to `ax.something()` for anything the wrapper does not cover.
 
-Three things it gives you that plain Matplotlib does not:
+Four things it gives you that plain Matplotlib does not:
 
 1. **Three consistent style profiles** — `notebook`, `slides`, `paper` — swapped with one call.
 2. **CFD-shaped 2D helpers** — structured grids, masked bodies, vector fields, shared colorbars.
 3. **Batch plotting** — generate hundreds of comparison figures across flight points from a
    handful of dictionaries.
+4. **Animations** — GIF and MP4 that do not shake, boil or rescale, from one call or from
+   your own capture loop.
 
 ---
 
@@ -34,6 +36,7 @@ Three things it gives you that plain Matplotlib does not:
 - [14. Exporting figures](#14-exporting-figures)
 - [15. Batch plotting](#15-batch-plotting)
 - [16. Dispersion analysis](#16-dispersion-analysis)
+- [17. Animations (GIF / MP4)](#17-animations-gif--mp4)
 - [API reference](#api-reference)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -46,7 +49,7 @@ Three things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 319 tests
+pytest                       # 452 tests
 ```
 
 | Extra | Pulls | Needed for |
@@ -912,6 +915,139 @@ A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/dem
 
 ---
 
+## 17. Animations (GIF / MP4)
+
+![reveal](00_DOC/FIGURES/21_animation_reveal.gif)
+
+```python
+from cfd_plot import animate_sweep
+
+animate_sweep(alpha, cn, "polar.gif", reveal=True,
+              xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
+```
+
+### Why not `FuncAnimation` + `PillowWriter`?
+
+Because the result shakes and boils, for four reasons that are not obvious until you
+watch one:
+
+| Symptom | Cause |
+|:---|:---|
+| Colours flicker frame to frame | the stock writers pick a **fresh 256-colour palette per frame** |
+| The whole image jitters | `savefig.bbox: tight` — set by all three profiles — re-crops the figure to its ink on every save |
+| The axes jump | `constrained_layout` re-solves the layout whenever a title or tick label changes width |
+| The final state flashes past | no hold on the last frame; it gets one frame time, then the loop restarts |
+
+`cfd_plot.anim` pins all four: one palette for the whole sequence, an `rc_context` that
+switches tight cropping off for real, a layout frozen after the first frame, and a
+`hold_last` in every preset. It never touches the global Matplotlib backend, so
+animating from Spyder or Jupyter leaves your interactive session alone.
+
+> Note: `savefig(bbox_inches=None)` does **not** disable tight cropping — `None` means
+> "use the rcParam". Overriding the rcParam is the only way.
+
+### Three layers
+
+| Layer | Use when |
+|:---|:---|
+| `animate_sweep(...)` | one curve revealed, or one curve per frame |
+| `animate(fig, ...)` | you own the loop — multi-panel, irregular data, anything else |
+| `frames_to_gif` / `frames_to_mp4` | you already have images (ParaView, an earlier run) |
+
+### Sweeping a family of curves
+
+![sweep](00_DOC/FIGURES/21b_animation_sweep.gif)
+
+```python
+animate_sweep(
+    alpha, cn_per_mach, "sweep.gif",
+    labels=[f"M = {m:.2f}" for m in mach],
+    keep_previous=True,     # leave a faded trail
+    boomerang=True,         # play back down instead of snapping to the start
+)
+```
+
+`reveal` mode walks the *points* of a curve; sweep mode walks the *curves*. It is
+inferred from the shape of `y` (1-D reveals, 2-D sweeps) and can be forced either way.
+Labels follow the mode: in reveal mode they are legend entries (one per curve), in sweep
+mode they name the frame and go to the title.
+
+Axes are locked to the full dataset before the first frame. This is not cosmetic — a
+revealed curve under per-frame autoscaling appears to *shrink* as it grows, and a swept
+family appears to breathe. Pass `lock_axes=False` only if you set the limits yourself.
+
+### Writing the loop yourself
+
+```python
+fig, (ax_conv, ax_polar) = new_figure(1, 2, figsize=(11.5, 4.6))
+line_res = plot_line(ax_conv,  [], [], marker="")
+line_pol = plot_line(ax_polar, [], [], marker="")
+ax_conv.set(xlim=(1, n), ylim=(1e-6, 3), yscale="log")   # lock *before* capturing
+ax_polar.set(xlim=(-4, 16), ylim=(-0.5, 3))
+
+with animate(fig, "run.gif", preset="slides") as anim:
+    for path in sorted(Path("runs").glob("iter_*.csv")):
+        df = pd.read_csv(path)
+        if df["residual"].iloc[-1] > 1e3:
+            continue                                  # skip a diverged step
+        line_res.set_data(df.iteration, df.residual)
+        line_pol.set_data(df.alpha, df.CN)
+        set_suptitle(fig, path.stem)
+        anim.capture(hold=1.0 if converged else 0.0)  # linger on the moment
+
+print(anim.result)   # run.gif — 140 frames at 20 fps (7.0 s), 1280x512 px, 167 kB
+```
+
+`capture(hold=...)` and `hold_first`/`hold_last` are implemented by *repeating* a frame,
+not by per-frame delays: a repeated identical frame costs almost nothing in either
+container, and variable delays are where GIF writers disagree with each other and with
+browsers. `animate_frames(fig, update, n, path)` is the callback form for when every
+frame really is a pure function of an index.
+
+### Presets
+
+| Preset | Width | fps | Colours | Hold | For |
+|:---|---:|---:|---:|---:|:---|
+| `slides` *(default)* | 1280 | 20 | 256 | 1.0 s | projected, or pasted into PowerPoint |
+| `readme` | 800 | 10 | 128 | 1.0 s | inline in a README or chat (GitHub stops rendering past ~10 MB) |
+| `report` | 1600 | 25 | 256 | 1.5 s | written reports, high-DPI screens |
+
+Every field is individually overridable (`fps=`, `width_px=`, `max_colors=`, `dither=`,
+`hold_last=`), or pass your own `AnimPreset`. Sizing comes from `width_px`, **not** from
+the profile DPI — `slides.mplstyle` asks for 600 dpi, which on its 12-inch figure would
+be a 7200 px animation.
+
+The shipped frame rates all divide 100 on purpose: GIF stores its delay in
+centiseconds, so 15 fps is silently rounded to 70 ms (≈14.3 fps) by every viewer.
+
+### Formats and encoders
+
+```python
+animate_sweep(alpha, cn, "polar", formats=("gif", "mp4"))   # one render, two files
+```
+
+GIF encoding uses **ffmpeg** when it is installed (two-pass `palettegen`/`paletteuse`)
+and falls back to a pure-Pillow global-palette encoder when it is not — same stability,
+larger files. MP4 requires ffmpeg and raises a message saying so. Use MP4 for
+colour-mapped fields, where GIF must dither a continuous colormap into 256 entries and
+the dither noise defeats its own compression; on line plots the two are comparable.
+
+### Escape hatches
+
+| Need | Knob |
+|:---|:---|
+| Decorate the axes yourself | `ax=` — nothing on it is overwritten but the limits |
+| Change something per frame | `on_frame=lambda i, ax: ...`, run just before each capture |
+| Keep the figure afterwards | `close_fig=False` → `result.fig`, `result.axes` |
+| Keep the PNG frames | `keep_frames="dir/"` — re-encode later without re-rendering |
+| See progress on a long run | `progress=True` (quiet when the output is not a terminal) |
+| A file-size table | `report=True`, or `result.report()` |
+
+A runnable walkthrough of all six lives in
+[`01_EXEMPLE/demo_animation.py`](01_EXEMPLE/demo_animation.py).
+
+---
+
 ## API reference
 
 | Group | Functions |
@@ -929,6 +1065,8 @@ A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/dem
 | **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
 | **Dispersion** | `cfd_plot.dispersion`: `DispersionSpec`, `QuantityDispersion`, `plot_dispersion_{type,pdf,cdf,dashboard,matrix}`, `sigma`, `dispersion_type_label` |
 | **Dispersion → curves** | `cfd_plot.dispersion`: `band_from_dispersion`, `band_from_quantities`, `DispersionBand`, `plot_dispersion_band` |
+| **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
+| **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 
 ---
 
@@ -942,7 +1080,8 @@ tools/cfd-plot/
 │   └── FIGURES/              # the pictures (versioned)
 ├── 01_EXEMPLE/
 │   ├── demo_plotting.py      # runnable tutorial, notebook-cell style
-│   └── demo_dispersion.py    # dispersion walkthrough
+│   ├── demo_dispersion.py    # dispersion walkthrough
+│   └── demo_animation.py     # animation walkthrough (GIF / MP4)
 ├── src/cfd_plot/
 │   ├── __init__.py           # public API (grouped by topic — not alphabetical)
 │   ├── mpl_template.py       # style, figure lifecycle, 1D, annotations, export
@@ -953,15 +1092,17 @@ tools/cfd-plot/
 │   ├── prep.py               # long table → grid, slicing, masking
 │   ├── _grid.py              # internal coordinate/cmap validators
 │   ├── fonts/  styles/       # package data (TeX Gyre, 3 .mplstyle)
-│   └── dispersion/           # dispersion analysis (needs scipy)
+│   ├── dispersion/           # dispersion analysis (needs scipy)
+│   └── anim/                 # GIF / MP4 (encode → engine → sweep)
 └── tests/
     ├── test_*.py
     ├── dispersion/
+    ├── anim/
     └── E2E_MULTIPLE_PLOTTING/   # batch driver + CSV fixtures
 ```
 
 ```bash
-pytest                              # 319 tests
+pytest                              # 452 tests
 pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src
@@ -1025,3 +1166,10 @@ this codebase.
 | `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.1.0 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
 | Title overlaps the subtitle | `set_subtitle` called before `set_title` | call `set_title` first |
 | `FigureCanvasAgg is non-interactive`, no window in Spyder / Jupyter / IPython | pre-1.1.0 `batch.py` called `matplotlib.use("Agg")` at import, so `import cfd_plot` forced a headless backend on the whole session | fixed — upgrade, then **restart the kernel** (the old backend is sticky in a running one) |
+| `RuntimeError: the figure was resized mid-capture` | `set_size_inches` (or a helper that resizes) called inside the capture loop | size the figure before the first `capture()` |
+| `ValueError: nothing was captured` | the loop never reached `capture()` — an empty iterable, or every frame hit a `continue` | check the loop actually yields frames |
+| Animation colours flicker | a per-frame palette — you are not going through `cfd_plot.anim` | use `frames_to_gif`, which builds one palette for the sequence |
+| The animation shakes or the axes jump | axis limits left to autoscale inside the loop | set the limits before the first capture, or let `animate_sweep` lock them |
+| GIF too large for GitHub (~10 MB) | `slides`/`report` preset on a long sequence | `preset="readme"`, or `max_colors=64`, a lower `fps`, a smaller `width_px` — or emit MP4 |
+| `RuntimeError: MP4 export requires ffmpeg` | ffmpeg not on `PATH` | `apt install ffmpeg` / `brew install ffmpeg`, or export GIF |
+| GIF plays at the wrong speed | GIF delays are stored in centiseconds; an fps that does not divide 100 gets rounded | use 10, 20, 25 or 50 fps (all shipped presets already do) |
