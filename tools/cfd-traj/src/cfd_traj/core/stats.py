@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from cfd_traj._compat import zip_strict
+
 #: A degenerate (zero-width) sample still gets a usable interval this wide,
 #: relative to its own magnitude, so downstream level placement never divides
 #: by zero.
@@ -244,11 +246,11 @@ def pca(
 
     std = data.std(axis=0, ddof=0) if n_rows > 0 else np.zeros(len(names))
     keep_cols = std > 0.0
-    dropped = tuple(n for n, k in zip(names, keep_cols, strict=True) if not k)
+    dropped = tuple(n for n, k in zip_strict(names, keep_cols) if not k)
     if dropped:
         notes.append(f"variable(s) constante(s) écartée(s) : {', '.join(dropped)}")
 
-    kept_names = tuple(n for n, k in zip(names, keep_cols, strict=True) if k)
+    kept_names = tuple(n for n, k in zip_strict(names, keep_cols) if k)
     data = data[:, keep_cols]
     p = data.shape[1]
 

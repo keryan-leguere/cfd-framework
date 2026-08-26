@@ -13,12 +13,14 @@ séparateur de milliers. C'est le seul endroit où cela se fait : les fichiers
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TypeVar
 
 from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.core.symmetry import CalcConfig, SymmetryGroup, SymmetrySpec, azimuth_levels
 from cfd_traj.data.columns import ColumnSpec, Role
 from cfd_traj.data.study import Study
@@ -28,6 +30,10 @@ from cfd_traj.engine.envelope import Envelope
 from cfd_traj.engine.inspect import Inspection
 
 console = Console()
+
+#: Ligne d'un tableau, quel que soit le tableau : « _truncate » ne regarde que
+#: le nombre de lignes.
+_Row = TypeVar("_Row")
 
 #: Au-delà, les tableaux sont tronqués hors mode verbeux.
 MAX_ROWS = 12
@@ -109,7 +115,7 @@ def _notes_panel(notes: Sequence[str], *, title: str = "Avertissements") -> Pane
     return Panel(body, title=f"[bold yellow]{title}[/]", border_style="yellow")
 
 
-def _truncate[Row](rows: Sequence[Row], verbose: bool) -> tuple[Sequence[Row], int]:
+def _truncate(rows: Sequence[_Row], verbose: bool) -> tuple[Sequence[_Row], int]:
     """Limite un tableau hors mode verbeux, et dit combien de lignes sont cachées."""
     if verbose or len(rows) <= MAX_ROWS:
         return rows, 0
@@ -161,7 +167,7 @@ def render_inspection(
         body.append(f" sur {pca.n_used} variables actives")
         body.append(f"  (seuil {pct(pca.threshold, 0)} de variance)\n", style="dim")
         for i, (ratio, cumulative) in enumerate(
-            zip(pca.explained_variance_ratio, pca.cumulative, strict=True)
+            zip_strict(pca.explained_variance_ratio, pca.cumulative)
         ):
             if i >= 5 and not verbose:
                 break

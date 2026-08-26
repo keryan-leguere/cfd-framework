@@ -23,6 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.core.adim import isa_density, isa_speed_of_sound
 
 G0: float = 9.80665
@@ -126,9 +127,7 @@ class Guidance:
         decay = math.exp(-max(altitude_m, 0.0) / self.gust_decay_m)
         vertical = 0.0
         lateral = 0.0
-        for i, (period, phase) in enumerate(
-            zip(self.gust_periods_s, self.gust_phases, strict=True)
-        ):
+        for i, (period, phase) in enumerate(zip_strict(self.gust_periods_s, self.gust_phases)):
             wave = math.sin(2.0 * math.pi * t / period + phase)
             weight = 1.0 / (i + 1)
             if i % 2 == 0:
@@ -295,16 +294,16 @@ def integrate(
         states.append(state)
 
         k1 = _derivatives(t, state, vehicle, guidance, thrust_scale, drag_scale)
-        s2 = tuple(x + half * k for x, k in zip(state, k1, strict=True))
+        s2 = tuple(x + half * k for x, k in zip_strict(state, k1))
         k2 = _derivatives(t + half, s2, vehicle, guidance, thrust_scale, drag_scale)  # type: ignore[arg-type]
-        s3 = tuple(x + half * k for x, k in zip(state, k2, strict=True))
+        s3 = tuple(x + half * k for x, k in zip_strict(state, k2))
         k3 = _derivatives(t + half, s3, vehicle, guidance, thrust_scale, drag_scale)  # type: ignore[arg-type]
-        s4 = tuple(x + dt * k for x, k in zip(state, k3, strict=True))
+        s4 = tuple(x + dt * k for x, k in zip_strict(state, k3))
         k4 = _derivatives(t + dt, s4, vehicle, guidance, thrust_scale, drag_scale)  # type: ignore[arg-type]
 
         advanced = tuple(
             x + sixth * (a + 2.0 * b + 2.0 * c + d)
-            for x, a, b, c, d in zip(state, k1, k2, k3, k4, strict=True)
+            for x, a, b, c, d in zip_strict(state, k1, k2, k3, k4)
         )
         state = (
             max(advanced[0], 1.0),
@@ -340,7 +339,7 @@ def integrate(
 
     alpha = np.empty_like(grid)
     beta = np.empty_like(grid)
-    for i, (ti, gi, si, hi) in enumerate(zip(grid, gamma, speed, altitude, strict=True)):
+    for i, (ti, gi, si, hi) in enumerate(zip_strict(grid, gamma, speed, altitude)):
         alpha_wind, beta_wind = _wind_angles(float(ti), float(si), float(hi), guidance)
         alpha[i] = _alpha_command(float(ti), float(gi), guidance) + alpha_wind
         beta[i] = beta_wind

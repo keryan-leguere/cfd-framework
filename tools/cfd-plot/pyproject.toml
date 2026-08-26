@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "cfd-plot"
 version = "1.2.0"
 description = "Matplotlib figure template: house styles, 1D/2D helpers, batch curve comparison and GIF/MP4 animation for CFD post-processing."
-requires-python = ">=3.12"
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
 license = { text = "MIT" }
 readme = "README.md"
 dependencies = [
@@ -45,7 +47,7 @@ where = ["src"]
 cfd_plot = ["fonts/*.otf", "fonts/*.ttf", "styles/*.mplstyle"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py39"
 line-length = 120
 
 [tool.ruff.lint]
@@ -100,7 +102,9 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.12"
+# Pas de python_version = "3.9" : mypy ne sait plus cibler 3.9. La compatibilité
+# 3.9 est tenue par le code et vérifiée en exécutant la suite de tests sous un
+# interpréteur 3.9 (ruff, lui, cible bien py39 et refuse la syntaxe trop récente).
 # NOT `strict = true`, unlike the sibling packages. cfd-plot predates them and
 # its public helpers are largely unannotated: strict currently reports ~132
 # missing-annotation errors (no-untyped-def / type-arg / no-any-return). The

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from cfd_atm.core.constants import GAMMA
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.core.adim import (
     Reference,
     flow_state,
@@ -82,7 +83,7 @@ class TestVectorisation:
 
         out = nondimensionalise(mach, alt, reference=REF)
 
-        for i, (m, z) in enumerate(zip(mach, alt, strict=True)):
+        for i, (m, z) in enumerate(zip_strict(mach, alt)):
             one = flow_state(float(m), float(z), reference=REF)
             assert out["q_inf"][i] == pytest.approx(one.q_inf, rel=1e-12)
             assert out["Re_ref"][i] == pytest.approx(one.re_ref, rel=1e-12)

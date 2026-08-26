@@ -132,7 +132,7 @@ class TestPlanSheet:
                 continue
             for rangee in range(premiere, min(premiere + 30, ws.max_row + 1)):
                 valeur = ws.cell(row=rangee, column=colonne).value
-                assert isinstance(valeur, int | float), f"{entete} ligne {rangee}"
+                assert isinstance(valeur, (int, float)), f"{entete} ligne {rangee}"
 
     def test_the_reynolds_column_uses_scientific_notation(self, classeur):
         ws = classeur["Plan de calcul"]
@@ -258,7 +258,7 @@ class TestEnvelopeSheet:
         colonne = _entetes(ws).index("Borne basse") + 1
 
         for r in range(_ligne_entete(ws) + 1, min(_ligne_entete(ws) + 20, ws.max_row + 1)):
-            assert isinstance(ws.cell(row=r, column=colonne).value, int | float)
+            assert isinstance(ws.cell(row=r, column=colonne).value, (int, float))
 
     def test_the_roles_are_written_in_french(self, classeur):
         ws = classeur["Enveloppe"]

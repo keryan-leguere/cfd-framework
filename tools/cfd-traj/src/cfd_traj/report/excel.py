@@ -23,7 +23,7 @@ sur un poste français sans qu'on ait rien codé en dur.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +35,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.core.symmetry import CalcConfig, SymmetryGroup, azimuth_levels
 from cfd_traj.data.columns import ColumnSpec, Role
 from cfd_traj.data.study import Study
@@ -242,35 +243,30 @@ def _amplitude(plan: DoePlan, nom: str) -> float:
     return max(finis) if finis else 0.0
 
 
+#: Colonnes calculées, par clé française. Toute clé absente de cette table est
+#: une variable du plan, lue telle quelle dans ``node.values``.
+_COLONNES_CALCULEES: Mapping[str, Callable[[DoeNode], Any]] = {
+    "node_id": lambda node: node.node_id,
+    "bande": lambda node: node.band_index,
+    "mach_bas": lambda node: node.mach_low,
+    "mach_haut": lambda node: node.mach_high,
+    "braquage": lambda node: node.deflection.name,
+    "dl": lambda node: node.deflection.dl,
+    "dm": lambda node: node.deflection.dm,
+    "dn": lambda node: node.deflection.dn,
+    "configuration": lambda node: LIBELLE_CONFIG[node.calc_config],
+    "cout_relatif": lambda node: node.relative_cost,
+    "composantes_nulles": (
+        lambda node: " ".join(node.zero_components) if node.zero_components else "—"
+    ),
+    "origine": lambda node: str(node.origin),
+}
+
+
 def _valeur(node: DoeNode, cle: str) -> Any:
     """La valeur d'une colonne pour un nœud, déjà traduite en français."""
-    match cle:
-        case "node_id":
-            return node.node_id
-        case "bande":
-            return node.band_index
-        case "mach_bas":
-            return node.mach_low
-        case "mach_haut":
-            return node.mach_high
-        case "braquage":
-            return node.deflection.name
-        case "dl":
-            return node.deflection.dl
-        case "dm":
-            return node.deflection.dm
-        case "dn":
-            return node.deflection.dn
-        case "configuration":
-            return LIBELLE_CONFIG[node.calc_config]
-        case "cout_relatif":
-            return node.relative_cost
-        case "composantes_nulles":
-            return " ".join(node.zero_components) if node.zero_components else "—"
-        case "origine":
-            return str(node.origin)
-        case _:
-            return node.values.get(cle)
+    calculee = _COLONNES_CALCULEES.get(cle)
+    return calculee(node) if calculee is not None else node.values.get(cle)
 
 
 # --- primitives de mise en forme -------------------------------------------
@@ -589,7 +585,7 @@ def _feuille_enveloppe(wb: Workbook, plan: DoePlan, study: Study) -> None:
             bornes = [x for x in grandeurs[6:11] if isinstance(x, float) and x == x]
             grand = max((abs(x) for x in bornes), default=0.0)
             for index, ((_, _, format_nombre, alignement), valeur) in enumerate(
-                zip(entetes, grandeurs, strict=True), start=1
+                zip_strict(entetes, grandeurs), start=1
             ):
                 cellule = ws.cell(row=rangee, column=index, value=valeur)
                 cellule.font = CORPS

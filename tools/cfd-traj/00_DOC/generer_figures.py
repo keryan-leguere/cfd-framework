@@ -10,7 +10,6 @@ il ajoute ``src/`` au chemin d'import lui-même.
 
 from __future__ import annotations
 
-import itertools
 import sys
 from pathlib import Path
 
@@ -24,6 +23,7 @@ import numpy as np
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE / "src"))
 
+from cfd_traj._compat import pairwise, zip_strict  # noqa: E402
 from cfd_traj.core.stats import quantile_bounds  # noqa: E402
 from cfd_traj.core.symmetry import (  # noqa: E402
     SymmetryGroup,
@@ -84,7 +84,7 @@ def figure_tube() -> None:
     )
 
     bornes = np.linspace(0.3, 3.8, 8)
-    for lo, hi in itertools.pairwise(bornes):
+    for lo, hi in pairwise(bornes):
         milieu = 0.5 * (lo + hi)
         bas = 88.0 * milieu + 2.0
         haut = 122.0 * milieu + 52.0
@@ -130,13 +130,12 @@ def figure_marge() -> None:
     rng = np.random.default_rng(7)
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.0), constrained_layout=True)
 
-    for ax, (titre, echantillon) in zip(
+    for ax, (titre, echantillon) in zip_strict(
         axes,
         [
             ("Variable traversant zéro (braquage)", rng.normal(0.0, 6.0, 20_000)),
             ("Variable positive étalée (échelle log)", 10.0 ** rng.uniform(0.5, 2.6, 20_000)),
         ],
-        strict=True,
     ):
         log = titre.startswith("Variable positive")
         bornes = quantile_bounds(echantillon, margin=0.10, log_scaled=log)
@@ -172,7 +171,7 @@ def figure_repliement() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.2), constrained_layout=True)
 
     ax = axes[0]
-    for groupe, couleur in zip(groupes, (GRIS, BLEU, VERT, ORANGE, ROUGE), strict=True):
+    for groupe, couleur in zip_strict(groupes, (GRIS, BLEU, VERT, ORANGE, ROUGE)):
         spec = SymmetrySpec(group=groupe)
         ax.plot(brut, fold_phi(brut, spec), color=couleur, linewidth=1.8, label=str(groupe))
     _finish(ax, xlabel="φ brut [deg]", ylabel="φ replié [deg]", title="Repliement par groupe")

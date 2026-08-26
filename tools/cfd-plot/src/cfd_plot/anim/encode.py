@@ -180,7 +180,7 @@ def _materialise(frames: FrameInput, workdir: Path) -> list[Path]:
     """Return *frames* as PNG files on disk, writing any in-memory ones."""
     out: list[Path] = []
     for i, frame in enumerate(frames):
-        if isinstance(frame, str | os.PathLike):
+        if isinstance(frame, (str, os.PathLike)):
             path = Path(frame)
             if not path.is_file():
                 raise FileNotFoundError(f"frame {i} does not exist: {path}")

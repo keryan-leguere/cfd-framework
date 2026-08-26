@@ -1,10 +1,14 @@
 """Petites compatibilités entre versions de Python.
 
-cfd-perf doit s'installer tel quel sur les calculateurs isolés, où l'inter-
+cfd-traj doit s'installer tel quel sur les calculateurs isolés, où l'inter-
 préteur disponible est souvent celui de la distribution — Python 3.9 sur les
 bases RHEL 8 / Rocky 8 encore très répandues en CFD. Ce module regroupe les
 rares endroits où la bibliothèque standard a changé depuis, pour que le reste
 du code s'écrive une seule fois.
+
+Même intention et même contenu que ``cfd_perf._compat`` : les paquets de
+``tools/`` sont indépendants (chacun son ``pyproject.toml``), donc le shim est
+dupliqué plutôt que partagé.
 """
 
 from __future__ import annotations
@@ -15,16 +19,18 @@ import sys
 from collections.abc import Iterable, Iterator
 from typing import Any, TypeVar, overload
 
+__all__ = ["StrEnum", "pairwise", "zip_strict"]
+
 
 class StrEnum(str, enum.Enum):
     """Énumération dont les membres *sont* leur valeur texte.
 
     Équivalent de ``enum.StrEnum`` (Python 3.11+), défini ici pour toutes les
     versions plutôt que conditionnellement : le formatage des énumérations
-    mixtes a changé en 3.11 (``f"{Strategy.FASTEST}"`` donnait la valeur avant,
-    ``Strategy.FASTEST`` après). En fixant ``__str__`` et ``__format__``, un
-    message d'erreur ou un YAML généré est identique quel que soit
-    l'interpréteur.
+    mixtes a changé en 3.11 (``f"{Role.PRINCIPAL}"`` donnait la valeur avant,
+    ``Role.PRINCIPAL`` après). En fixant ``__str__`` et ``__format__``, un
+    message d'erreur, une cellule Excel ou un YAML généré est identique quel
+    que soit l'interpréteur.
     """
 
     def __str__(self) -> str:
@@ -32,6 +38,17 @@ class StrEnum(str, enum.Enum):
 
     def __format__(self, format_spec: str) -> str:
         return str.__format__(str(self.value), format_spec)
+
+
+if sys.version_info >= (3, 10):
+    pairwise = itertools.pairwise
+else:  # pragma: no cover - dépend de l'interpréteur
+
+    def pairwise(iterable: Iterable[Any]) -> Iterator[tuple[Any, Any]]:
+        """``itertools.pairwise`` (Python 3.10+) : (a, b), (b, c), (c, d)…"""
+        premier, second = itertools.tee(iterable)
+        next(second, None)
+        return zip(premier, second)
 
 
 _T1 = TypeVar("_T1")

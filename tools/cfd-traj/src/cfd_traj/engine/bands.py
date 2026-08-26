@@ -16,12 +16,12 @@ samples.
 
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass, replace
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from cfd_traj._compat import pairwise
 from cfd_traj.data.study import BandSpec
 
 #: Widened by this fraction of its own width so that the extreme Mach values of
@@ -111,7 +111,7 @@ def _auto_edges(mach: NDArray[np.float64], spec: BandSpec) -> tuple[float, ...]:
     edges = list(np.linspace(low, high, spec.n_bands + 1))
     t_low, t_high = spec.transonic
     refined: list[float] = []
-    for a, b in itertools.pairwise(edges):
+    for a, b in pairwise(edges):
         refined.append(a)
         overlaps = b > t_low and a < t_high
         if overlaps and spec.transonic_refinement > 1:
@@ -158,7 +158,7 @@ def _merge_thin_bands(
 
 def _windows(edges: tuple[float, ...]):  # type: ignore[no-untyped-def]
     """Yield ``(low, high, is_last)`` for each interval of an edge list."""
-    pairs = list(itertools.pairwise(edges))
+    pairs = list(pairwise(edges))
     for i, (a, b) in enumerate(pairs):
         yield a, b, i == len(pairs) - 1
 
@@ -189,7 +189,7 @@ def build_bands(mach: ArrayLike, spec: BandSpec) -> BandSet:
         notes.extend(merge_notes)
 
     bands: list[Band] = []
-    pairs = list(itertools.pairwise(edges))
+    pairs = list(pairwise(edges))
     for i, (low, high) in enumerate(pairs):
         is_last = i == len(pairs) - 1
         empty = Band(index=i, mach_low=low, mach_high=high, is_last=is_last)

@@ -50,6 +50,8 @@ from typing import Any
 
 import numpy as np
 
+from cfd_plot._compat import zip_strict
+
 from ..mpl_template import make_legend, new_figure, plot_line, set_title
 from .engine import AnimationResult, animate
 
@@ -234,7 +236,7 @@ def _normalise(x: Any, y: Any) -> tuple[list[np.ndarray], list[np.ndarray], bool
         shared = np.atleast_1d(np.asarray(x, dtype=float))
         xs_arr = [shared] * len(ys_arr)
 
-    for i, (xi, yi) in enumerate(zip(xs_arr, ys_arr, strict=True)):
+    for i, (xi, yi) in enumerate(zip_strict(xs_arr, ys_arr)):
         if xi.size != yi.size:
             raise ValueError(f"curve {i}: x has {xi.size} points but y has {yi.size}")
 
@@ -247,7 +249,7 @@ def _is_2d(a: Any) -> bool:
         return a.ndim >= 2
     if isinstance(a, str) or not isinstance(a, Sequence):
         return False
-    return len(a) > 0 and all(isinstance(row, np.ndarray | Sequence) and not isinstance(row, str) for row in a)
+    return len(a) > 0 and all(isinstance(row, (np.ndarray, Sequence)) and not isinstance(row, str) for row in a)
 
 
 def _rows(a: Any) -> list[Any]:

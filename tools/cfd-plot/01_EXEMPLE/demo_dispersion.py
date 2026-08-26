@@ -32,6 +32,7 @@ from cfd_plot import (
     style_context,
     use_style,
 )
+from cfd_plot._compat import zip_strict
 from cfd_plot.dispersion import (
     DispersionSpec,
     QuantityDispersion,
@@ -127,7 +128,7 @@ type_specs = [
 
 with style_context("notebook"):
     fig_gal, axes_gal = plt.subplots(2, 3, figsize=(13, 6))
-    for ax, spec in zip(axes_gal.ravel(), type_specs, strict=True):
+    for ax, spec in zip_strict(axes_gal.ravel(), type_specs):
         plot_dispersion_type(spec, ax=ax)
     set_suptitle(fig_gal, "Dispersion type shapes — types 1 to 6", fontsize=12)
 

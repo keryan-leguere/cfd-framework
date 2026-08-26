@@ -156,7 +156,7 @@ def _resolve_paths(
     source: str | Path | Sequence[str | Path], *, pattern: str
 ) -> tuple[list[Path], Path | None]:
     """Turn a directory, a glob, a single file or a list into a sorted file list."""
-    if isinstance(source, str | Path):
+    if isinstance(source, (str, Path)):
         path = Path(source)
         if path.is_dir():
             return sorted(path.glob(pattern)), path

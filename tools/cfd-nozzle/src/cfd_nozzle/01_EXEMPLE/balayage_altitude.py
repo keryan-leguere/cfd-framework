@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from cfd_nozzle import GAS_LIBRARY, Nozzle
+from cfd_nozzle._compat import zip_strict
 from cfd_nozzle.core.nozzle import SEPARATION_RATIO, Regime
 
 
@@ -73,7 +74,7 @@ def main(argv: list[str]) -> int:
                 f"jusqu'à {decollement_max:,.0f} m"
             )
 
-    for altitude, pa in zip(altitudes, [pression_isa(float(a)) for a in altitudes], strict=True):
+    for altitude, pa in zip_strict(altitudes, [pression_isa(float(a)) for a in altitudes]):
         i = int(np.argmin(np.abs(altitudes - altitude)))
         lignes.append(
             f"{altitude:10.1f} {pa:12.2f} "

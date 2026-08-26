@@ -9,11 +9,11 @@ wall tracing at once.
 from __future__ import annotations
 
 import math
-from itertools import pairwise
 
 import numpy as np
 import pytest
 
+from cfd_nozzle._compat import pairwise
 from cfd_nozzle.core.isentropic import area_ratio, mach_angle
 from cfd_nozzle.core.moc import check_axisymmetric_compatibility, moc_nozzle
 from cfd_nozzle.core.shocks import prandtl_meyer

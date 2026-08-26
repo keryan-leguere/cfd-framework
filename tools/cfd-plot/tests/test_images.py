@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import matplotlib
 
+from cfd_plot._compat import zip_strict
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -282,7 +284,7 @@ def test_shared_colorbar():
     x, y, X, Y, _, _, _ = _field()
     fig, axes = new_figure(1, 3, figsize=(11, 3.2))
     mappable = None
-    for ax, mach in zip(axes, (0.5, 0.7, 0.85), strict=True):
+    for ax, mach in zip_strict(axes, (0.5, 0.7, 0.85)):
         z = np.exp(-(X**2 + Y**2)) * np.cos(2.5 * X) * mach
         mappable, _ = plot_pcolormesh(
             ax, x, y, z, cmap="RdBu_r", colorbar=False, vmin=-0.9, vmax=0.9
@@ -334,7 +336,7 @@ def test_dispersion_type_shapes():
     ]
     with style_context("notebook"):
         fig, axes = plt.subplots(2, 3, figsize=(11, 5))
-        for ax, spec in zip(axes.ravel(), specs, strict=True):
+        for ax, spec in zip_strict(axes.ravel(), specs):
             plot_dispersion_type(spec, ax=ax)
     return fig
 

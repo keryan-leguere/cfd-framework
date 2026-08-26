@@ -55,7 +55,6 @@ Schema (French keys; only ``etude`` and ``reference`` are required)::
 
 from __future__ import annotations
 
-import enum
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +62,7 @@ from typing import Any
 
 import yaml
 
+from cfd_traj._compat import StrEnum, pairwise
 from cfd_traj.core.adim import Reference
 from cfd_traj.core.symmetry import (
     DeflectionSymmetry,
@@ -88,7 +88,7 @@ class StudyError(ValueError):
         super().__init__(f"{path} : {message}" if path is not None else message)
 
 
-class DoeMethod(enum.StrEnum):
+class DoeMethod(StrEnum):
     """How the nodes of a band are placed inside its conditional box."""
 
     TENSORIEL = "tensoriel"
@@ -109,7 +109,7 @@ class BandSpec:
         if self.edges is not None:
             if len(self.edges) < 2:
                 raise ValueError(f"« bandes.bornes » : au moins deux bornes, reçu {self.edges}")
-            if any(b <= a for a, b in zip(self.edges, self.edges[1:], strict=False)):
+            if any(b <= a for a, b in pairwise(self.edges)):
                 raise ValueError(
                     f"« bandes.bornes » : bornes non strictement croissantes {self.edges}"
                 )
@@ -274,12 +274,12 @@ def _as_int(value: Any, where: str, path: Path | None) -> int:
 
 
 def _as_pair(value: Any, where: str, path: Path | None) -> tuple[float, float]:
-    if not isinstance(value, list | tuple) or len(value) != 2:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise StudyError(f"« {where} » : deux valeurs attendues, reçu {value!r}", path=path)
     return (_as_float(value[0], where, path), _as_float(value[1], where, path))
 
 
-def _enum(kind: type[enum.StrEnum], value: Any, where: str, path: Path | None) -> Any:
+def _enum(kind: type[StrEnum], value: Any, where: str, path: Path | None) -> Any:
     try:
         return kind(str(value))
     except ValueError as exc:

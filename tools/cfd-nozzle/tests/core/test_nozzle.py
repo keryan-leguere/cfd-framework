@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import math
-from itertools import pairwise
 
 import numpy as np
 import pytest
 
+from cfd_nozzle._compat import pairwise
 from cfd_nozzle.core.gas import G0, GAS_LIBRARY, GasModel
 from cfd_nozzle.core.geometry import bell_contour
 from cfd_nozzle.core.isentropic import area_ratio, p0_over_p

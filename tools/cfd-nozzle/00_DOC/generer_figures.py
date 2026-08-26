@@ -14,6 +14,8 @@ from pathlib import Path
 
 import matplotlib
 
+from cfd_nozzle._compat import zip_strict
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -177,7 +179,7 @@ def figure_regimes() -> None:
         ("#2ca02c", "--", 2.6),
         ("#1f77b4", ":", 1.6),
     ]
-    for (pa, label), (colour, dash, width) in zip(cas, styles, strict=True):
+    for (pa, label), (colour, dash, width) in zip_strict(cas, styles):
         field = nozzle.flow_field(contour.x, contour.area, p0, t0, pa)
         axes[0].plot(
             field.x * 1e3, field.p * 1e-5, color=colour, ls=dash, lw=width, label=label, alpha=0.9

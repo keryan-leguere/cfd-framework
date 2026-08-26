@@ -66,6 +66,19 @@ def _grid(ax: Any) -> None:
     ax.grid(alpha=0.3)
 
 
+def _tidy_layout(fig: Any) -> None:
+    """``fig.tight_layout()``, unless a layout engine is already in charge.
+
+    The ``cfd_plot`` style turns constrained layout on. Layering ``tight`` on
+    top of it buys nothing, and Matplotlib < 3.10 — the newest series
+    installable under Python 3.9 — refuses the engine switch outright once a
+    colorbar exists, raising RuntimeError. Without ``cfd_plot`` no engine is
+    set and the margins are adjusted as before.
+    """
+    if fig.get_layout_engine() is None:
+        fig.tight_layout()
+
+
 def _draw_walls(ax: Any, x_mm: Any, r_mm: Any) -> None:
     ax.plot(x_mm, r_mm, "-", color=_WALL, lw=2)
     ax.plot(x_mm, -r_mm, "-", color=_WALL, lw=2)
@@ -123,7 +136,7 @@ def plot_flow_field(
 
     for ax in axes:
         _grid(ax)
-    fig.tight_layout()
+    _tidy_layout(fig)
     return fig
 
 
@@ -137,7 +150,7 @@ def plot_contour(contour: NozzleContour, *, title: str | None = None) -> Any:
     ax.set_title(title or f"Contour — {contour.label}, ε = {contour.area_ratio:.2f}")
     ax.set_aspect("equal", adjustable="datalim")
     _grid(ax)
-    fig.tight_layout()
+    _tidy_layout(fig)
     return fig
 
 
@@ -202,7 +215,7 @@ def plot_moc(result: MOCResult, *, show_mesh: bool = True) -> Any:
     ax.legend(loc="best", fontsize=9)
     ax.set_aspect("equal", adjustable="datalim")
     _grid(ax)
-    fig.tight_layout()
+    _tidy_layout(fig)
     return fig
 
 
@@ -251,5 +264,5 @@ def plot_performance_map(
         va="center",
         ha="right",
     )
-    fig.tight_layout()
+    _tidy_layout(fig)
     return fig

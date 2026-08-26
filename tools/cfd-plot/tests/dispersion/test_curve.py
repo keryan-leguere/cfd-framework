@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from cfd_plot import use_style
+from cfd_plot._compat import zip_strict
 from cfd_plot.dispersion import (
     DispersionBand,
     DispersionSpec,
@@ -272,7 +273,7 @@ class TestFromQuantities:
                 bias=NULL,
                 scale=DispersionSpec(disp_type=4, moy=0.0, var=0.02 + 0.01 * i),
             )
-            for i, (a, c) in enumerate(zip(ALPHA, CN, strict=True))
+            for i, (a, c) in enumerate(zip_strict(ALPHA, CN))
         ]
 
     def test_reads_the_nominal_from_the_quantities(self, quantities, rng):

@@ -27,6 +27,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from cfd_traj._compat import zip_strict
+
 #: Past this many axes the 2**d vertex enumeration is replaced by an axial
 #: skeleton: 2**11 corners would swamp any plan they were meant to bracket.
 MAX_CORNER_DIM: int = 10
@@ -101,8 +103,7 @@ def corner_points(
 
     if d <= MAX_CORNER_DIM:
         vertices = [
-            dict(zip(names, combo, strict=True))
-            for combo in itertools.product(*(axes[n] for n in names))
+            dict(zip_strict(names, combo)) for combo in itertools.product(*(axes[n] for n in names))
         ]
         return tuple(vertices), ()
 
@@ -362,7 +363,7 @@ def scale_to_bounds(
     if out.size == 0:
         return out
     logs = tuple(log_scaled) if log_scaled is not None else (False,) * len(bounds)
-    for j, ((low, high), use_log) in enumerate(zip(bounds, logs, strict=True)):
+    for j, ((low, high), use_log) in enumerate(zip_strict(bounds, logs)):
         if use_log and low > 0.0 and high > 0.0:
             out[:, j] = 10.0 ** (np.log10(low) + out[:, j] * (np.log10(high) - np.log10(low)))
         else:

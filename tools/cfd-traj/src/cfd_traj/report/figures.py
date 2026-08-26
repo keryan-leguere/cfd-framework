@@ -24,6 +24,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.core.symmetry import CalcConfig
 from cfd_traj.data.dataset import TrajectoryDataset
 from cfd_traj.engine.coverage import CoverageResult
@@ -197,7 +198,7 @@ def plot_envelope(
     ax.legend(loc="best", fontsize="small", framealpha=0.9)
 
     ax = axes[1]
-    widths_band = [h - low for low, h in zip(lows, highs, strict=True)] if lows else []
+    widths_band = [h - low for low, h in zip_strict(lows, highs)] if lows else []
     if finite.any() and widths_band:
         global_width = y1 - y0
         ratios = [w / global_width if global_width > 0 else 1.0 for w in widths_band]

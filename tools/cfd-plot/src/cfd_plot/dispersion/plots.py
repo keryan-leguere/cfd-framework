@@ -29,6 +29,8 @@ import numpy as np
 from matplotlib.patches import Rectangle
 from scipy.stats import gaussian_kde, norm, truncnorm
 
+from cfd_plot._compat import zip_strict
+
 # ---------------------------------------------------------------------------
 # Parent package — styling helpers
 # ---------------------------------------------------------------------------
@@ -657,7 +659,7 @@ def plot_dispersion_matrix(
 
         prop_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-        for idx, (qty, samples) in enumerate(zip(qty_list, all_samples, strict=True)):
+        for idx, (qty, samples) in enumerate(zip_strict(qty_list, all_samples)):
             row, col = divmod(idx, nc)
             ax = axes[row, col]
             c = prop_colors[idx % len(prop_colors)]

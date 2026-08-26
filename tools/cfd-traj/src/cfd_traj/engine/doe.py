@@ -23,13 +23,13 @@ thousand nodes to then report that there are too many of them helps nobody.
 
 from __future__ import annotations
 
-import enum
 import itertools
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
+from cfd_traj._compat import StrEnum, zip_strict
 from cfd_traj.core.sampling import (
     corner_points,
     empirical_support,
@@ -65,7 +65,7 @@ class PlanTooLarge(ValueError):
         )
 
 
-class NodeOrigin(enum.StrEnum):
+class NodeOrigin(StrEnum):
     """Why a node is in the plan."""
 
     GRILLE = "grille"
@@ -196,7 +196,7 @@ def _grid_points(band: BandEnvelope) -> list[dict[str, float]]:
         return [{}]
     names = [v.name for v in variables]
     return [
-        dict(zip(names, combo, strict=True))
+        dict(zip_strict(names, combo))
         for combo in itertools.product(*(v.levels for v in variables))
     ]
 
@@ -227,7 +227,7 @@ def _lhs_points(
     scaled = scale_to_bounds(result.design, bounds, logs)
 
     notes = tuple(f"bande {band.band.index} : {note}" for note in result.notes)
-    return [dict(zip(names, row, strict=True)) for row in scaled], notes
+    return [dict(zip_strict(names, row)) for row in scaled], notes
 
 
 def _theoretical_count(envelope: Envelope, doe: DoeSpec, symmetry: SymmetrySpec) -> int:

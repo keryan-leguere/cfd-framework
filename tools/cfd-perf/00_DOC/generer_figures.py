@@ -18,6 +18,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE / "src"))
 
+from cfd_perf._compat import zip_strict  # noqa: E402
 from cfd_perf.core.model import fit_model  # noqa: E402
 from cfd_perf.data.pilot import pilot_from_points  # noqa: E402
 from cfd_perf.report._plotting_lib import get_plotting  # noqa: E402
@@ -205,7 +206,7 @@ def figure_decomposition(plotting) -> None:
 
     teintes = ["#DCE9F2", "#C3DAEA", "#EAF1F6", "#B0CEE2"]
 
-    for ax, k in zip(axes, decoupes, strict=True):
+    for ax, k in zip_strict(axes, decoupes):
         nc = k * k
         s = n // k                       # côté d'un sous-domaine, en mailles
         mailles_rang = s * s

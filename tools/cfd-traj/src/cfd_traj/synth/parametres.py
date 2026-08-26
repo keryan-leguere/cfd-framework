@@ -72,24 +72,24 @@ def generate(
     nominal = model.nominal * scale
     noise = model.amplitude * nominal
 
-    match model.archetype:
-        case "rampe":
-            values = nominal * (1.0 - 0.85 * phase**0.6) + rng.normal(0.0, 0.02 * noise, n)
-        case "plateau_bruite":
-            values = nominal + rng.normal(0.0, noise, n)
-        case "sinus_amorti":
-            values = nominal * np.exp(-2.5 * phase) * np.sin(9.0 * np.pi * phase) + rng.normal(
-                0.0, 0.02 * noise, n
-            )
-        case "correle_altitude":
-            reach = max(float(np.max(altitude_m)), 1.0)
-            values = nominal * (0.2 + 1.6 * altitude_m / reach) + rng.normal(0.0, 0.01 * noise, n)
-        case "correle_mach":
-            values = nominal * (0.25 + 0.9 * mach) + rng.normal(0.0, 0.01 * noise, n)
-        case "discret":
-            values = np.where(phase < 0.45, nominal, 2.0 * nominal).astype(np.float64)
-        case _:  # pragma: no cover - guarded by ParameterModel.__post_init__
-            raise ArchetypeError(f"archétype « {model.archetype} » inconnu")
+    archetype = model.archetype
+    if archetype == "rampe":
+        values = nominal * (1.0 - 0.85 * phase**0.6) + rng.normal(0.0, 0.02 * noise, n)
+    elif archetype == "plateau_bruite":
+        values = nominal + rng.normal(0.0, noise, n)
+    elif archetype == "sinus_amorti":
+        values = nominal * np.exp(-2.5 * phase) * np.sin(9.0 * np.pi * phase) + rng.normal(
+            0.0, 0.02 * noise, n
+        )
+    elif archetype == "correle_altitude":
+        reach = max(float(np.max(altitude_m)), 1.0)
+        values = nominal * (0.2 + 1.6 * altitude_m / reach) + rng.normal(0.0, 0.01 * noise, n)
+    elif archetype == "correle_mach":
+        values = nominal * (0.25 + 0.9 * mach) + rng.normal(0.0, 0.01 * noise, n)
+    elif archetype == "discret":
+        values = np.where(phase < 0.45, nominal, 2.0 * nominal).astype(np.float64)
+    else:  # pragma: no cover - guarded by ParameterModel.__post_init__
+        raise ArchetypeError(f"archétype « {archetype} » inconnu")
 
     return np.asarray(values, dtype=np.float64)
 

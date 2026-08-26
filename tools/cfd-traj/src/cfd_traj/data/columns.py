@@ -34,17 +34,17 @@ always wins.
 
 from __future__ import annotations
 
-import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from cfd_traj._compat import StrEnum
 from cfd_traj.core.stats import spearman, suggest_log_scale
 
 
-class Role(enum.StrEnum):
+class Role(StrEnum):
     """What a column does in the design of experiments."""
 
     PRINCIPAL = "principal"
@@ -54,7 +54,7 @@ class Role(enum.StrEnum):
     IGNORE = "ignore"
 
 
-class Scale(enum.StrEnum):
+class Scale(StrEnum):
     """Scale on which bounds, levels and standardisation are computed."""
 
     LINEAIRE = "lineaire"

@@ -26,6 +26,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from cfd_plot._compat import zip_strict
+
 from .mpl_template import (
     make_legend,
     plot_line,
@@ -1013,13 +1015,13 @@ def _run_jobs(
         if show_progress and _RICH and Progress is not None and _console is not None:
             with Progress(*_progress_columns(), console=_console, transient=False) as progress:
                 task_id = progress.add_task(task_desc, total=total)
-                for job, future in zip(jobs, futures, strict=True):
+                for job, future in zip_strict(jobs, futures):
                     progress.update(task_id, description=_job_label(job))
                     written_paths.extend(future.result())
                     progress.advance(task_id)
             return written_paths
 
-        for index, (job, future) in enumerate(zip(jobs, futures, strict=True), start=1):
+        for index, (job, future) in enumerate(zip_strict(jobs, futures), start=1):
             if verbose:
                 print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
             written_paths.extend(future.result())
@@ -1448,13 +1450,13 @@ def _run_compare_jobs(
         if show_progress and _RICH and Progress is not None and _console is not None:
             with Progress(*_progress_columns(), console=_console, transient=False) as progress:
                 task_id = progress.add_task(task_desc, total=total)
-                for job, future in zip(jobs, futures, strict=True):
+                for job, future in zip_strict(jobs, futures):
                     progress.update(task_id, description=_job_label(job))
                     written_paths.extend(future.result())
                     progress.advance(task_id)
             return written_paths
 
-        for index, (job, future) in enumerate(zip(jobs, futures, strict=True), start=1):
+        for index, (job, future) in enumerate(zip_strict(jobs, futures), start=1):
             if verbose:
                 print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
             written_paths.extend(future.result())

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from cfd_traj._compat import zip_strict
 from cfd_traj.data.dataset import load_dataset
 from cfd_traj.synth.lot import BASE_COLUMNS, LotSpec, generate_lot, summarise, write_lot
 from cfd_traj.synth.parametres import ParameterModel, default_models
@@ -61,7 +62,7 @@ class TestReproducibility:
         first = write_lot(tmp_path / "a", LotSpec(n_shots=3, seed=99))
         second = write_lot(tmp_path / "b", LotSpec(n_shots=3, seed=99))
 
-        for left, right in zip(first, second, strict=True):
+        for left, right in zip_strict(first, second):
             assert left.read_bytes() == right.read_bytes()
 
     def test_different_seeds_give_different_files(self, tmp_path):

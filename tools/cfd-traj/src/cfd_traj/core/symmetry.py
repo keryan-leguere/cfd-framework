@@ -37,15 +37,16 @@ or canted), ``Cs`` (a single mirror plane), ``C1`` (no symmetry at all).
 
 from __future__ import annotations
 
-import enum
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from cfd_traj._compat import StrEnum
 
-class SymmetryGroup(enum.StrEnum):
+
+class SymmetryGroup(StrEnum):
     """Symmetry group of the configuration, in Schoenflies notation."""
 
     C4V = "C4v"
@@ -55,7 +56,7 @@ class SymmetryGroup(enum.StrEnum):
     CINFV = "Cinfv"
 
 
-class CalcConfig(enum.StrEnum):
+class CalcConfig(StrEnum):
     """Computational domain a case can legitimately be run on."""
 
     AXI_2D = "axisymetrique_2d"
@@ -65,7 +66,7 @@ class CalcConfig(enum.StrEnum):
     COMPLETE = "configuration_complete"
 
 
-class DeflectionSymmetry(enum.StrEnum):
+class DeflectionSymmetry(StrEnum):
     """What a set of control-surface deflections does to the wind-plane mirror."""
 
     NULLE = "nulle"

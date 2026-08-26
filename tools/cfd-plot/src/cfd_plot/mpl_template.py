@@ -46,6 +46,8 @@ from matplotlib.artist import Artist
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
+from cfd_plot._compat import zip_strict
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -343,7 +345,7 @@ def make_figure_legend(
     labels: list[str] = []
     seen: set[str] = set()
     for ax in axes:
-        for h, lbl in zip(*ax.get_legend_handles_labels(), strict=True):
+        for h, lbl in zip_strict(*ax.get_legend_handles_labels()):
             if dedupe and lbl in seen:
                 continue
             seen.add(lbl)

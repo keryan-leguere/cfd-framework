@@ -6,7 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "cfd-stats"
 version = "0.1.0"
 description = "Automatic convergence analysis and statistics for CFD time-series"
-requires-python = ">=3.12"
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
 license = { text = "MIT" }
 dependencies = [
     "numpy",
@@ -31,7 +33,7 @@ cfd-stats = "cfd_stats.cli:main"
 where = ["src"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py39"
 line-length = 120
 
 [tool.ruff.lint]
@@ -46,7 +48,9 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.12"
+# Pas de python_version = "3.9" : mypy ne sait plus cibler 3.9. La compatibilité
+# 3.9 est tenue par le code et vérifiée en exécutant la suite de tests sous un
+# interpréteur 3.9 (ruff, lui, cible bien py39 et refuse la syntaxe trop récente).
 strict = true
 warn_return_any = true
 warn_unused_configs = true

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import matplotlib
 
+from cfd_plot._compat import zip_strict
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -291,10 +293,10 @@ def fig_sync_axes_limits() -> None:
     _fill(axes[0])
     _fill(axes[1])
 
-    for ax, name in zip(axes[0], ("plot_line", "scatter", "bar"), strict=True):
+    for ax, name in zip_strict(axes[0], ("plot_line", "scatter", "bar")):
         set_title(ax, f"{name} — before")
     sync_axes_limits(axes[1], which="y")
-    for ax, name in zip(axes[1], ("plot_line", "scatter", "bar"), strict=True):
+    for ax, name in zip_strict(axes[1], ("plot_line", "scatter", "bar")):
         set_title(ax, f"{name} — after sync_axes_limits")
 
     set_suptitle(
@@ -314,7 +316,7 @@ def fig_legends() -> None:
     alpha, cn_sa, cn_kw, cn_exp = _polar()
 
     fig, axes = new_figure(1, 2, figsize=(12, 4.2))
-    for ax, title in zip(axes, ("Z = 5000 m", "Z = 10000 m"), strict=True):
+    for ax, title in zip_strict(axes, ("Z = 5000 m", "Z = 10000 m")):
         plot_line(ax, alpha, cn_sa, label="SA")
         plot_line(ax, alpha, cn_kw, marker="s", label=r"$k$-$\omega$ SST")
         plot_line(ax, alpha, cn_exp, marker="^", ls="none", label="Experiment")
@@ -481,7 +483,7 @@ def fig_shared_colorbar() -> None:
 
     fig, axes = new_figure(1, 3, figsize=(14, 3.8))
     mappable = None
-    for ax, mach in zip(axes, (0.5, 0.7, 0.85), strict=True):
+    for ax, mach in zip_strict(axes, (0.5, 0.7, 0.85)):
         z = np.exp(-(X**2 + Y**2)) * np.cos(2.5 * X) * mach
         # the 2D helpers return (artist, colorbar) — we only want the artist
         mappable, _ = plot_pcolormesh(
@@ -572,7 +574,7 @@ def fig_dispersion() -> None:
              for t in range(1, 7)]
     with style_context("notebook"):
         fig, axes = plt.subplots(2, 3, figsize=(13, 6))
-        for ax, spec in zip(axes.ravel(), specs, strict=True):
+        for ax, spec in zip_strict(axes.ravel(), specs):
             plot_dispersion_type(spec, ax=ax)
         set_suptitle(fig, "plot_dispersion_type — the six distribution shapes")
     _write(fig, "14_dispersion_types")
