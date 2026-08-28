@@ -254,6 +254,130 @@
       }
     });
 
+    test('traits : reconnaît le tracé de chaque courbe monochrome', function (a) {
+      /*
+       * Trois courbes rigoureusement de la même couleur, distinguées par leur
+       * seul tracé. On isole chacune par le filtre de type de trait, puis on
+       * vérifie que le style mesuré est bien celui attendu.
+       */
+      var figure = 'exemple_traits.png';
+      var image = R.images[figure];
+      var options = {
+        tolChroma: 25, tolLum: 45,
+        zone: zoneTrace(figure), zonesExclues: [boiteLegende(figure)]
+      };
+      var noir = { r: 16, g: 16, b: 16 };
+
+      /* Sans tri, le masque contient les trois : le style global est continu. */
+      var tout = CFDD.Detection.detecter(image, noir, options);
+      a.egal(tout.statistiques.trait.style, CFDD.Trait.STYLES.continu,
+        'la courbe pleine domine le masque complet');
+
+      options.filtreTrait = 'discontinu';
+      var discontinu = CFDD.Detection.detecter(image, noir, options);
+      a.ok(discontinu.statistiques.trait.nbComposantes > 20,
+        discontinu.statistiques.trait.nbComposantes + ' tronçons');
+      a.ok(discontinu.statistiques.trait.style !== CFDD.Trait.STYLES.continu,
+        'style mesuré : ' + discontinu.statistiques.trait.style);
+      a.ok(discontinu.points.length < tout.points.length,
+        'le tri retire bien des points');
+    });
+
+    test('traits : le tri isole la courbe pleine des autres', function (a) {
+      var figure = 'exemple_traits.png';
+      var meta = R.reference[figure];
+      var m = mesurer(figure, 'continu', {
+        tolChroma: 25, tolLum: 45, mode: 'moyenne', filtreTrait: 'continu',
+        zone: zoneTrace(figure), zonesExclues: [boiteLegende(figure)]
+      });
+      a.ok(m.n > 400, m.n + ' points');
+      var resume = 'écart max ' + (m.max * 100).toFixed(3)
+        + ' %, médian ' + (m.mediane * 100).toFixed(3) + ' %';
+      /*
+       * Le tri n'écarte que des composantes entières : là où la courbe pleine
+       * touche une courbe en tirets, les deux fusionnent et la pleine emporte
+       * le tronçon. D'où un pire cas plus lâche que sur une figure en couleurs.
+       */
+      a.ok(m.mediane < 0.0025, resume);
+      a.ok(m.max < 0.02, resume);
+    });
+
+    test('traits : chaque tracé isole SA courbe, à couleur identique', function (a) {
+      /*
+       * Le test qui justifie toute la fonction : trois courbes rigoureusement
+       * de la même couleur, séparées par leur seul tracé. On vérifie non
+       * seulement l'exactitude, mais l'ATTRIBUTION — que les points extraits
+       * appartiennent bien à la courbe visée et pas à sa voisine.
+       */
+      var figure = 'exemple_traits.png';
+      var meta = R.reference[figure];
+      var norme = normaliseur(figure);
+      var cal = CFDD.Calibration.creer(meta.calibration);
+      var noms = ['continu', 'tirets', 'pointille'];
+
+      function polyligne(nom) {
+        var c = meta.courbes[nom], xs = [], ys = [];
+        for (var i = 0; i < c.x.length; i++) { xs.push(norme.x(c.x[i])); ys.push(norme.y(c.y[i])); }
+        return { xs: xs, ys: ys };
+      }
+      var polylignes = {};
+      for (var n = 0; n < noms.length; n++) { polylignes[noms[n]] = polyligne(noms[n]); }
+
+      function ecart(pt, poly) {
+        var X = norme.x(pt.x), Y = norme.y(pt.y), meilleur = Infinity;
+        for (var j = 0; j < poly.xs.length - 1; j++) {
+          meilleur = Math.min(meilleur, distanceSegment(X, Y,
+            poly.xs[j], poly.ys[j], poly.xs[j + 1], poly.ys[j + 1]));
+        }
+        return meilleur;
+      }
+
+      var filtres = { continu: 'continu', tirets: 'tirets', pointille: 'pointillé' };
+      for (var k = 0; k < noms.length; k++) {
+        var vise = noms[k];
+        var res = CFDD.Detection.detecter(R.images[figure], { r: 16, g: 16, b: 16 }, {
+          tolChroma: 25, tolLum: 45, mode: 'moyenne', filtreTrait: filtres[vise],
+          zone: zoneTrace(figure), zonesExclues: [boiteLegende(figure)]
+        });
+        var pts = CFDD.Projet.seriesEnDonnees([{ nom: vise, points: res.points }], cal)[0].points;
+        a.ok(pts.length > 150, vise + ' : seulement ' + pts.length + ' points');
+
+        var bons = 0, distances = [];
+        for (var i = 0; i < pts.length; i++) {
+          var meilleurNom = null, meilleure = Infinity;
+          for (var m = 0; m < noms.length; m++) {
+            var d = ecart(pts[i], polylignes[noms[m]]);
+            if (d < meilleure) { meilleure = d; meilleurNom = noms[m]; }
+          }
+          if (meilleurNom === vise) { bons++; }
+          distances.push(ecart(pts[i], polylignes[vise]));
+        }
+        distances.sort(function (x, y) { return x - y; });
+        var mediane = distances[Math.floor(distances.length / 2)];
+
+        a.ok(bons > pts.length * 0.97, vise + ' : ' + bons + '/' + pts.length
+          + ' points attribués à la bonne courbe');
+        a.ok(mediane < 0.002, vise + ' : écart médian '
+          + (mediane * 100).toFixed(3) + ' % de l’étendue');
+      }
+    });
+
+    test('traits : combler les lacunes densifie sans dévier', function (a) {
+      var figure = 'exemple_traits.png';
+      var options = {
+        tolChroma: 25, tolLum: 45, mode: 'moyenne', filtreTrait: 'discontinu',
+        zone: zoneTrace(figure), zonesExclues: [boiteLegende(figure)]
+      };
+      var sans = CFDD.Detection.detecter(R.images[figure], { r: 16, g: 16, b: 16 }, options);
+      options.comblerLacunes = 14;
+      var avec = CFDD.Detection.detecter(R.images[figure], { r: 16, g: 16, b: 16 }, options);
+
+      a.ok(avec.points.length > sans.points.length,
+        sans.points.length + ' points, ' + avec.points.length + ' après comblement');
+      a.egal(avec.statistiques.pointsBruts, sans.statistiques.pointsBruts,
+        'les points bruts sont inchangés');
+    });
+
     test('la grille et les axes gris ne sont jamais captés', function (a) {
       /* La grille matplotlib est en #cccccc, les axes en noir : sur une cible
          rouge vif, aucun des deux ne doit passer le double critère. */

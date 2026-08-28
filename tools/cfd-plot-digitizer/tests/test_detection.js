@@ -274,6 +274,99 @@
         'écart maximal au polyligne simplifié : ' + pire.toFixed(4) + ' px (tolérance 0.5)');
     });
 
+    test('rapporte le type de trait détecté', function (a) {
+      var img = imageAvecCourbe();
+      var res = D.detecter(img, ROUGE, { tolChroma: 30, tolLum: 40 });
+      a.egal(res.statistiques.trait.style, globalThis.CFDD.Trait.STYLES.continu);
+      a.egal(res.statistiques.trait.nbComposantes, 1);
+    });
+
+    test('sépare deux courbes de MÊME couleur par le type de trait', function (a) {
+      /*
+       * Le cas des planches en noir et blanc : deux courbes identiques en
+       * couleur, distinguées par le seul tracé. Aucune tolérance colorimétrique
+       * ne peut les séparer — seule la structure du masque le permet.
+       */
+      var img = T.imageVide(400, 200, { r: 255, g: 255, b: 255 });
+      var pleine = function (x) { return 40 + 0.1 * x; };
+      var tirets = function (x) { return 160 - 0.1 * x; };
+      for (var x = 0; x < 400; x++) {
+        for (var d = -1; d <= 1; d++) {
+          T.poser(img, x, Math.round(pleine(x)) + d, ROUGE);
+          if (x % 18 < 12) { T.poser(img, x, Math.round(tirets(x)) + d, ROUGE); }
+        }
+      }
+
+      function repartition(filtre) {
+        var res = D.detecter(img, ROUGE, {
+          tolChroma: 30, tolLum: 40, mode: 'tous', filtreTrait: filtre });
+        var surPleine = 0, surTirets = 0;
+        for (var i = 0; i < res.points.length; i++) {
+          var p = res.points[i];
+          if (Math.abs(p.py - pleine(p.px)) < 3) { surPleine++; }
+          if (Math.abs(p.py - tirets(p.px)) < 3) { surTirets++; }
+        }
+        return { surPleine: surPleine, surTirets: surTirets, res: res };
+      }
+
+      var discontinu = repartition('discontinu');
+      a.egal(discontinu.surPleine, 0, 'la courbe pleine disparaît entièrement');
+      a.ok(discontinu.surTirets > 200, discontinu.surTirets + ' points sur les tirets');
+
+      var continu = repartition('continu');
+      a.ok(continu.surPleine > 380, continu.surPleine + ' points sur la pleine');
+      /*
+       * Quelques points de tirets subsistent au croisement des deux courbes :
+       * là elles se touchent et ne forment plus qu'une seule composante, que
+       * rien ne permet de rattacher à l'une plutôt qu'à l'autre.
+       */
+      a.ok(continu.surTirets < 40, continu.surTirets + ' points résiduels au croisement');
+    });
+
+    test('comble les lacunes d’un trait en tirets', function (a) {
+      var img = T.imageVide(400, 200, { r: 255, g: 255, b: 255 });
+      var vraie = function (x) { return 60 + 0.2 * x; };
+      for (var x = 0; x < 400; x++) {
+        if (x % 18 >= 12) { continue; }
+        for (var d = -1; d <= 1; d++) { T.poser(img, x, Math.round(vraie(x)) + d, ROUGE); }
+      }
+
+      var sans = D.detecter(img, ROUGE, { tolChroma: 30, tolLum: 40 });
+      var avec = D.detecter(img, ROUGE, { tolChroma: 30, tolLum: 40, comblerLacunes: 12 });
+
+      a.ok(avec.points.length > sans.points.length * 1.3,
+        sans.points.length + ' points sans comblement, ' + avec.points.length + ' avec');
+      a.egal(avec.statistiques.pointsBruts, sans.points.length,
+        'les statistiques distinguent bruts et comblés');
+
+      /* Les points ajoutés tombent sur la courbe, pas n’importe où. */
+      var pire = 0;
+      for (var i = 0; i < avec.points.length; i++) {
+        pire = Math.max(pire, Math.abs(avec.points[i].py - vraie(avec.points[i].px)));
+      }
+      a.ok(pire < 1.5, 'écart maximal après comblement : ' + pire.toFixed(2) + ' px');
+    });
+
+    test('le comblement respecte son plafond', function (a) {
+      /* Deux tronçons séparés par un large vide : une vraie interruption, que
+         l'on ne doit pas relier — sans quoi on inventerait des données. */
+      var points = [{ px: 0, py: 10 }, { px: 1, py: 11 }, { px: 80, py: 90 }];
+      var serre = D.comblerLacunes(points, 1, 10, 'colonnes');
+      a.egal(serre.length, 3, 'le vide de 79 px dépasse le plafond de 10');
+
+      var large = D.comblerLacunes(points, 1, 100, 'colonnes');
+      a.ok(large.length > 70, 'avec un plafond suffisant, le vide est comblé');
+      a.proche(large[1].px, 1, 1e-9);
+    });
+
+    test('le comblement suit l’orientation du balayage', function (a) {
+      var points = [{ px: 10, py: 0 }, { px: 20, py: 10 }];
+      var enLignes = D.comblerLacunes(points, 1, 20, 'lignes');
+      a.egal(enLignes.length, 11, 'interpolation le long de py');
+      a.proche(enLignes[5].py, 5, 1e-9);
+      a.proche(enLignes[5].px, 15, 1e-9);
+    });
+
     test('ne trouve rien pour une couleur absente', function (a) {
       var img = imageAvecCourbe();
       var res = D.detecter(img, { r: 0, g: 200, b: 0 }, { tolChroma: 15, tolLum: 20 });

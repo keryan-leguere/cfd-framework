@@ -14,7 +14,7 @@ firefox index.html
 ```
 
 C'est tout. Ou, plus commode encore pour transporter l'outil sur une clé :
-`cfd-plot-digitizer.html` à la racine est un **fichier unique de 168 ko** —
+`cfd-plot-digitizer.html` à la racine est un **fichier unique de 200 ko** —
 interface, code et figure d'exemple compris — versionné tel quel, à copier et à
 ouvrir. Rien d'autre à emporter.
 
@@ -37,13 +37,17 @@ dans un contrôle avant commit.
 
 - **Détection d'une courbe par sa couleur**, avec aperçu en direct des pixels
   retenus, et proposition automatique des couleurs présentes dans le graphique.
+- **Tri par type de trait** — continu, tirets, pointillé — pour séparer des
+  courbes que *rien d'autre* ne distingue, cas des planches en noir et blanc.
+  Avec comblement des lacunes, pour qu'une courbe en tirets ressorte continue.
 - **Axes linéaires ou logarithmiques**, y compris **inclinés ou cisaillés** :
   une figure scannée de travers se calibre sans redressement.
 - **Zones d'analyse et d'exclusion** — indispensables pour écarter la légende,
   qui contient des segments de la couleur exacte des courbes.
 - **Pointage manuel** à la loupe, mélangeable avec la détection dans une même
   série.
-- **Export** CSV (long ou large), texte, JSON, Python/NumPy, MATLAB.
+- **Export** CSV (long, large, ou **grille X commune interpolée**), texte,
+  JSON, Python/NumPy, MATLAB.
 - **Projets `.digit.json`** autonomes : image, calibration, séries et réglages
   dans un seul fichier, rouvrable ailleurs.
 
@@ -73,6 +77,28 @@ Deux tolérances plutôt qu'une, et c'est délibéré :
 Pour une courbe **noire ou grise**, la teinte ne discrimine rien (a\* et b\*
 sont nuls des deux côtés) : **seule la clarté travaille**, il faut donc la
 resserrer, pas l'élargir. C'est le seul réglage contre-intuitif de l'outil.
+
+### Deux courbes que la couleur ne sépare pas
+
+Sur une planche en noir et blanc, les courbes ne diffèrent que par leur tracé.
+Aucune tolérance ne peut les séparer — elles ont la même couleur. Ce qui les
+sépare est **structurel** : un trait plein forme une composante connexe qui
+traverse le graphique, un trait discontinu en forme des dizaines. Le réglage
+**type de trait** trie là-dessus.
+
+Sur la figure d'essai `exemples/exemple_traits.png` (trois courbes noires,
+trois tracés), chaque filtre isole sa courbe avec plus de 97 % des points
+correctement attribués. Le réglage **combler les lacunes** raccorde ensuite les
+tronçons d'un trait discontinu, sans jamais franchir une vraie interruption.
+
+### Comparer deux courbes entre elles
+
+Deux courbes digitalisées séparément n'ont jamais les mêmes abscisses, ce qui
+interdit de les soustraire ou de les aligner dans un tableur. Le format
+**CSV — grille X commune** les interpole toutes sur une même abscisse. Hors du
+domaine d'une série, la cellule reste vide : l'outil n'extrapole pas. Une
+courbe repliée — une polaire — est écartée en le disant, plutôt que d'être
+silencieusement écrasée sur elle-même.
 
 ### Le piège qui coûte cher
 
@@ -110,6 +136,7 @@ app/js/
   00_base.js                algèbre, formatage, Douglas-Peucker
   10_couleur.js             sRGB -> CIE L*a*b*, critère de correspondance
   20_calibration.js         pixels <-> grandeurs physiques
+  25_trait.js               composantes connexes, type de tracé
   30_detection.js           masque, balayage, extraction
   40_export.js              CSV, JSON, Python, MATLAB
   50_projet.js              sauvegarde et relecture
@@ -133,13 +160,13 @@ d'ouvrir `index.html` sans serveur — la contrainte de départ.
 ## Tests
 
 ```
-node tests/executer.js          # 89 tests, moins d'une seconde
+node tests/executer.js          # 130 tests, moins d'une seconde
 ```
 
 ou, sans node — ce qui arrive sur un poste verrouillé — **ouvrir
 `tests/index.html` dans le navigateur** : mêmes fichiers, mêmes tests.
 
-Les six tests d'intégration lisent de vraies figures matplotlib et comparent au
+Les neuf tests d'intégration lisent de vraies figures matplotlib et comparent au
 jeu de données qui a servi à les tracer ; ils ne tournent que sous node et se
 désactivent d'eux-mêmes dans le navigateur. Ils mesurent la distance entre
 courbe extraite et courbe vraie, dans un repère normalisé par l'étendue des
@@ -165,12 +192,10 @@ noire sans le moindre message.
 
 ## Limites connues
 
-- **Courbes en pointillés** : chaque tiret est un segment isolé, le résultat est
-  troué. Abaisser l'épaisseur minimale aide ; pointer à la main reste souvent
-  plus rapide.
 - **Deux courbes de même couleur superposées** : rien ne permet de les séparer
   là où elles sont confondues. Le mode *suivi* traite les croisements, pas les
-  recouvrements.
+  recouvrements ; et là où deux tracés se croisent, ils fusionnent en une seule
+  composante que le tri par type de trait attribue en bloc.
 - **Fond texturé, tramé ou photographié** : le critère de couleur suppose des
   aplats.
 - **Là où la courbe devient parallèle au balayage**, l'écart monte à 1 ou 2

@@ -209,7 +209,7 @@ not part of the Bash framework's runtime:
   recovers numeric data from a picture of a plot (paper figure, scanned report, vendor chart). Runs by
   opening `index.html` in a browser — no server, no install, no network — because the target is an
   air-gapped workstation. `cfd-plot-digitizer.html` at the root is the same app inlined into one
-  168 ko file (built by `outils/construire_autonome.py`) and is **committed**, so it can be copied
+  200 ko file (built by `outils/construire_autonome.py`) and is **committed**, so it can be copied
   to a stick with nothing else — which also means it can go stale: rebuild after touching any
   source, and `construire_autonome.py --verifier` exits 1 when it has drifted. Layout mirrors the other tools:
   `00_DOC/` (FR docs — `01_CALIBRATION.md`, `02_DETECTION_COULEUR.md`, `03_EXPORT_ET_PROJET.md`),
@@ -224,6 +224,21 @@ not part of the Bash framework's runtime:
       tolerances, chroma and lightness, kept separate on purpose: anti-aliasing moves lightness far
       more than hue, and for a black/grey curve a\* and b\* are zero on both sides so only lightness
       discriminates. Then a scan of the mask takes the *centre* of each contiguous run.
+    - **Line-type filtering** (`25_trait.js`) separates curves that share a colour — the black-and-white
+      plate case, where nothing else can. It is structural, not colorimetric: connected components
+      (8-connectivity, or an oblique 1 px line fragments into one component per pixel and reads as
+      dotted), sorted into continu/tirets/pointillé. Both thresholds are *relative*: "continuous"
+      is judged against the tracé's total span — never against the longest component present, or a
+      dotted-only plate would crown its longest dot a solid line — and the dot/dash frontier scales
+      with the measured stroke thickness. `comblerLacunes` then bridges a dashed curve's gaps by
+      interpolation, capped so a real interruption is never spanned; stats keep detected and
+      interpolated points distinct.
+    - **`csv-grille` export** resamples every series onto one shared x by linear interpolation, since
+      separately digitized curves never share abscissae. It never extrapolates (blank outside a
+      series' own range) and it *refuses* folded curves — a polar has two y per x, and interpolating
+      it would silently average its branches. The test for foldedness is the length of monotone runs,
+      not the count of direction reversals: a clean fold has exactly one reversal, which any
+      noise tolerance would swallow.
     - Three traps, all documented and tested: a **polar** `Cz(Cx)` is a lying arc, so column scanning
       averages its two branches into a wrong curve — switch `orientation` to rows; a **legend**
       contains segments of the exact curve colour that no tolerance can reject — hence rectangular

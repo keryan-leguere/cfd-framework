@@ -176,28 +176,86 @@
     ctx.restore();
   };
 
+  Vue.MODES_MASQUE = {
+    /* Les pixels retenus sont peints d'une couleur franche. */
+    surbrillance: 'surbrillance',
+    /* Les pixels ÉCARTÉS sont voilés : seuls les retenus gardent leurs couleurs. */
+    isoler: 'isoler',
+    /* Les deux à la fois : le plus lisible sur une figure chargée. */
+    lesDeux: 'les-deux'
+  };
+
   /*
-   * Surimpression du masque de détection : les pixels retenus sont teintés.
-   * Construite une fois dans un canevas hors écran à la taille de la ZONE, puis
-   * étirée — bien plus rapide que de repeindre pixel par pixel à chaque zoom.
+   * Calque de l'aperçu du masque, construit une fois dans un canevas hors écran
+   * à la taille de la ZONE, puis étiré — bien plus rapide que de repeindre
+   * pixel par pixel à chaque zoom.
+   *
+   * options :
+   *   couleur    {r,g,b} de surbrillance
+   *   mode       'surbrillance' | 'isoler' | 'les-deux'
+   *   epaissir   0 ou 1 : épaissit le rendu d'un pixel
+   *   voile      {r,g,b} du voile appliqué aux pixels écartés
+   *   opaciteVoile  0-255
+   *
+   * `epaissir` mérite un mot : un trait d'un pixel affiché à l'échelle 0,4 ne
+   * couvre plus un pixel d'écran entier et disparaît par endroits — l'aperçu
+   * donne alors l'impression d'un masque troué alors que le masque est intact.
+   * La dilatation ne touche QUE l'affichage, jamais les points extraits.
    */
-  Vue.calqueMasque = function (info, couleur, fabriquerCanvas) {
-    var c = fabriquerCanvas(info.largeurZone, info.hauteurZone);
-    var ctx = c.getContext('2d');
-    var image = ctx.createImageData(info.largeurZone, info.hauteurZone);
-    var d = image.data;
-    for (var i = 0; i < info.masque.length; i++) {
-      if (!info.masque[i]) { continue; }
-      var j = i * 4;
-      d[j] = couleur.r; d[j + 1] = couleur.g; d[j + 2] = couleur.b; d[j + 3] = 255;
+  Vue.calqueMasque = function (info, options, fabriquerCanvas) {
+    options = options || {};
+    var couleur = options.couleur || { r: 255, g: 0, b: 255 };
+    var mode = options.mode || Vue.MODES_MASQUE.surbrillance;
+    var voile = options.voile || { r: 255, g: 255, b: 255 };
+    var opaciteVoile = (options.opaciteVoile === undefined) ? 190 : options.opaciteVoile;
+
+    var w = info.largeurZone, h = info.hauteurZone;
+    var source = info.masque;
+
+    /* Dilatation d'affichage en 4-connexité. */
+    var vu = source;
+    if (options.epaissir) {
+      vu = new Uint8Array(w * h);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var i = y * w + x;
+          if (source[i]
+              || (x > 0 && source[i - 1]) || (x < w - 1 && source[i + 1])
+              || (y > 0 && source[i - w]) || (y < h - 1 && source[i + w])) {
+            vu[i] = 1;
+          }
+        }
+      }
     }
+
+    var c = fabriquerCanvas(w, h);
+    var ctx = c.getContext('2d');
+    var image = ctx.createImageData(w, h);
+    var d = image.data;
+
+    var peindre = (mode !== Vue.MODES_MASQUE.isoler);
+    var voiler = (mode !== Vue.MODES_MASQUE.surbrillance);
+
+    for (var p = 0; p < vu.length; p++) {
+      var j = p * 4;
+      if (vu[p]) {
+        if (peindre) {
+          d[j] = couleur.r; d[j + 1] = couleur.g; d[j + 2] = couleur.b; d[j + 3] = 255;
+        }
+        /* En mode « isoler » seul, le pixel retenu reste transparent : on veut
+           voir sa vraie couleur, c'est tout l'intérêt. */
+      } else if (voiler) {
+        d[j] = voile.r; d[j + 1] = voile.g; d[j + 2] = voile.b; d[j + 3] = opaciteVoile;
+      }
+    }
+
     ctx.putImageData(image, 0, 0);
     return c;
   };
 
   Vue.dessinerMasque = function (ctx, vue, calque, zone, opacite) {
     ctx.save();
-    ctx.globalAlpha = (opacite === undefined) ? 0.55 : opacite;
+    ctx.globalAlpha = (opacite === undefined) ? 0.85 : opacite;
     ctx.imageSmoothingEnabled = false;
     var a = Vue.versEcran(vue, zone.x0, zone.y0);
     ctx.drawImage(calque, a.cx, a.cy,

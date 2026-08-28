@@ -95,6 +95,61 @@ axes** s'ajoute le rognage du tracé par le cadre : le trait y est coupé, et le
 milieu de ce qu'il en reste est décalé. Ces deux effets sont mesurés et
 verrouillés par la suite d'intégration.
 
+## 3 bis. Trier sur le type de trait
+
+Certaines planches — les plus anciennes, et toutes celles pensées pour la
+photocopie — ne distinguent pas leurs courbes par la couleur mais par le
+**tracé** : plein, tirets, pointillé, tiret-point. La détection par couleur les
+ramasse alors toutes ensemble, et **aucune tolérance ne peut les séparer** :
+elles ont exactement la même couleur.
+
+Ce qui les sépare n'est pas colorimétrique, c'est **structurel**. Un trait plein
+forme *une* composante connexe qui traverse le graphique ; un trait discontinu
+en forme des dizaines, courtes et alignées. L'outil étiquette donc les
+composantes connexes du masque et les trie sur leur étendue.
+
+| Réglage « type de trait » | Garde |
+|---------------------------|-------|
+| indifférent | tout |
+| continu | les composantes couvrant une bonne part de l'étendue du tracé |
+| tirets | les composantes courtes, nettement plus longues qu'épaisses |
+| pointillé | les composantes aussi longues qu'épaisses |
+| tout discontinu | tirets et pointillé ensemble |
+
+Deux détails commandent la fiabilité de ce tri :
+
+- **La connexité est prise en 8 voisins**, diagonales comprises. Un trait
+  oblique d'un pixel d'épaisseur est une échelle dont les pixels ne se touchent
+  que par les coins : en 4-connexité, une seule droite inclinée se
+  fragmenterait en autant de composantes que de pixels et passerait pour du
+  pointillé.
+- **Les seuils sont relatifs, jamais en pixels.** « Continu » se juge sur
+  l'étendue *totale* du tracé — pas sur la plus longue composante présente,
+  faute de quoi une planche ne portant qu'un pointillé verrait son plus long
+  point sacré trait plein. Et la frontière point/tiret se cale sur
+  l'**épaisseur** mesurée du trait, si bien qu'elle suit d'elle-même une
+  planche fine ou une planche grossie.
+
+Sur la figure d'essai `exemple_traits.png` — trois courbes noires, trois tracés
+— chaque filtre isole sa courbe avec plus de 97 % des points correctement
+attribués et un écart médian de 0,03 à 0,11 % de l'étendue.
+
+### Combler les lacunes
+
+Une courbe en tirets extraite telle quelle donne une série trouée. Le réglage
+**« combler les lacunes »** relie les tronçons par interpolation le long de
+l'axe de balayage, jusqu'à un plafond en pixels.
+
+Ce plafond est essentiel : sans lui, on relierait aussi les deux bords d'une
+*vraie* interruption — courbe masquée par un symbole, passage hors cadre — et
+l'on inventerait des données. Le régler un peu au-dessus de la longueur
+d'espace mesurée, que l'outil affiche après chaque détection
+(« marque 8 px, espace 5 px »).
+
+Les statistiques distinguent toujours les points **détectés** des points
+**interpolés**, pour qu'on sache ce qui vient de l'image et ce qui vient du
+calcul.
+
 ## 4. Restreindre : zone d'analyse et exclusions
 
 ### La zone
@@ -143,9 +198,21 @@ défaut.
    toujours un pixel de bord, donc un mélange trait/fond qui fausse la cible.
    *Maj+clic* prend au contraire la teinte la plus éloignée du fond dans la
    fenêtre — utile quand on a cliqué juste à côté du trait.
-3. Activer l'**aperçu du masque** : les pixels retenus s'affichent en magenta.
-   Régler les tolérances en le regardant, pas en regardant le résultat. La
-   courbe doit apparaître continue, sans que le fond ne s'allume.
+3. Activer l'**aperçu du masque** et régler les tolérances en le regardant,
+   pas en regardant le résultat : la courbe doit apparaître continue, sans que
+   le fond ne s'allume. Trois rendus, selon la planche :
+   - *surligner et estomper le reste* (par défaut) — le plus lisible sur une
+     figure chargée : ce qui est retenu ressort, tout le reste s'efface ;
+   - *surligner seulement* — quand on veut garder l'image bien visible ;
+   - *estomper le reste seulement* — les pixels retenus gardent leur **vraie
+     couleur**, utile pour juger si la tolérance mord sur une teinte voisine.
+
+   La couleur de surlignage est choisie automatiquement pour trancher sur la
+   cible : un aperçu magenta sur une courbe magenta serait invisible, or c'est
+   justement cette courbe que l'on regarde. L'option **épaissir** dilate
+   l'aperçu d'un pixel — sans elle, un trait fin vu à faible zoom paraît troué
+   alors que le masque est intact. Elle ne touche que l'affichage, jamais les
+   points extraits.
 4. Choisir l'**orientation**, puis le **mode**.
 5. Détecter, et lire les statistiques : `lignes retenues / lignes vues` dit
    immédiatement si la courbe a été suivie sur toute sa longueur.
@@ -156,11 +223,10 @@ voisines, et propose directement les teintes des courbes présentes.
 
 ## 7. Ce que l'automatique ne fera pas
 
-- **Courbes en pointillés** : chaque tiret est un segment isolé ; le résultat
-  est troué. Baisser l'épaisseur minimale aide, pointer à la main reste souvent
-  plus rapide.
 - **Deux courbes de même couleur qui se superposent** sur une portion : aucune
-  information ne permet de les séparer là où elles sont confondues.
+  information ne permet de les séparer là où elles sont confondues. Là où deux
+  tracés différents se *croisent*, ils fusionnent en une seule composante, que
+  le tri par type de trait attribue en bloc au trait le plus long.
 - **Fond texturé, tramé ou photographié** : le critère suppose des aplats.
 - **Courbe de la couleur de la grille** : à traiter par la zone et l'épaisseur
   maximale, pas par la couleur.

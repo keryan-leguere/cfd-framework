@@ -253,6 +253,20 @@ table.reperes .repere-nom { cursor: pointer; }
 .curseur b { color: var(--texte); font-variant-numeric: tabular-nums; }
 .interrupteur { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--texte-doux); }
 
+fieldset.apercu-reglages {
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  padding: 4px 10px 10px; margin: 2px 0 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+fieldset.apercu-reglages legend { padding: 0 4px; }
+
+.reglages-grille {
+  border-left: 3px solid var(--accent-clair);
+  padding-left: 9px; display: flex; flex-direction: column; gap: 7px;
+}
+.avertissements { margin: 0; font-size: 12px; color: var(--alerte); }
+.avertissements:empty { display: none; }
+
 /* ---------- Export ---------- */
 .apercu-export, .notes {
   width: 100%; resize: vertical;

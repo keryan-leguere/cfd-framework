@@ -210,6 +210,41 @@
     return meilleur;
   };
 
+  /*
+   * Couleur de surbrillance la plus lisible sur une cible donnée.
+   *
+   * Un aperçu de masque peint en magenta est parfait sur une courbe bleue et
+   * illisible sur une courbe magenta — or c'est justement sur SA courbe que
+   * l'utilisateur regarde. On choisit donc, dans une petite palette de teintes
+   * franches, celle qui s'écarte le plus de la cible ET du fond au sens de
+   * L*a*b*.
+   */
+  Couleur.PALETTE_SURBRILLANCE = [
+    { r: 255, g: 0, b: 255 },   /* magenta */
+    { r: 0, g: 255, b: 60 },    /* vert vif */
+    { r: 0, g: 220, b: 255 },   /* cyan */
+    { r: 255, g: 140, b: 0 },   /* orange */
+    { r: 255, g: 40, b: 40 },   /* rouge */
+    { r: 70, g: 70, b: 255 }    /* bleu */
+  ];
+
+  Couleur.contrastee = function (cible, fond) {
+    var labCible = Couleur.rgbVersLab(cible.r, cible.g, cible.b);
+    var labFond = fond
+      ? Couleur.rgbVersLab(fond.r, fond.g, fond.b)
+      : Couleur.rgbVersLab(255, 255, 255);
+
+    var meilleur = Couleur.PALETTE_SURBRILLANCE[0], meilleurScore = -1;
+    for (var i = 0; i < Couleur.PALETTE_SURBRILLANCE.length; i++) {
+      var c = Couleur.PALETTE_SURBRILLANCE[i];
+      var lab = Couleur.rgbVersLab(c.r, c.g, c.b);
+      /* Le maillon faible commande : on maximise le plus petit des deux écarts. */
+      var score = Math.min(Couleur.deltaE(lab, labCible), Couleur.deltaE(lab, labFond));
+      if (score > meilleurScore) { meilleurScore = score; meilleur = c; }
+    }
+    return meilleur;
+  };
+
   CFDD.Couleur = Couleur;
   if (typeof module !== 'undefined' && module.exports) { module.exports = Couleur; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

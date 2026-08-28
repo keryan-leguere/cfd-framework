@@ -74,10 +74,13 @@
       a.egal(libre.dx, 50); a.egal(libre.dy, 50);
     });
 
-    test('construit un calque de masque aux bonnes dimensions', function (a) {
-      /* Faux canevas : on ne vérifie ici que la géométrie et le remplissage. */
+    /*
+     * Faux canevas : on ne vérifie ici que la géométrie et le remplissage du
+     * calque, pas le rendu, qui relève du navigateur.
+     */
+    function fauxCanevas() {
       var pose = null;
-      function fabriquer(l, h) {
+      var fabriquer = function (l, h) {
         return {
           width: l, height: h,
           getContext: function () {
@@ -89,16 +92,81 @@
             };
           }
         };
-      }
-      var info = {
+      };
+      fabriquer.pose = function () { return pose; };
+      return fabriquer;
+    }
+
+    /* Masque 3x2 : deux pixels retenus, aux deux coins opposés. */
+    function infoTest() {
+      return {
         largeurZone: 3, hauteurZone: 2,
         masque: new Uint8Array([1, 0, 0, 0, 0, 1])
       };
-      var c = CFDD.Vue.calqueMasque(info, { r: 255, g: 0, b: 0 }, fabriquer);
+    }
+
+    test('construit un calque de masque aux bonnes dimensions', function (a) {
+      var fabriquer = fauxCanevas();
+      var c = V.calqueMasque(infoTest(), { couleur: { r: 255, g: 0, b: 0 } }, fabriquer);
       a.egal(c.width, 3); a.egal(c.height, 2);
-      a.egal(pose.data[3], 255, 'premier pixel opaque');
-      a.egal(pose.data[7], 0, 'deuxième pixel transparent');
-      a.egal(pose.data[5 * 4 + 3], 255, 'dernier pixel opaque');
+      var d = fabriquer.pose().data;
+      a.egal(d[3], 255, 'premier pixel opaque');
+      a.egal(d[0], 255, 'peint dans la couleur demandée');
+      a.egal(d[7], 0, 'deuxième pixel transparent');
+      a.egal(d[5 * 4 + 3], 255, 'dernier pixel opaque');
     });
+
+    test('le mode « isoler » voile les pixels écartés et non les retenus', function (a) {
+      var fabriquer = fauxCanevas();
+      V.calqueMasque(infoTest(),
+        { mode: V.MODES_MASQUE.isoler, voile: { r: 10, g: 20, b: 30 }, opaciteVoile: 200 },
+        fabriquer);
+      var d = fabriquer.pose().data;
+      /* Retenu : transparent, pour laisser voir sa vraie couleur. */
+      a.egal(d[3], 0, 'pixel retenu laissé transparent');
+      /* Écarté : voilé. */
+      a.egal(d[1 * 4 + 3], 200, 'pixel écarté voilé');
+      a.egal(d[1 * 4], 10, 'couleur du voile');
+    });
+
+    test('le mode « les-deux » peint les retenus et voile le reste', function (a) {
+      var fabriquer = fauxCanevas();
+      V.calqueMasque(infoTest(),
+        { mode: V.MODES_MASQUE.lesDeux, couleur: { r: 0, g: 255, b: 0 }, opaciteVoile: 150 },
+        fabriquer);
+      var d = fabriquer.pose().data;
+      a.egal(d[3], 255, 'retenu peint');
+      a.egal(d[1], 255, 'en vert');
+      a.egal(d[1 * 4 + 3], 150, 'écarté voilé');
+    });
+
+    test('l’épaississement rend visible un trait d’un pixel', function (a) {
+      /*
+       * À l'échelle 0,4 un trait d'un pixel ne couvre plus un pixel d'écran et
+       * l'aperçu paraît troué alors que le masque est intact. La dilatation ne
+       * touche que l'affichage.
+       */
+      var fabriquer = fauxCanevas();
+      var info = { largeurZone: 3, hauteurZone: 3, masque: new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0]) };
+      V.calqueMasque(info, { couleur: { r: 255, g: 0, b: 255 }, epaissir: 1 }, fabriquer);
+      var d = fabriquer.pose().data;
+      /* Le centre et ses quatre voisins directs sont peints, les coins non. */
+      a.egal(d[4 * 4 + 3], 255, 'centre');
+      a.egal(d[1 * 4 + 3], 255, 'voisin du haut');
+      a.egal(d[3 * 4 + 3], 255, 'voisin de gauche');
+      a.egal(d[5 * 4 + 3], 255, 'voisin de droite');
+      a.egal(d[7 * 4 + 3], 255, 'voisin du bas');
+      a.egal(d[0 * 4 + 3], 0, 'coin non peint (dilatation en 4-connexité)');
+    });
+
+    test('sans épaississement, seuls les pixels du masque sont peints', function (a) {
+      var fabriquer = fauxCanevas();
+      var info = { largeurZone: 3, hauteurZone: 3, masque: new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0]) };
+      V.calqueMasque(info, { couleur: { r: 255, g: 0, b: 255 } }, fabriquer);
+      var d = fabriquer.pose().data;
+      a.egal(d[4 * 4 + 3], 255);
+      a.egal(d[1 * 4 + 3], 0);
+    });
+
   });
 })();

@@ -20,6 +20,7 @@ portions en pointillés ou masquées par un symbole.
 |--------|-------|----------|
 | **CSV — format long** | une ligne par point, colonne `serie` en tête | pandas, R, tableur ; supporte des séries de longueurs différentes |
 | **CSV — colonnes par série** | deux colonnes `x`, `y` par série, côte à côte | lecture humaine, tableur ; les séries courtes sont complétées par des vides |
+| **CSV — grille X commune** | une colonne `x`, puis une colonne par série, toutes interpolées | superposer, soustraire, comparer des courbes qui n'ont pas les mêmes abscisses |
 | **Texte — deux colonnes** | `x`⇥`y`, un bloc par série | collage direct dans un tableur |
 | **JSON** | structure imbriquée avec noms et couleurs | reprise par un script |
 | **Python / NumPy** | `import numpy as np` puis un couple de tableaux par série | collage dans un carnet ou un script |
@@ -45,6 +46,52 @@ plutôt que l'exception après une détection automatique.
   digitalisation vaut trois à quatre chiffres au mieux, en exporter quinze
   n'ajoute que du bruit. La notation exponentielle n'apparaît que hors de la
   plage lisible.
+
+## Grille X commune
+
+Deux courbes digitalisées séparément n'ont **jamais** les mêmes abscisses :
+chacune tombe là où ses pixels tombaient. Impossible, en l'état, de les
+retrancher l'une de l'autre ni de les mettre côte à côte dans un tableur.
+
+Le format **CSV — grille X commune** ramène toutes les séries sur une seule
+abscisse par interpolation linéaire :
+
+```
+x,Re = 3e6,Re = 6e6
+0.02,0.512,0.498
+0.0205,0.531,0.517
+```
+
+Trois réglages :
+
+- **Points** — taille de la grille. Digitaliser ne crée pas d'information :
+  au-delà du nombre de points réellement extraits, on ne fait qu'interpoler
+  plus finement le même tracé.
+- **Espacement** — linéaire ou logarithmique. Le second s'impose quand l'axe X
+  est lui-même logarithmique, sinon les décades basses sont sous-échantillonnées.
+- **Domaine** — *recouvrement commun* (l'intervalle où toutes les séries sont
+  définies) ou *étendue totale* (l'union, avec des cellules vides là où une
+  série n'existe pas).
+
+Hors du domaine propre d'une série, la cellule reste **vide**. L'outil
+n'extrapole jamais : prolonger une courbe au-delà de ce que l'image montre
+serait fabriquer des données.
+
+### Ce qui est refusé, et dit
+
+Une série n'est ré-échantillonnable en x que si elle **est une fonction de x**.
+Une polaire `Cz(Cx)` ne l'est pas : c'est un arc couché, où un même `Cx` porte
+deux `Cz`. L'interpoler en x fondrait ses deux branches en une moyenne sans
+signification — et le tableau produit n'aurait l'air de rien de suspect.
+
+L'outil détecte le cas et écarte la série en le disant. Le critère n'est pas le
+simple comptage des changements de sens en x : une courbe repliée proprement
+n'en compte qu'un, qu'une tolérance au bruit avalerait. Ce sont les **longueurs
+des passages monotones** qui tranchent — le bruit de détection produit une nuée
+d'allers-retours minuscules, un vrai repli produit deux parcours étendus.
+
+Sont également signalées et écartées les séries de moins de deux points, et le
+cas où les domaines ne se recouvrent pas du tout.
 
 ## Fichier de projet
 

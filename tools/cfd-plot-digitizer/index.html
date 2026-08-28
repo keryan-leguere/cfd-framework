@@ -140,6 +140,32 @@
         <div id="palette" class="palette"></div>
         <button id="btn-palette" class="pleine-largeur">Proposer les couleurs du graphique</button>
 
+        <fieldset class="apercu-reglages">
+          <legend>
+            <label class="interrupteur">
+              <input type="checkbox" id="apercu" checked> Aperçu du masque
+            </label>
+          </legend>
+          <div class="ligne">
+            <label class="champ">Rendu
+              <select id="apercu-mode">
+                <option value="les-deux">surligner et estomper le reste</option>
+                <option value="surbrillance">surligner seulement</option>
+                <option value="isoler">estomper le reste seulement</option>
+              </select>
+            </label>
+          </div>
+          <label class="curseur">
+            <span>Intensité <b id="val-apercu-opacite">85</b> %</span>
+            <input type="range" id="apercu-opacite" min="20" max="100" value="85">
+          </label>
+          <div class="ligne">
+            <label class="interrupteur">
+              <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
+            </label>
+          </div>
+        </fieldset>
+
         <label class="curseur">
           <span>Tolérance de teinte <b id="val-chroma">20</b></span>
           <input type="range" id="tol-chroma" min="1" max="60" value="20">
@@ -172,6 +198,22 @@
           </label>
         </div>
         <div class="ligne">
+          <label class="champ">Type de trait
+            <select id="filtre-trait">
+              <option value="tous">indifférent</option>
+              <option value="continu">continu</option>
+              <option value="tirets">tirets</option>
+              <option value="pointillé">pointillé</option>
+              <option value="discontinu">tout discontinu (tirets et pointillés)</option>
+            </select>
+          </label>
+        </div>
+        <p class="aide">
+          Sur une planche en noir et blanc, deux courbes n’ont souvent que leur
+          tracé pour les distinguer. Aucune tolérance de couleur ne peut les
+          séparer&nbsp;; le tri sur le type de trait, si.
+        </p>
+        <div class="ligne">
           <label class="champ">Pas <input type="number" id="pas" min="1" max="50" value="1"></label>
           <label class="champ">Épaisseur min. <input type="number" id="longueur-min" min="1" max="99" value="1"></label>
           <label class="champ">Épaisseur max. <input type="number" id="longueur-max" min="0" max="999" value="0"></label>
@@ -179,11 +221,19 @@
         <div class="ligne">
           <label class="champ">Allègement (px)
             <input type="number" id="simplification" min="0" max="20" step="0.1" value="0"></label>
-          <label class="interrupteur"><input type="checkbox" id="apercu" checked> Aperçu du masque</label>
+          <label class="champ">Combler les lacunes (px)
+            <input type="number" id="combler" min="0" max="200" value="0"></label>
         </div>
+        <p class="aide">
+          Le comblement relie les tronçons d’un trait discontinu par
+          interpolation. Le plafond évite de relier aussi une vraie interruption
+          — courbe masquée par un symbole, sortie du cadre — et d’inventer des
+          points. Le viser un peu au-dessus de l’espace mesuré ci-dessous.
+        </p>
 
         <button id="btn-detecter" class="primaire pleine-largeur">Détecter la courbe</button>
         <p id="stats-detection" class="stats"></p>
+        <p id="stats-trait" class="stats"></p>
       </div>
     </details>
 
@@ -195,6 +245,7 @@
             <select id="format">
               <option value="csv-long">CSV — format long</option>
               <option value="csv-large">CSV — colonnes par série</option>
+              <option value="csv-grille">CSV — grille X commune (interpolée)</option>
               <option value="colonnes">Texte — deux colonnes</option>
               <option value="json">JSON</option>
               <option value="python">Python / NumPy</option>
@@ -212,6 +263,30 @@
           </label>
           <label class="champ">Chiffres significatifs
             <input type="number" id="decimales" min="1" max="15" value="6"></label>
+        </div>
+        <div id="reglages-grille" class="reglages-grille" hidden>
+          <div class="ligne">
+            <label class="champ">Points <input type="number" id="grille-points" min="2" max="20000" value="200"></label>
+            <label class="champ">Espacement
+              <select id="grille-espacement">
+                <option value="lineaire">linéaire</option>
+                <option value="log">logarithmique</option>
+              </select>
+            </label>
+            <label class="champ">Domaine
+              <select id="grille-domaine">
+                <option value="intersection">recouvrement commun</option>
+                <option value="union">étendue totale</option>
+              </select>
+            </label>
+          </div>
+          <p class="aide">
+            Toutes les séries sont interpolées sur une même abscisse — la forme
+            qu’il faut pour les superposer dans un tableur ou en retrancher une
+            d’une autre. Hors du domaine propre d’une série, la cellule reste
+            vide&nbsp;: extrapoler inventerait des valeurs absentes de l’image.
+          </p>
+          <p id="avertissements-grille" class="avertissements"></p>
         </div>
         <textarea id="apercu-export" class="apercu-export" readonly
                   spellcheck="false" aria-label="Aperçu de l’export"></textarea>
@@ -266,6 +341,7 @@
 <script src="app/js/00_base.js"></script>
 <script src="app/js/10_couleur.js"></script>
 <script src="app/js/20_calibration.js"></script>
+<script src="app/js/25_trait.js"></script>
 <script src="app/js/30_detection.js"></script>
 <script src="app/js/40_export.js"></script>
 <script src="app/js/50_projet.js"></script>

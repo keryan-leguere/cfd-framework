@@ -26,6 +26,7 @@
   var CFDD = racine.CFDD || (racine.CFDD = {});
   var Base = CFDD.Base;
   var Couleur = CFDD.Couleur;
+  var Trait = CFDD.Trait;
   var Detection = {};
 
   Detection.MODES = {
@@ -46,7 +47,9 @@
     mode: 'moyenne',
     orientation: 'colonnes',
     sautMax: 0,            /* mode « suivi » : saut vertical max en pixels ; 0 = auto */
-    simplification: 0      /* tolérance Douglas-Peucker en pixels ; 0 = désactivé */
+    simplification: 0,     /* tolérance Douglas-Peucker en pixels ; 0 = désactivé */
+    filtreTrait: 'tous',   /* 'tous' | 'continu' | 'discontinu' (cf. 25_trait.js) */
+    comblerLacunes: 0      /* comble les trous d'un trait discontinu, en pixels */
     /* Deux options rectangulaires viennent en plus, hors valeurs par défaut :
        `zone` (rectangle analysé) et `zonesExclues` (rectangles ignorés). */
   };
@@ -193,6 +196,46 @@
   };
 
   /*
+   * Comble les trous d'une série le long de l'axe de balayage.
+   *
+   * Un trait en tirets rend une suite de tronçons séparés par des vides ; la
+   * courbe sous-jacente, elle, est continue. Interpoler les vides jusqu'à
+   * `lacuneMax` restitue une série exploitable — c'est ce qui rend une courbe
+   * en tirets utilisable au lieu d'un semis troué.
+   *
+   * Le plafond est essentiel : sans lui, on relierait aussi les deux bords
+   * d'une véritable interruption (courbe masquée par un symbole, sortie du
+   * cadre) et l'on inventerait des données. Régler `lacuneMax` un peu au-dessus
+   * de la longueur d'espace mesurée par `Trait.mesurer`.
+   */
+  Detection.comblerLacunes = function (points, pas, lacuneMax, orientation) {
+    if (!(lacuneMax > 0) || points.length < 2) { return points.slice(); }
+    var parLignes = (orientation === 'lignes');
+    var sortie = [points[0]];
+
+    for (var i = 1; i < points.length; i++) {
+      var a = points[i - 1], b = points[i];
+      var uA = parLignes ? a.py : a.px;
+      var uB = parLignes ? b.py : b.px;
+      var vA = parLignes ? a.px : a.py;
+      var vB = parLignes ? b.px : b.py;
+      var ecart = uB - uA;
+
+      if (ecart > pas && ecart <= lacuneMax) {
+        var n = Math.max(2, Math.round(ecart / pas));
+        for (var k = 1; k < n; k++) {
+          var t = k / n;
+          var u = uA + t * ecart;
+          var v = vA + t * (vB - vA);
+          sortie.push(parLignes ? { px: v, py: u } : { px: u, py: v });
+        }
+      }
+      sortie.push(b);
+    }
+    return sortie;
+  };
+
+  /*
    * Détection complète.
    *
    * image   : {data: Uint8ClampedArray RGBA, width, height}
@@ -215,6 +258,21 @@
     var parLignes = (o.orientation === 'lignes');
     var pas = Math.max(1, Math.round(o.pas));
     var info = Detection.construireMasque(image, cible, o);
+
+    /*
+     * Analyse du trait. Elle sert à deux choses : trier les composantes quand
+     * l'utilisateur demande un type précis, et renseigner le style mesuré.
+     * L'étiquetage coûte un parcours du masque, négligeable devant la
+     * conversion colorimétrique déjà faite.
+     */
+    var composantes = Trait.composantes(info);
+    if (o.filtreTrait && o.filtreTrait !== 'tous') {
+      info = Trait.filtrer(info, composantes, o.filtreTrait, o.orientation);
+      /* Le masque a changé : les composantes aussi, il faut les reprendre. */
+      composantes = Trait.composantes(info);
+    }
+    var trait = Trait.mesurer(composantes, o.orientation);
+
     var points = [];
     var lignesVues = 0, lignesRetenues = 0;
     var precedent = null;
@@ -302,6 +360,12 @@
     }
 
     var pointsBruts = points.length;
+
+    if (o.comblerLacunes > 0) {
+      points = Detection.comblerLacunes(points, pas, o.comblerLacunes, o.orientation);
+    }
+    var pointsCombles = points.length;
+
     if (o.simplification > 0 && points.length > 2) {
       /* Douglas-Peucker travaille sur {x,y} : on adapte le nommage. */
       var enXY = points.map(function (p) { return { x: p.px, y: p.py }; });
@@ -318,7 +382,9 @@
         lignesVues: lignesVues,
         lignesRetenues: lignesRetenues,
         pointsBruts: pointsBruts,
-        pointsFinaux: points.length
+        pointsCombles: pointsCombles,
+        pointsFinaux: points.length,
+        trait: trait
       }
     };
   };

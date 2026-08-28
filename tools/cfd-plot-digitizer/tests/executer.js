@@ -12,10 +12,11 @@
 var path = require('path');
 var racine = path.join(__dirname, '..');
 
-var MODULES = ['00_base', '10_couleur', '20_calibration', '30_detection',
+var MODULES = ['00_base', '10_couleur', '20_calibration', '25_trait', '30_detection',
                '40_export', '50_projet', '60_vue'];
-var SUITES = ['test_base', 'test_couleur', 'test_calibration', 'test_detection',
-              'test_export', 'test_projet', 'test_vue', 'test_integration'];
+var SUITES = ['test_base', 'test_couleur', 'test_calibration', 'test_trait',
+              'test_detection', 'test_export', 'test_projet', 'test_vue',
+              'test_integration'];
 
 MODULES.forEach(function (m) { require(path.join(racine, 'app', 'js', m + '.js')); });
 require(path.join(__dirname, '00_cadre.js'));

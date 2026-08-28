@@ -269,6 +269,20 @@ table.reperes .repere-nom { cursor: pointer; }
 .curseur b { color: var(--texte); font-variant-numeric: tabular-nums; }
 .interrupteur { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--texte-doux); }
 
+fieldset.apercu-reglages {
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  padding: 4px 10px 10px; margin: 2px 0 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+fieldset.apercu-reglages legend { padding: 0 4px; }
+
+.reglages-grille {
+  border-left: 3px solid var(--accent-clair);
+  padding-left: 9px; display: flex; flex-direction: column; gap: 7px;
+}
+.avertissements { margin: 0; font-size: 12px; color: var(--alerte); }
+.avertissements:empty { display: none; }
+
 /* ---------- Export ---------- */
 .apercu-export, .notes {
   width: 100%; resize: vertical;
@@ -437,6 +451,32 @@ dialog form { margin-top: 18px; text-align: right; }
         <div id="palette" class="palette"></div>
         <button id="btn-palette" class="pleine-largeur">Proposer les couleurs du graphique</button>
 
+        <fieldset class="apercu-reglages">
+          <legend>
+            <label class="interrupteur">
+              <input type="checkbox" id="apercu" checked> Aperçu du masque
+            </label>
+          </legend>
+          <div class="ligne">
+            <label class="champ">Rendu
+              <select id="apercu-mode">
+                <option value="les-deux">surligner et estomper le reste</option>
+                <option value="surbrillance">surligner seulement</option>
+                <option value="isoler">estomper le reste seulement</option>
+              </select>
+            </label>
+          </div>
+          <label class="curseur">
+            <span>Intensité <b id="val-apercu-opacite">85</b> %</span>
+            <input type="range" id="apercu-opacite" min="20" max="100" value="85">
+          </label>
+          <div class="ligne">
+            <label class="interrupteur">
+              <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
+            </label>
+          </div>
+        </fieldset>
+
         <label class="curseur">
           <span>Tolérance de teinte <b id="val-chroma">20</b></span>
           <input type="range" id="tol-chroma" min="1" max="60" value="20">
@@ -469,6 +509,22 @@ dialog form { margin-top: 18px; text-align: right; }
           </label>
         </div>
         <div class="ligne">
+          <label class="champ">Type de trait
+            <select id="filtre-trait">
+              <option value="tous">indifférent</option>
+              <option value="continu">continu</option>
+              <option value="tirets">tirets</option>
+              <option value="pointillé">pointillé</option>
+              <option value="discontinu">tout discontinu (tirets et pointillés)</option>
+            </select>
+          </label>
+        </div>
+        <p class="aide">
+          Sur une planche en noir et blanc, deux courbes n’ont souvent que leur
+          tracé pour les distinguer. Aucune tolérance de couleur ne peut les
+          séparer&nbsp;; le tri sur le type de trait, si.
+        </p>
+        <div class="ligne">
           <label class="champ">Pas <input type="number" id="pas" min="1" max="50" value="1"></label>
           <label class="champ">Épaisseur min. <input type="number" id="longueur-min" min="1" max="99" value="1"></label>
           <label class="champ">Épaisseur max. <input type="number" id="longueur-max" min="0" max="999" value="0"></label>
@@ -476,11 +532,19 @@ dialog form { margin-top: 18px; text-align: right; }
         <div class="ligne">
           <label class="champ">Allègement (px)
             <input type="number" id="simplification" min="0" max="20" step="0.1" value="0"></label>
-          <label class="interrupteur"><input type="checkbox" id="apercu" checked> Aperçu du masque</label>
+          <label class="champ">Combler les lacunes (px)
+            <input type="number" id="combler" min="0" max="200" value="0"></label>
         </div>
+        <p class="aide">
+          Le comblement relie les tronçons d’un trait discontinu par
+          interpolation. Le plafond évite de relier aussi une vraie interruption
+          — courbe masquée par un symbole, sortie du cadre — et d’inventer des
+          points. Le viser un peu au-dessus de l’espace mesuré ci-dessous.
+        </p>
 
         <button id="btn-detecter" class="primaire pleine-largeur">Détecter la courbe</button>
         <p id="stats-detection" class="stats"></p>
+        <p id="stats-trait" class="stats"></p>
       </div>
     </details>
 
@@ -492,6 +556,7 @@ dialog form { margin-top: 18px; text-align: right; }
             <select id="format">
               <option value="csv-long">CSV — format long</option>
               <option value="csv-large">CSV — colonnes par série</option>
+              <option value="csv-grille">CSV — grille X commune (interpolée)</option>
               <option value="colonnes">Texte — deux colonnes</option>
               <option value="json">JSON</option>
               <option value="python">Python / NumPy</option>
@@ -509,6 +574,30 @@ dialog form { margin-top: 18px; text-align: right; }
           </label>
           <label class="champ">Chiffres significatifs
             <input type="number" id="decimales" min="1" max="15" value="6"></label>
+        </div>
+        <div id="reglages-grille" class="reglages-grille" hidden>
+          <div class="ligne">
+            <label class="champ">Points <input type="number" id="grille-points" min="2" max="20000" value="200"></label>
+            <label class="champ">Espacement
+              <select id="grille-espacement">
+                <option value="lineaire">linéaire</option>
+                <option value="log">logarithmique</option>
+              </select>
+            </label>
+            <label class="champ">Domaine
+              <select id="grille-domaine">
+                <option value="intersection">recouvrement commun</option>
+                <option value="union">étendue totale</option>
+              </select>
+            </label>
+          </div>
+          <p class="aide">
+            Toutes les séries sont interpolées sur une même abscisse — la forme
+            qu’il faut pour les superposer dans un tableur ou en retrancher une
+            d’une autre. Hors du domaine propre d’une série, la cellule reste
+            vide&nbsp;: extrapoler inventerait des valeurs absentes de l’image.
+          </p>
+          <p id="avertissements-grille" class="avertissements"></p>
         </div>
         <textarea id="apercu-export" class="apercu-export" readonly
                   spellcheck="false" aria-label="Aperçu de l’export"></textarea>
@@ -928,6 +1017,41 @@ dialog form { margin-top: 18px; text-align: right; }
     return meilleur;
   };
 
+  /*
+   * Couleur de surbrillance la plus lisible sur une cible donnée.
+   *
+   * Un aperçu de masque peint en magenta est parfait sur une courbe bleue et
+   * illisible sur une courbe magenta — or c'est justement sur SA courbe que
+   * l'utilisateur regarde. On choisit donc, dans une petite palette de teintes
+   * franches, celle qui s'écarte le plus de la cible ET du fond au sens de
+   * L*a*b*.
+   */
+  Couleur.PALETTE_SURBRILLANCE = [
+    { r: 255, g: 0, b: 255 },   /* magenta */
+    { r: 0, g: 255, b: 60 },    /* vert vif */
+    { r: 0, g: 220, b: 255 },   /* cyan */
+    { r: 255, g: 140, b: 0 },   /* orange */
+    { r: 255, g: 40, b: 40 },   /* rouge */
+    { r: 70, g: 70, b: 255 }    /* bleu */
+  ];
+
+  Couleur.contrastee = function (cible, fond) {
+    var labCible = Couleur.rgbVersLab(cible.r, cible.g, cible.b);
+    var labFond = fond
+      ? Couleur.rgbVersLab(fond.r, fond.g, fond.b)
+      : Couleur.rgbVersLab(255, 255, 255);
+
+    var meilleur = Couleur.PALETTE_SURBRILLANCE[0], meilleurScore = -1;
+    for (var i = 0; i < Couleur.PALETTE_SURBRILLANCE.length; i++) {
+      var c = Couleur.PALETTE_SURBRILLANCE[i];
+      var lab = Couleur.rgbVersLab(c.r, c.g, c.b);
+      /* Le maillon faible commande : on maximise le plus petit des deux écarts. */
+      var score = Math.min(Couleur.deltaE(lab, labCible), Couleur.deltaE(lab, labFond));
+      if (score > meilleurScore) { meilleurScore = score; meilleur = c; }
+    }
+    return meilleur;
+  };
+
   CFDD.Couleur = Couleur;
   if (typeof module !== 'undefined' && module.exports) { module.exports = Couleur; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -1132,6 +1256,319 @@ dialog form { margin-top: 18px; text-align: right; }
 
 </script>
 <script>
+/* app/js/25_trait.js */
+/*
+ * 25_trait.js — nature du trait : continu, tirets, pointillé, tiret-point.
+ *
+ * POURQUOI. Beaucoup de planches, surtout en noir et blanc, distinguent leurs
+ * courbes non par la couleur mais par le TYPE DE TRAIT. La détection par
+ * couleur y ramasse alors toutes les courbes d'un coup, et aucune tolérance ne
+ * peut les séparer : elles ont exactement la même couleur.
+ *
+ * COMMENT. Un trait continu forme UNE composante connexe qui traverse le
+ * graphique. Un trait discontinu en forme des dizaines, petites et alignées.
+ * Cette différence de structure — et non de couleur — est ce qui permet de les
+ * séparer. On étiquette donc les composantes connexes du masque, puis on les
+ * trie sur leur étendue le long de l'axe de balayage.
+ *
+ * Le même étiquetage sert à RECONNAÎTRE le type de trait (longueur des marques
+ * et des espaces), information reportée à l'utilisateur.
+ *
+ * Coordonnées locales à la zone d'analyse, comme le masque lui-même.
+ */
+(function (racine) {
+  'use strict';
+
+  var CFDD = racine.CFDD || (racine.CFDD = {});
+  var Trait = {};
+
+  Trait.STYLES = {
+    continu: 'continu',
+    tirets: 'tirets',
+    pointille: 'pointillé',
+    tiretPoint: 'tiret-point',
+    inconnu: 'inconnu'
+  };
+
+  Trait.FILTRES = {
+    /* Aucun tri : tout le masque est conservé. */
+    tous: 'tous',
+    /* Composantes longues : isole une courbe pleine. */
+    continu: 'continu',
+    /* Toutes les composantes courtes : tirets ET points confondus. */
+    discontinu: 'discontinu',
+    /* Composantes courtes mais nettement plus longues qu'épaisses. */
+    tirets: 'tirets',
+    /* Composantes aussi courtes qu'épaisses : des points. */
+    pointille: 'pointillé'
+  };
+
+  /*
+   * Étiquetage des composantes connexes du masque, en 8-connexité.
+   *
+   * La 8-connexité (diagonales comprises) n'est pas un détail : un trait
+   * oblique d'un pixel d'épaisseur est une échelle de pixels qui ne se touchent
+   * QUE par les coins. En 4-connexité, une seule droite inclinée se
+   * fragmenterait en autant de composantes que de pixels, et passerait pour du
+   * pointillé.
+   *
+   * Parcours en profondeur avec pile explicite : une zone de 600 x 400 tient
+   * 240 000 pixels, largement de quoi faire déborder la pile d'appels.
+   */
+  Trait.composantes = function (info) {
+    var w = info.largeurZone, h = info.hauteurZone;
+    var masque = info.masque;
+    var etiquettes = new Int32Array(w * h);
+    etiquettes.fill(-1);
+
+    var liste = [];
+    var pile = [];
+
+    for (var depart = 0; depart < masque.length; depart++) {
+      if (!masque[depart] || etiquettes[depart] !== -1) { continue; }
+
+      var id = liste.length;
+      var comp = { id: id, taille: 0, x0: w, y0: h, x1: -1, y1: -1 };
+      etiquettes[depart] = id;
+      pile.push(depart);
+
+      while (pile.length) {
+        var p = pile.pop();
+        var px = p % w;
+        var py = (p - px) / w;
+        comp.taille++;
+        if (px < comp.x0) { comp.x0 = px; }
+        if (px > comp.x1) { comp.x1 = px; }
+        if (py < comp.y0) { comp.y0 = py; }
+        if (py > comp.y1) { comp.y1 = py; }
+
+        for (var dy = -1; dy <= 1; dy++) {
+          var ny = py + dy;
+          if (ny < 0 || ny >= h) { continue; }
+          for (var dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) { continue; }
+            var nx = px + dx;
+            if (nx < 0 || nx >= w) { continue; }
+            var q = ny * w + nx;
+            if (masque[q] && etiquettes[q] === -1) {
+              etiquettes[q] = id;
+              pile.push(q);
+            }
+          }
+        }
+      }
+      liste.push(comp);
+    }
+
+    return { etiquettes: etiquettes, liste: liste };
+  };
+
+  /* Étendue d'une composante perpendiculairement à l'axe de balayage. */
+  function epaisseurDe(comp, parLignes) {
+    return parLignes ? (comp.x1 - comp.x0 + 1) : (comp.y1 - comp.y0 + 1);
+  }
+
+  /* Étendue d'une composante le long de l'axe de balayage. */
+  function etendue(comp, parLignes) {
+    return parLignes ? (comp.y1 - comp.y0 + 1) : (comp.x1 - comp.x0 + 1);
+  }
+
+  function debut(comp, parLignes) { return parLignes ? comp.y0 : comp.x0; }
+  function fin(comp, parLignes) { return parLignes ? comp.y1 : comp.x1; }
+
+  function mediane(valeurs) {
+    if (!valeurs.length) { return 0; }
+    var tri = valeurs.slice().sort(function (a, b) { return a - b; });
+    var milieu = Math.floor(tri.length / 2);
+    return (tri.length % 2) ? tri[milieu] : (tri[milieu - 1] + tri[milieu]) / 2;
+  }
+
+  /*
+   * Reconnaît le type de trait à partir des composantes.
+   *
+   * Retourne {style, marque, espace, periode, nbComposantes, couverture}
+   * où `marque` et `espace` sont des longueurs médianes en pixels, et
+   * `couverture` la fraction de l'étendue occupée qui est effectivement peinte.
+   */
+  Trait.mesurer = function (composantes, orientation) {
+    var parLignes = (orientation === 'lignes');
+    var liste = composantes.liste;
+
+    var vide = {
+      style: Trait.STYLES.inconnu, marque: 0, espace: 0, periode: 0,
+      nbComposantes: 0, couverture: 0
+    };
+    if (!liste.length) { return vide; }
+
+    /* Tri sur la position de départ le long de l'axe de balayage. */
+    var ordonnees = liste.slice().sort(function (a, b) {
+      return debut(a, parLignes) - debut(b, parLignes);
+    });
+
+    var etendues = [];
+    var minGlobal = Infinity, maxGlobal = -Infinity;
+    for (var i = 0; i < ordonnees.length; i++) {
+      etendues.push(etendue(ordonnees[i], parLignes));
+      minGlobal = Math.min(minGlobal, debut(ordonnees[i], parLignes));
+      maxGlobal = Math.max(maxGlobal, fin(ordonnees[i], parLignes));
+    }
+    var portee = maxGlobal - minGlobal + 1;
+
+    /*
+     * Couverture : part de la portée réellement peinte. On la calcule sur
+     * l'union des intervalles et non sur leur somme, sinon deux composantes qui
+     * se chevauchent la gonfleraient au-delà de 1.
+     */
+    var occupe = 0, curseurFin = -Infinity;
+    for (var j = 0; j < ordonnees.length; j++) {
+      var d = debut(ordonnees[j], parLignes), f = fin(ordonnees[j], parLignes);
+      if (d > curseurFin) {
+        occupe += f - d + 1;
+        curseurFin = f;
+      } else if (f > curseurFin) {
+        occupe += f - curseurFin;
+        curseurFin = f;
+      }
+    }
+    var couverture = portee > 0 ? (occupe / portee) : 0;
+
+    /* Espaces entre composantes successives, chevauchements ignorés. */
+    var espaces = [];
+    var precedenteFin = fin(ordonnees[0], parLignes);
+    for (var k = 1; k < ordonnees.length; k++) {
+      var ecart = debut(ordonnees[k], parLignes) - precedenteFin - 1;
+      if (ecart > 0) { espaces.push(ecart); }
+      precedenteFin = Math.max(precedenteFin, fin(ordonnees[k], parLignes));
+    }
+
+    var marque = mediane(etendues);
+    var espace = mediane(espaces);
+
+    var style;
+    if (liste.length === 1 || couverture >= 0.95 || !espaces.length) {
+      style = Trait.STYLES.continu;
+    } else if (marque <= 3) {
+      /* Des marques de l'ordre de l'épaisseur du trait : ce sont des points. */
+      style = Trait.STYLES.pointille;
+    } else {
+      /*
+       * Tiret-point : les marques alternent entre deux longueurs nettement
+       * différentes. On compare la médiane de la moitié haute à celle de la
+       * moitié basse ; un rapport marqué signe l'alternance.
+       */
+      var tri = etendues.slice().sort(function (a, b) { return a - b; });
+      var coupe = Math.floor(tri.length / 2);
+      var basses = tri.slice(0, coupe);
+      var hautes = tri.slice(tri.length - coupe);
+      var rapport = (basses.length && mediane(basses) > 0)
+        ? mediane(hautes) / mediane(basses) : 1;
+      style = (tri.length >= 4 && rapport >= 2.2)
+        ? Trait.STYLES.tiretPoint : Trait.STYLES.tirets;
+    }
+
+    return {
+      style: style,
+      marque: marque,
+      espace: espace,
+      periode: marque + espace,
+      nbComposantes: liste.length,
+      couverture: couverture
+    };
+  };
+
+  /*
+   * Reconstruit un masque ne gardant que les composantes du type demandé.
+   *
+   * Le seuil sépare « long » de « court » relativement à la composante la plus
+   * étendue : une courbe pleine traverse le graphique, un tiret fait quelques
+   * pixels. Un seuil relatif tient donc sans réglage quelle que soit la taille
+   * de l'image, là où un seuil en pixels devrait être réajusté à chaque figure.
+   *
+   * Retourne un objet de même forme que `construireMasque`, réutilisable tel
+   * quel par le balayage.
+   */
+  Trait.filtrer = function (info, composantes, filtre, orientation, seuilRelatif) {
+    if (!filtre || filtre === Trait.FILTRES.tous) { return info; }
+
+    var parLignes = (orientation === 'lignes');
+    seuilRelatif = (seuilRelatif === undefined) ? 0.25 : seuilRelatif;
+
+    var liste = composantes.liste;
+    if (!liste.length) { return info; }
+
+    var i;
+    var epaisseurs = [];
+    var minDebut = Infinity, maxFin = -Infinity;
+    for (i = 0; i < liste.length; i++) {
+      epaisseurs.push(epaisseurDe(liste[i], parLignes));
+      minDebut = Math.min(minDebut, debut(liste[i], parLignes));
+      maxFin = Math.max(maxFin, fin(liste[i], parLignes));
+    }
+
+    /*
+     * Une composante est « continue » lorsqu'elle couvre une bonne part de
+     * l'ÉTENDUE TOTALE du tracé — et non lorsqu'elle est la plus longue des
+     * composantes présentes. La nuance est décisive : sur une planche ne
+     * portant qu'une courbe en pointillé, le point le plus long resterait le
+     * maximum et tous les points passeraient pour du trait plein. Rapporté à
+     * l'étendue, un point reste un point, qu'il ait ou non un trait plein pour
+     * voisin.
+     */
+    var portee = (maxFin >= minDebut) ? (maxFin - minDebut + 1) : 1;
+    var seuilLong = portee * seuilRelatif;
+
+    /*
+     * Séparer les points des tirets demande une référence d'échelle, faute de
+     * quoi le seuil dépendrait de la résolution de l'image. Cette référence est
+     * l'ÉPAISSEUR du trait, que l'on mesure sur les composantes elles-mêmes :
+     * un point est aussi long qu'épais, un tiret est bien plus long. Le seuil
+     * suit donc automatiquement une planche fine ou une planche grossie.
+     */
+    var epaisseur = Math.max(1, mediane(epaisseurs));
+    var seuilPoint = Math.max(3, epaisseur * 2);
+
+    var garder = new Uint8Array(liste.length);
+    for (i = 0; i < liste.length; i++) {
+      var longueur = etendue(liste[i], parLignes);
+      var longue = longueur >= seuilLong;
+      var retenue;
+      switch (filtre) {
+        case Trait.FILTRES.continu:
+          retenue = longue; break;
+        case Trait.FILTRES.discontinu:
+          retenue = !longue; break;
+        case Trait.FILTRES.tirets:
+          retenue = !longue && longueur > seuilPoint; break;
+        case Trait.FILTRES.pointille:
+          retenue = !longue && longueur <= seuilPoint; break;
+        default:
+          retenue = true;
+      }
+      garder[i] = retenue ? 1 : 0;
+    }
+
+    var masque = new Uint8Array(info.masque.length);
+    var nbRetenus = 0;
+    for (var p = 0; p < masque.length; p++) {
+      var id = composantes.etiquettes[p];
+      if (id >= 0 && garder[id]) { masque[p] = 1; nbRetenus++; }
+    }
+
+    return {
+      masque: masque,
+      zone: info.zone,
+      largeurZone: info.largeurZone,
+      hauteurZone: info.hauteurZone,
+      nbRetenus: nbRetenus
+    };
+  };
+
+  CFDD.Trait = Trait;
+  if (typeof module !== 'undefined' && module.exports) { module.exports = Trait; }
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+<script>
 /* app/js/30_detection.js */
 /*
  * 30_detection.js — extraction automatique d'une courbe par sa couleur.
@@ -1161,6 +1598,7 @@ dialog form { margin-top: 18px; text-align: right; }
   var CFDD = racine.CFDD || (racine.CFDD = {});
   var Base = CFDD.Base;
   var Couleur = CFDD.Couleur;
+  var Trait = CFDD.Trait;
   var Detection = {};
 
   Detection.MODES = {
@@ -1181,7 +1619,9 @@ dialog form { margin-top: 18px; text-align: right; }
     mode: 'moyenne',
     orientation: 'colonnes',
     sautMax: 0,            /* mode « suivi » : saut vertical max en pixels ; 0 = auto */
-    simplification: 0      /* tolérance Douglas-Peucker en pixels ; 0 = désactivé */
+    simplification: 0,     /* tolérance Douglas-Peucker en pixels ; 0 = désactivé */
+    filtreTrait: 'tous',   /* 'tous' | 'continu' | 'discontinu' (cf. 25_trait.js) */
+    comblerLacunes: 0      /* comble les trous d'un trait discontinu, en pixels */
     /* Deux options rectangulaires viennent en plus, hors valeurs par défaut :
        `zone` (rectangle analysé) et `zonesExclues` (rectangles ignorés). */
   };
@@ -1328,6 +1768,46 @@ dialog form { margin-top: 18px; text-align: right; }
   };
 
   /*
+   * Comble les trous d'une série le long de l'axe de balayage.
+   *
+   * Un trait en tirets rend une suite de tronçons séparés par des vides ; la
+   * courbe sous-jacente, elle, est continue. Interpoler les vides jusqu'à
+   * `lacuneMax` restitue une série exploitable — c'est ce qui rend une courbe
+   * en tirets utilisable au lieu d'un semis troué.
+   *
+   * Le plafond est essentiel : sans lui, on relierait aussi les deux bords
+   * d'une véritable interruption (courbe masquée par un symbole, sortie du
+   * cadre) et l'on inventerait des données. Régler `lacuneMax` un peu au-dessus
+   * de la longueur d'espace mesurée par `Trait.mesurer`.
+   */
+  Detection.comblerLacunes = function (points, pas, lacuneMax, orientation) {
+    if (!(lacuneMax > 0) || points.length < 2) { return points.slice(); }
+    var parLignes = (orientation === 'lignes');
+    var sortie = [points[0]];
+
+    for (var i = 1; i < points.length; i++) {
+      var a = points[i - 1], b = points[i];
+      var uA = parLignes ? a.py : a.px;
+      var uB = parLignes ? b.py : b.px;
+      var vA = parLignes ? a.px : a.py;
+      var vB = parLignes ? b.px : b.py;
+      var ecart = uB - uA;
+
+      if (ecart > pas && ecart <= lacuneMax) {
+        var n = Math.max(2, Math.round(ecart / pas));
+        for (var k = 1; k < n; k++) {
+          var t = k / n;
+          var u = uA + t * ecart;
+          var v = vA + t * (vB - vA);
+          sortie.push(parLignes ? { px: v, py: u } : { px: u, py: v });
+        }
+      }
+      sortie.push(b);
+    }
+    return sortie;
+  };
+
+  /*
    * Détection complète.
    *
    * image   : {data: Uint8ClampedArray RGBA, width, height}
@@ -1350,6 +1830,21 @@ dialog form { margin-top: 18px; text-align: right; }
     var parLignes = (o.orientation === 'lignes');
     var pas = Math.max(1, Math.round(o.pas));
     var info = Detection.construireMasque(image, cible, o);
+
+    /*
+     * Analyse du trait. Elle sert à deux choses : trier les composantes quand
+     * l'utilisateur demande un type précis, et renseigner le style mesuré.
+     * L'étiquetage coûte un parcours du masque, négligeable devant la
+     * conversion colorimétrique déjà faite.
+     */
+    var composantes = Trait.composantes(info);
+    if (o.filtreTrait && o.filtreTrait !== 'tous') {
+      info = Trait.filtrer(info, composantes, o.filtreTrait, o.orientation);
+      /* Le masque a changé : les composantes aussi, il faut les reprendre. */
+      composantes = Trait.composantes(info);
+    }
+    var trait = Trait.mesurer(composantes, o.orientation);
+
     var points = [];
     var lignesVues = 0, lignesRetenues = 0;
     var precedent = null;
@@ -1437,6 +1932,12 @@ dialog form { margin-top: 18px; text-align: right; }
     }
 
     var pointsBruts = points.length;
+
+    if (o.comblerLacunes > 0) {
+      points = Detection.comblerLacunes(points, pas, o.comblerLacunes, o.orientation);
+    }
+    var pointsCombles = points.length;
+
     if (o.simplification > 0 && points.length > 2) {
       /* Douglas-Peucker travaille sur {x,y} : on adapte le nommage. */
       var enXY = points.map(function (p) { return { x: p.px, y: p.py }; });
@@ -1453,7 +1954,9 @@ dialog form { margin-top: 18px; text-align: right; }
         lignesVues: lignesVues,
         lignesRetenues: lignesRetenues,
         pointsBruts: pointsBruts,
-        pointsFinaux: points.length
+        pointsCombles: pointsCombles,
+        pointsFinaux: points.length,
+        trait: trait
       }
     };
   };
@@ -1559,14 +2062,19 @@ dialog form { margin-top: 18px; text-align: right; }
   var Base = CFDD.Base;
   var Export = {};
 
-  Export.FORMATS = ['csv-long', 'csv-large', 'json', 'python', 'matlab', 'colonnes'];
+  Export.FORMATS = ['csv-long', 'csv-large', 'csv-grille', 'json', 'python',
+                    'matlab', 'colonnes'];
 
   Export.DEFAUTS = {
     separateur: ',',
     decimales: 6,
     entetes: true,
     nomX: 'x',
-    nomY: 'y'
+    nomY: 'y',
+    /* Ré-échantillonnage sur une grille X commune (format « csv-grille »). */
+    grillePoints: 200,
+    grilleEspacement: 'lineaire',   /* 'lineaire' | 'log' */
+    grilleDomaine: 'intersection'   /* 'intersection' | 'union' */
   };
 
   function fusionner(options) {
@@ -1647,6 +2155,216 @@ dialog form { margin-top: 18px; text-align: right; }
       }
       lignes.push(cellules.join(o.separateur));
     }
+    return lignes.join('\n') + '\n';
+  };
+
+  /* --- Grille X commune --------------------------------------------- */
+
+  /*
+   * Interpolation linéaire de (xs, ys) en x. Les tableaux sont supposés triés
+   * par x croissant. Rend null hors du domaine : extrapoler une courbe
+   * digitalisée serait inventer des données que l'image ne contient pas.
+   */
+  function interpoler(xs, ys, x) {
+    var n = xs.length;
+    if (x < xs[0] || x > xs[n - 1]) { return null; }
+    var lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+      var mid = (lo + hi) >> 1;
+      if (xs[mid] <= x) { lo = mid; } else { hi = mid; }
+    }
+    var largeur = xs[hi] - xs[lo];
+    if (largeur === 0) { return ys[lo]; }
+    return ys[lo] + (x - xs[lo]) * (ys[hi] - ys[lo]) / largeur;
+  }
+
+  /*
+   * Une série est-elle une fonction de x ?
+   *
+   * Question loin d'être formelle : une POLAIRE Cz(Cx) est un arc couché, où un
+   * même Cx porte deux Cz. La ré-échantillonner en x reviendrait à écraser ses
+   * deux branches l'une sur l'autre — silencieusement, et le tableau produit
+   * aurait l'air parfaitement normal.
+   *
+   * Compter les changements de sens en x ne suffit pas : une courbe repliée
+   * proprement n'en compte qu'UN, qu'une tolérance au bruit avalerait. Ce qui
+   * distingue les deux cas est la LONGUEUR des passages monotones. Le bruit de
+   * détection produit une nuée d'allers-retours d'une fraction de pixel ; un
+   * vrai repli produit deux parcours étendus, chacun couvrant une bonne part
+   * de l'étendue en x.
+   *
+   * On mesure donc l'étendue de chaque passage monotone et l'on compte ceux qui
+   * pèsent au moins 5 % de l'étendue totale. Deux passages significatifs ou
+   * plus : la courbe est repliée.
+   */
+  function estFonctionDeX(points) {
+    var minX = Infinity, maxX = -Infinity;
+    var i;
+    for (i = 0; i < points.length; i++) {
+      if (points[i].x < minX) { minX = points[i].x; }
+      if (points[i].x > maxX) { maxX = points[i].x; }
+    }
+    var etendue = maxX - minX;
+    if (!(etendue > 0)) { return { passages: 0, fonction: false }; }
+
+    var passages = [];
+    var sens = 0;
+    var depart = points[0].x;
+    var dernier = points[0].x;
+
+    for (i = 1; i < points.length; i++) {
+      var d = points[i].x - points[i - 1].x;
+      if (d === 0) { continue; }
+      var s = (d > 0) ? 1 : -1;
+      if (sens === 0) {
+        sens = s;
+      } else if (s !== sens) {
+        passages.push(Math.abs(dernier - depart));
+        depart = points[i - 1].x;
+        sens = s;
+      }
+      dernier = points[i].x;
+    }
+    passages.push(Math.abs(dernier - depart));
+
+    var significatifs = 0;
+    for (i = 0; i < passages.length; i++) {
+      if (passages[i] >= etendue * 0.05) { significatifs++; }
+    }
+    return { passages: significatifs, fonction: significatifs <= 1 };
+  }
+
+  /* Trie par x croissant et fond les abscisses identiques en leur moyenne. */
+  function preparer(points) {
+    var tri = points.slice().sort(function (a, b) { return a.x - b.x; });
+    var xs = [], ys = [];
+    var i = 0;
+    while (i < tri.length) {
+      var x = tri[i].x, somme = 0, n = 0;
+      while (i < tri.length && tri[i].x === x) { somme += tri[i].y; n++; i++; }
+      xs.push(x); ys.push(somme / n);
+    }
+    return { xs: xs, ys: ys };
+  }
+
+  /*
+   * Ramène toutes les séries sur une seule grille d'abscisses.
+   *
+   * Retourne {x, colonnes: [{nom, y}], bornes, avertissements}. Les valeurs
+   * hors du domaine propre d'une série valent null — jamais une extrapolation.
+   */
+  Export.reechantillonner = function (series, options) {
+    var o = fusionner(options);
+    var avertissements = [];
+    var preparees = [];
+    var i;
+
+    for (i = 0; i < series.length; i++) {
+      var s = series[i];
+      var points = (s.points || []).filter(function (p) {
+        return Base.estFini(p.x) && Base.estFini(p.y);
+      });
+      if (points.length < 2) {
+        avertissements.push('« ' + s.nom + ' » : moins de deux points, série écartée.');
+        continue;
+      }
+      var forme = estFonctionDeX(points);
+      if (!forme.fonction) {
+        avertissements.push('« ' + s.nom + ' » : courbe repliée en x ('
+          + forme.passages + ' passages monotones) — un même x y porte '
+          + 'plusieurs y, elle ne peut pas être ré-échantillonnée en x. '
+          + 'Série écartée.');
+        continue;
+      }
+      var pret = preparer(points);
+      preparees.push({ nom: s.nom, xs: pret.xs, ys: pret.ys });
+    }
+
+    if (!preparees.length) {
+      return { x: [], colonnes: [], bornes: null, avertissements: avertissements };
+    }
+
+    var bas, haut;
+    if (o.grilleDomaine === 'union') {
+      bas = Infinity; haut = -Infinity;
+      for (i = 0; i < preparees.length; i++) {
+        bas = Math.min(bas, preparees[i].xs[0]);
+        haut = Math.max(haut, preparees[i].xs[preparees[i].xs.length - 1]);
+      }
+    } else {
+      bas = -Infinity; haut = Infinity;
+      for (i = 0; i < preparees.length; i++) {
+        bas = Math.max(bas, preparees[i].xs[0]);
+        haut = Math.min(haut, preparees[i].xs[preparees[i].xs.length - 1]);
+      }
+      if (bas >= haut) {
+        avertissements.push('Les séries ne se recouvrent pas en x : '
+          + 'aucune grille commune possible. Essayer le domaine « union ».');
+        return { x: [], colonnes: [], bornes: null, avertissements: avertissements };
+      }
+    }
+
+    var log = (o.grilleEspacement === 'log');
+    if (log && bas <= 0) {
+      avertissements.push('Grille logarithmique impossible avec des abscisses '
+        + '≤ 0 : espacement linéaire utilisé.');
+      log = false;
+    }
+
+    var nb = Math.max(2, Math.round(o.grillePoints));
+    var x = [];
+    var a = log ? Math.log(bas) / Math.LN10 : bas;
+    var b = log ? Math.log(haut) / Math.LN10 : haut;
+    for (i = 0; i < nb; i++) {
+      var u = a + (b - a) * i / (nb - 1);
+      x.push(log ? Math.pow(10, u) : u);
+    }
+
+    var colonnes = [];
+    for (i = 0; i < preparees.length; i++) {
+      var y = [];
+      for (var k = 0; k < x.length; k++) {
+        y.push(interpoler(preparees[i].xs, preparees[i].ys, x[k]));
+      }
+      colonnes.push({ nom: preparees[i].nom, y: y });
+    }
+
+    return {
+      x: x, colonnes: colonnes,
+      bornes: { bas: bas, haut: haut, log: log },
+      avertissements: avertissements
+    };
+  };
+
+  /*
+   * CSV à abscisse partagée : une colonne x, puis une colonne par série.
+   * C'est la forme qu'attend un tableur pour superposer des courbes, et celle
+   * qu'il faut pour retrancher deux courbes l'une de l'autre — impossible tant
+   * que chacune a ses propres abscisses.
+   */
+  Export.versCSVGrille = function (series, options) {
+    var o = fusionner(options);
+    var grille = Export.reechantillonner(series, options);
+    var lignes = [];
+    var i, k;
+
+    if (o.entetes) {
+      var entete = [o.nomX];
+      for (i = 0; i < grille.colonnes.length; i++) {
+        entete.push(champCSV(grille.colonnes[i].nom, o.separateur));
+      }
+      lignes.push(entete.join(o.separateur));
+    }
+
+    for (k = 0; k < grille.x.length; k++) {
+      var cellules = [Base.formaterNombre(grille.x[k], o.decimales)];
+      for (i = 0; i < grille.colonnes.length; i++) {
+        var v = grille.colonnes[i].y[k];
+        cellules.push(v === null ? '' : Base.formaterNombre(v, o.decimales));
+      }
+      lignes.push(cellules.join(o.separateur));
+    }
+
     return lignes.join('\n') + '\n';
   };
 
@@ -1749,6 +2467,7 @@ dialog form { margin-top: 18px; text-align: right; }
     switch (format) {
       case 'csv-long': return Export.versCSVLong(series, options);
       case 'csv-large': return Export.versCSVLarge(series, options);
+      case 'csv-grille': return Export.versCSVGrille(series, options);
       case 'json': return Export.versJSON(series, options);
       case 'python': return Export.versPython(series, options);
       case 'matlab': return Export.versMatlab(series, options);
@@ -1759,7 +2478,7 @@ dialog form { margin-top: 18px; text-align: right; }
 
   Export.extension = function (format) {
     switch (format) {
-      case 'csv-long': case 'csv-large': return 'csv';
+      case 'csv-long': case 'csv-large': case 'csv-grille': return 'csv';
       case 'json': return 'json';
       case 'python': return 'py';
       case 'matlab': return 'm';
@@ -2115,28 +2834,86 @@ dialog form { margin-top: 18px; text-align: right; }
     ctx.restore();
   };
 
+  Vue.MODES_MASQUE = {
+    /* Les pixels retenus sont peints d'une couleur franche. */
+    surbrillance: 'surbrillance',
+    /* Les pixels ÉCARTÉS sont voilés : seuls les retenus gardent leurs couleurs. */
+    isoler: 'isoler',
+    /* Les deux à la fois : le plus lisible sur une figure chargée. */
+    lesDeux: 'les-deux'
+  };
+
   /*
-   * Surimpression du masque de détection : les pixels retenus sont teintés.
-   * Construite une fois dans un canevas hors écran à la taille de la ZONE, puis
-   * étirée — bien plus rapide que de repeindre pixel par pixel à chaque zoom.
+   * Calque de l'aperçu du masque, construit une fois dans un canevas hors écran
+   * à la taille de la ZONE, puis étiré — bien plus rapide que de repeindre
+   * pixel par pixel à chaque zoom.
+   *
+   * options :
+   *   couleur    {r,g,b} de surbrillance
+   *   mode       'surbrillance' | 'isoler' | 'les-deux'
+   *   epaissir   0 ou 1 : épaissit le rendu d'un pixel
+   *   voile      {r,g,b} du voile appliqué aux pixels écartés
+   *   opaciteVoile  0-255
+   *
+   * `epaissir` mérite un mot : un trait d'un pixel affiché à l'échelle 0,4 ne
+   * couvre plus un pixel d'écran entier et disparaît par endroits — l'aperçu
+   * donne alors l'impression d'un masque troué alors que le masque est intact.
+   * La dilatation ne touche QUE l'affichage, jamais les points extraits.
    */
-  Vue.calqueMasque = function (info, couleur, fabriquerCanvas) {
-    var c = fabriquerCanvas(info.largeurZone, info.hauteurZone);
-    var ctx = c.getContext('2d');
-    var image = ctx.createImageData(info.largeurZone, info.hauteurZone);
-    var d = image.data;
-    for (var i = 0; i < info.masque.length; i++) {
-      if (!info.masque[i]) { continue; }
-      var j = i * 4;
-      d[j] = couleur.r; d[j + 1] = couleur.g; d[j + 2] = couleur.b; d[j + 3] = 255;
+  Vue.calqueMasque = function (info, options, fabriquerCanvas) {
+    options = options || {};
+    var couleur = options.couleur || { r: 255, g: 0, b: 255 };
+    var mode = options.mode || Vue.MODES_MASQUE.surbrillance;
+    var voile = options.voile || { r: 255, g: 255, b: 255 };
+    var opaciteVoile = (options.opaciteVoile === undefined) ? 190 : options.opaciteVoile;
+
+    var w = info.largeurZone, h = info.hauteurZone;
+    var source = info.masque;
+
+    /* Dilatation d'affichage en 4-connexité. */
+    var vu = source;
+    if (options.epaissir) {
+      vu = new Uint8Array(w * h);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var i = y * w + x;
+          if (source[i]
+              || (x > 0 && source[i - 1]) || (x < w - 1 && source[i + 1])
+              || (y > 0 && source[i - w]) || (y < h - 1 && source[i + w])) {
+            vu[i] = 1;
+          }
+        }
+      }
     }
+
+    var c = fabriquerCanvas(w, h);
+    var ctx = c.getContext('2d');
+    var image = ctx.createImageData(w, h);
+    var d = image.data;
+
+    var peindre = (mode !== Vue.MODES_MASQUE.isoler);
+    var voiler = (mode !== Vue.MODES_MASQUE.surbrillance);
+
+    for (var p = 0; p < vu.length; p++) {
+      var j = p * 4;
+      if (vu[p]) {
+        if (peindre) {
+          d[j] = couleur.r; d[j + 1] = couleur.g; d[j + 2] = couleur.b; d[j + 3] = 255;
+        }
+        /* En mode « isoler » seul, le pixel retenu reste transparent : on veut
+           voir sa vraie couleur, c'est tout l'intérêt. */
+      } else if (voiler) {
+        d[j] = voile.r; d[j + 1] = voile.g; d[j + 2] = voile.b; d[j + 3] = opaciteVoile;
+      }
+    }
+
     ctx.putImageData(image, 0, 0);
     return c;
   };
 
   Vue.dessinerMasque = function (ctx, vue, calque, zone, opacite) {
     ctx.save();
-    ctx.globalAlpha = (opacite === undefined) ? 0.55 : opacite;
+    ctx.globalAlpha = (opacite === undefined) ? 0.85 : opacite;
     ctx.imageSmoothingEnabled = false;
     var a = Vue.versEcran(vue, zone.x0, zone.y0);
     ctx.drawImage(calque, a.cx, a.cy,
@@ -2714,7 +3491,8 @@ dialog form { margin-top: 18px; text-align: right; }
 
   var CFDD = globalThis.CFDD;
   var Base = CFDD.Base, Couleur = CFDD.Couleur, Calibration = CFDD.Calibration;
-  var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet, Vue = CFDD.Vue;
+  var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet;
+  var Vue = CFDD.Vue, Trait = CFDD.Trait;
 
   var COULEURS_SERIE = ['#c1121f', '#1d3557', '#2a9d8f', '#e07a00',
                         '#7b2cbf', '#0b7285', '#a4133c', '#386641'];
@@ -2742,9 +3520,14 @@ dialog form { margin-top: 18px; text-align: right; }
     detection: {
       couleur: '#c1121f', tolChroma: 20, tolLum: 30,
       orientation: 'colonnes', mode: 'moyenne',
-      pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0
+      pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0,
+      filtreTrait: 'tous', comblerLacunes: 0
     },
     apercu: true,
+    apercuMode: 'les-deux',
+    apercuOpacite: 0.85,
+    apercuEpaissir: true,
+    grille: { points: 200, espacement: 'lineaire', domaine: 'intersection' },
     calqueMasque: null,     /* {canvas, zone} */
     notes: '',
     curseur: null,          /* dernière position image du curseur */
@@ -2881,10 +3664,6 @@ dialog form { margin-top: 18px; text-align: right; }
 
     Vue.dessinerImage(ctx, etat.image, etat.vue);
 
-    if (etat.apercu && etat.calqueMasque) {
-      Vue.dessinerMasque(ctx, etat.vue, etat.calqueMasque.canvas, etat.calqueMasque.zone, 0.5);
-    }
-
     if (etat.zone) { Vue.dessinerRectangle(ctx, etat.vue, etat.zone, COULEUR_ZONE, false); }
     for (var i = 0; i < etat.exclusions.length; i++) {
       Vue.dessinerRectangle(ctx, etat.vue, etat.exclusions[i], COULEUR_EXCLUSION, true);
@@ -2899,6 +3678,16 @@ dialog form { margin-top: 18px; text-align: right; }
       var serie = etat.series[s];
       if (serie.masquee) { continue; }
       Vue.dessinerPoints(ctx, etat.vue, serie.points, serie.couleurHex, null);
+    }
+
+    /*
+     * L'aperçu passe PAR-DESSUS les séries déjà tracées : c'est lui que
+     * l'utilisateur règle à cet instant, et des points posés dessus le
+     * masqueraient précisément là où il faut le juger.
+     */
+    if (etat.apercu && etat.calqueMasque) {
+      Vue.dessinerMasque(ctx, etat.vue, etat.calqueMasque.canvas,
+        etat.calqueMasque.zone, etat.apercuOpacite);
     }
 
     var cles = Calibration.ORDRE;
@@ -3148,6 +3937,8 @@ dialog form { margin-top: 18px; text-align: right; }
       longueurMin: etat.detection.longueurMin,
       longueurMax: etat.detection.longueurMax,
       simplification: etat.detection.simplification,
+      filtreTrait: etat.detection.filtreTrait,
+      comblerLacunes: etat.detection.comblerLacunes,
       zone: etat.zone,
       zonesExclues: etat.exclusions
     };
@@ -3157,9 +3948,34 @@ dialog form { margin-top: 18px; text-align: right; }
     if (!etat.apercu || !etat.imageData) { etat.calqueMasque = null; redessiner(); return; }
     var cible = Couleur.hexVersRgb(etat.detection.couleur);
     if (!cible) { return; }
+
     var info = Detection.construireMasque(etat.imageData, cible, optionsDetection());
+
+    /*
+     * L'aperçu doit montrer ce que la DÉTECTION retiendra, tri du type de trait
+     * compris — sinon l'utilisateur règle ses tolérances sur un masque qui
+     * n'est pas celui qui sera exploité.
+     */
+    if (etat.detection.filtreTrait && etat.detection.filtreTrait !== 'tous') {
+      info = Trait.filtrer(info, Trait.composantes(info),
+        etat.detection.filtreTrait, etat.detection.orientation);
+    }
+
+    /*
+     * La couleur de surbrillance est choisie pour trancher sur la cible : un
+     * aperçu magenta sur une courbe magenta serait invisible, or c'est
+     * exactement la courbe que l'utilisateur regarde.
+     */
+    var surbrillance = Couleur.contrastee(cible, { r: 255, g: 255, b: 255 });
+
     etat.calqueMasque = {
-      canvas: Vue.calqueMasque(info, { r: 255, g: 0, b: 255 }, function (l, h) {
+      canvas: Vue.calqueMasque(info, {
+        couleur: surbrillance,
+        mode: etat.apercuMode,
+        epaissir: etat.apercuEpaissir ? 1 : 0,
+        voile: { r: 255, g: 255, b: 255 },
+        opaciteVoile: 200
+      }, function (l, h) {
         var c = document.createElement('canvas'); c.width = l; c.height = h; return c;
       }),
       zone: info.zone
@@ -3195,14 +4011,40 @@ dialog form { margin-top: 18px; text-align: right; }
     serie.detection = optionsDetection();
 
     var s = res.statistiques;
-    $('stats-detection').textContent =
-      s.pointsFinaux + ' points'
-      + (s.pointsBruts !== s.pointsFinaux ? ' (ramenés de ' + s.pointsBruts + ')' : '')
+    var detailPoints = String(s.pointsFinaux) + ' points';
+    if (s.pointsCombles !== s.pointsBruts) {
+      detailPoints += ' (' + s.pointsBruts + ' détectés, '
+        + (s.pointsCombles - s.pointsBruts) + ' interpolés)';
+    } else if (s.pointsBruts !== s.pointsFinaux) {
+      detailPoints += ' (ramenés de ' + s.pointsBruts + ')';
+    }
+    $('stats-detection').textContent = detailPoints
       + ' — ' + s.lignesRetenues + '/' + s.lignesVues + ' lignes de balayage, '
       + s.pixelsRetenus + ' pixels retenus, ' + duree.toFixed(0) + ' ms.';
+    afficherTrait(s.trait);
 
     rafraichirSeries(); redessiner();
     message('Détection terminée : ' + res.points.length + ' points.', 'succes');
+  }
+
+  /*
+   * Restitue le type de trait mesuré. Les longueurs de marque et d'espace ne
+   * sont pas décoratives : elles donnent directement le plafond à saisir dans
+   * « combler les lacunes ».
+   */
+  function afficherTrait(trait) {
+    var el = $('stats-trait');
+    if (!trait || trait.style === Trait.STYLES.inconnu) { el.textContent = ''; return; }
+
+    if (trait.style === Trait.STYLES.continu) {
+      el.textContent = 'Trait continu (' + trait.nbComposantes
+        + (trait.nbComposantes > 1 ? ' tronçons).' : ' tronçon).');
+      return;
+    }
+    el.textContent = 'Trait ' + trait.style + ' : marque ' + Math.round(trait.marque)
+      + ' px, espace ' + Math.round(trait.espace) + ' px, sur '
+      + trait.nbComposantes + ' tronçons. Combler au-delà de '
+      + Math.ceil(trait.espace + 2) + ' px pour raccorder.';
   }
 
   function proposerPalette() {
@@ -3240,17 +4082,44 @@ dialog form { margin-top: 18px; text-align: right; }
       etat.calibration);
   }
 
+  function optionsExport() {
+    return {
+      separateur: $('separateur').value,
+      decimales: Math.max(1, Math.min(15, parseInt($('decimales').value, 10) || 6)),
+      grillePoints: etat.grille.points,
+      grilleEspacement: etat.grille.espacement,
+      grilleDomaine: etat.grille.domaine
+    };
+  }
+
   function texteExport() {
     var series = seriesEnDonnees();
     if (!series) { return null; }
-    return Export.rendre($('format').value, series, {
-      separateur: $('separateur').value,
-      decimales: Math.max(1, Math.min(15, parseInt($('decimales').value, 10) || 6))
-    });
+    return Export.rendre($('format').value, series, optionsExport());
   }
 
   function rafraichirExport() {
     var zone = $('apercu-export');
+    var grille = ($('format').value === 'csv-grille');
+    $('reglages-grille').hidden = !grille;
+
+    /*
+     * Les séries écartées du ré-échantillonnage (courbe repliée, série trop
+     * courte, domaines disjoints) doivent être dites : sans cela une colonne
+     * manquerait au tableau sans que rien ne l'explique.
+     */
+    var avertissements = $('avertissements-grille');
+    avertissements.textContent = '';
+    if (grille && etat.calibration) {
+      var series = seriesEnDonnees();
+      if (series && series.length) {
+        var resultat = Export.reechantillonner(series, optionsExport());
+        if (resultat.avertissements.length) {
+          avertissements.textContent = resultat.avertissements.join(' ');
+        }
+      }
+    }
+
     if (!etat.calibration) {
       zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
       return;
@@ -3650,7 +4519,43 @@ dialog form { margin-top: 18px; text-align: right; }
     relierCurseur('tol-lum', 'tolLum', 'val-lum');
 
     ['orientation', 'mode'].forEach(function (id) {
-      $(id).addEventListener('change', function () { etat.detection[id] = $(id).value; });
+      $(id).addEventListener('change', function () {
+        etat.detection[id] = $(id).value;
+        /* L'orientation change le tri des composantes : l'aperçu doit suivre. */
+        if (id === 'orientation') { majApercuMasque(); }
+      });
+    });
+
+    $('filtre-trait').addEventListener('change', function () {
+      etat.detection.filtreTrait = $('filtre-trait').value;
+      majApercuMasque();
+    });
+    $('combler').addEventListener('input', function () {
+      etat.detection.comblerLacunes = Number($('combler').value) || 0;
+    });
+
+    $('apercu-mode').addEventListener('change', function () {
+      etat.apercuMode = $('apercu-mode').value;
+      majApercuMasque();
+    });
+    $('apercu-opacite').addEventListener('input', function () {
+      etat.apercuOpacite = Number($('apercu-opacite').value) / 100;
+      $('val-apercu-opacite').textContent = $('apercu-opacite').value;
+      redessiner();
+    });
+    $('apercu-epaissir').addEventListener('change', function () {
+      etat.apercuEpaissir = $('apercu-epaissir').checked;
+      majApercuMasque();
+    });
+
+    [['grille-points', 'points'], ['grille-espacement', 'espacement'],
+     ['grille-domaine', 'domaine']].forEach(function (paire) {
+      $(paire[0]).addEventListener('input', function () {
+        var v = $(paire[0]).value;
+        etat.grille[paire[1]] = (paire[1] === 'points') ? (Number(v) || 200) : v;
+        rafraichirExport();
+      });
+      $(paire[0]).addEventListener('change', rafraichirExport);
     });
     [['pas', 'pas'], ['longueur-min', 'longueurMin'],
      ['longueur-max', 'longueurMax'], ['simplification', 'simplification']].forEach(function (paire) {

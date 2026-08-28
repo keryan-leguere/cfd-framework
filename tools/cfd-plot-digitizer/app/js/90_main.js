@@ -14,7 +14,8 @@
 
   var CFDD = globalThis.CFDD;
   var Base = CFDD.Base, Couleur = CFDD.Couleur, Calibration = CFDD.Calibration;
-  var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet, Vue = CFDD.Vue;
+  var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet;
+  var Vue = CFDD.Vue, Trait = CFDD.Trait;
 
   var COULEURS_SERIE = ['#c1121f', '#1d3557', '#2a9d8f', '#e07a00',
                         '#7b2cbf', '#0b7285', '#a4133c', '#386641'];
@@ -42,9 +43,14 @@
     detection: {
       couleur: '#c1121f', tolChroma: 20, tolLum: 30,
       orientation: 'colonnes', mode: 'moyenne',
-      pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0
+      pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0,
+      filtreTrait: 'tous', comblerLacunes: 0
     },
     apercu: true,
+    apercuMode: 'les-deux',
+    apercuOpacite: 0.85,
+    apercuEpaissir: true,
+    grille: { points: 200, espacement: 'lineaire', domaine: 'intersection' },
     calqueMasque: null,     /* {canvas, zone} */
     notes: '',
     curseur: null,          /* dernière position image du curseur */
@@ -181,10 +187,6 @@
 
     Vue.dessinerImage(ctx, etat.image, etat.vue);
 
-    if (etat.apercu && etat.calqueMasque) {
-      Vue.dessinerMasque(ctx, etat.vue, etat.calqueMasque.canvas, etat.calqueMasque.zone, 0.5);
-    }
-
     if (etat.zone) { Vue.dessinerRectangle(ctx, etat.vue, etat.zone, COULEUR_ZONE, false); }
     for (var i = 0; i < etat.exclusions.length; i++) {
       Vue.dessinerRectangle(ctx, etat.vue, etat.exclusions[i], COULEUR_EXCLUSION, true);
@@ -199,6 +201,16 @@
       var serie = etat.series[s];
       if (serie.masquee) { continue; }
       Vue.dessinerPoints(ctx, etat.vue, serie.points, serie.couleurHex, null);
+    }
+
+    /*
+     * L'aperçu passe PAR-DESSUS les séries déjà tracées : c'est lui que
+     * l'utilisateur règle à cet instant, et des points posés dessus le
+     * masqueraient précisément là où il faut le juger.
+     */
+    if (etat.apercu && etat.calqueMasque) {
+      Vue.dessinerMasque(ctx, etat.vue, etat.calqueMasque.canvas,
+        etat.calqueMasque.zone, etat.apercuOpacite);
     }
 
     var cles = Calibration.ORDRE;
@@ -448,6 +460,8 @@
       longueurMin: etat.detection.longueurMin,
       longueurMax: etat.detection.longueurMax,
       simplification: etat.detection.simplification,
+      filtreTrait: etat.detection.filtreTrait,
+      comblerLacunes: etat.detection.comblerLacunes,
       zone: etat.zone,
       zonesExclues: etat.exclusions
     };
@@ -457,9 +471,34 @@
     if (!etat.apercu || !etat.imageData) { etat.calqueMasque = null; redessiner(); return; }
     var cible = Couleur.hexVersRgb(etat.detection.couleur);
     if (!cible) { return; }
+
     var info = Detection.construireMasque(etat.imageData, cible, optionsDetection());
+
+    /*
+     * L'aperçu doit montrer ce que la DÉTECTION retiendra, tri du type de trait
+     * compris — sinon l'utilisateur règle ses tolérances sur un masque qui
+     * n'est pas celui qui sera exploité.
+     */
+    if (etat.detection.filtreTrait && etat.detection.filtreTrait !== 'tous') {
+      info = Trait.filtrer(info, Trait.composantes(info),
+        etat.detection.filtreTrait, etat.detection.orientation);
+    }
+
+    /*
+     * La couleur de surbrillance est choisie pour trancher sur la cible : un
+     * aperçu magenta sur une courbe magenta serait invisible, or c'est
+     * exactement la courbe que l'utilisateur regarde.
+     */
+    var surbrillance = Couleur.contrastee(cible, { r: 255, g: 255, b: 255 });
+
     etat.calqueMasque = {
-      canvas: Vue.calqueMasque(info, { r: 255, g: 0, b: 255 }, function (l, h) {
+      canvas: Vue.calqueMasque(info, {
+        couleur: surbrillance,
+        mode: etat.apercuMode,
+        epaissir: etat.apercuEpaissir ? 1 : 0,
+        voile: { r: 255, g: 255, b: 255 },
+        opaciteVoile: 200
+      }, function (l, h) {
         var c = document.createElement('canvas'); c.width = l; c.height = h; return c;
       }),
       zone: info.zone
@@ -495,14 +534,40 @@
     serie.detection = optionsDetection();
 
     var s = res.statistiques;
-    $('stats-detection').textContent =
-      s.pointsFinaux + ' points'
-      + (s.pointsBruts !== s.pointsFinaux ? ' (ramenés de ' + s.pointsBruts + ')' : '')
+    var detailPoints = String(s.pointsFinaux) + ' points';
+    if (s.pointsCombles !== s.pointsBruts) {
+      detailPoints += ' (' + s.pointsBruts + ' détectés, '
+        + (s.pointsCombles - s.pointsBruts) + ' interpolés)';
+    } else if (s.pointsBruts !== s.pointsFinaux) {
+      detailPoints += ' (ramenés de ' + s.pointsBruts + ')';
+    }
+    $('stats-detection').textContent = detailPoints
       + ' — ' + s.lignesRetenues + '/' + s.lignesVues + ' lignes de balayage, '
       + s.pixelsRetenus + ' pixels retenus, ' + duree.toFixed(0) + ' ms.';
+    afficherTrait(s.trait);
 
     rafraichirSeries(); redessiner();
     message('Détection terminée : ' + res.points.length + ' points.', 'succes');
+  }
+
+  /*
+   * Restitue le type de trait mesuré. Les longueurs de marque et d'espace ne
+   * sont pas décoratives : elles donnent directement le plafond à saisir dans
+   * « combler les lacunes ».
+   */
+  function afficherTrait(trait) {
+    var el = $('stats-trait');
+    if (!trait || trait.style === Trait.STYLES.inconnu) { el.textContent = ''; return; }
+
+    if (trait.style === Trait.STYLES.continu) {
+      el.textContent = 'Trait continu (' + trait.nbComposantes
+        + (trait.nbComposantes > 1 ? ' tronçons).' : ' tronçon).');
+      return;
+    }
+    el.textContent = 'Trait ' + trait.style + ' : marque ' + Math.round(trait.marque)
+      + ' px, espace ' + Math.round(trait.espace) + ' px, sur '
+      + trait.nbComposantes + ' tronçons. Combler au-delà de '
+      + Math.ceil(trait.espace + 2) + ' px pour raccorder.';
   }
 
   function proposerPalette() {
@@ -540,17 +605,44 @@
       etat.calibration);
   }
 
+  function optionsExport() {
+    return {
+      separateur: $('separateur').value,
+      decimales: Math.max(1, Math.min(15, parseInt($('decimales').value, 10) || 6)),
+      grillePoints: etat.grille.points,
+      grilleEspacement: etat.grille.espacement,
+      grilleDomaine: etat.grille.domaine
+    };
+  }
+
   function texteExport() {
     var series = seriesEnDonnees();
     if (!series) { return null; }
-    return Export.rendre($('format').value, series, {
-      separateur: $('separateur').value,
-      decimales: Math.max(1, Math.min(15, parseInt($('decimales').value, 10) || 6))
-    });
+    return Export.rendre($('format').value, series, optionsExport());
   }
 
   function rafraichirExport() {
     var zone = $('apercu-export');
+    var grille = ($('format').value === 'csv-grille');
+    $('reglages-grille').hidden = !grille;
+
+    /*
+     * Les séries écartées du ré-échantillonnage (courbe repliée, série trop
+     * courte, domaines disjoints) doivent être dites : sans cela une colonne
+     * manquerait au tableau sans que rien ne l'explique.
+     */
+    var avertissements = $('avertissements-grille');
+    avertissements.textContent = '';
+    if (grille && etat.calibration) {
+      var series = seriesEnDonnees();
+      if (series && series.length) {
+        var resultat = Export.reechantillonner(series, optionsExport());
+        if (resultat.avertissements.length) {
+          avertissements.textContent = resultat.avertissements.join(' ');
+        }
+      }
+    }
+
     if (!etat.calibration) {
       zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
       return;
@@ -950,7 +1042,43 @@
     relierCurseur('tol-lum', 'tolLum', 'val-lum');
 
     ['orientation', 'mode'].forEach(function (id) {
-      $(id).addEventListener('change', function () { etat.detection[id] = $(id).value; });
+      $(id).addEventListener('change', function () {
+        etat.detection[id] = $(id).value;
+        /* L'orientation change le tri des composantes : l'aperçu doit suivre. */
+        if (id === 'orientation') { majApercuMasque(); }
+      });
+    });
+
+    $('filtre-trait').addEventListener('change', function () {
+      etat.detection.filtreTrait = $('filtre-trait').value;
+      majApercuMasque();
+    });
+    $('combler').addEventListener('input', function () {
+      etat.detection.comblerLacunes = Number($('combler').value) || 0;
+    });
+
+    $('apercu-mode').addEventListener('change', function () {
+      etat.apercuMode = $('apercu-mode').value;
+      majApercuMasque();
+    });
+    $('apercu-opacite').addEventListener('input', function () {
+      etat.apercuOpacite = Number($('apercu-opacite').value) / 100;
+      $('val-apercu-opacite').textContent = $('apercu-opacite').value;
+      redessiner();
+    });
+    $('apercu-epaissir').addEventListener('change', function () {
+      etat.apercuEpaissir = $('apercu-epaissir').checked;
+      majApercuMasque();
+    });
+
+    [['grille-points', 'points'], ['grille-espacement', 'espacement'],
+     ['grille-domaine', 'domaine']].forEach(function (paire) {
+      $(paire[0]).addEventListener('input', function () {
+        var v = $(paire[0]).value;
+        etat.grille[paire[1]] = (paire[1] === 'points') ? (Number(v) || 200) : v;
+        rafraichirExport();
+      });
+      $(paire[0]).addEventListener('change', rafraichirExport);
     });
     [['pas', 'pas'], ['longueur-min', 'longueurMin'],
      ['longueur-max', 'longueurMax'], ['simplification', 'simplification']].forEach(function (paire) {

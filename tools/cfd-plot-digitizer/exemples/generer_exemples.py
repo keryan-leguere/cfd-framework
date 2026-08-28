@@ -141,8 +141,49 @@ def convergence():
             "couleurs": {"continuite": "#c1121f", "Ux": "#1d3557", "k": "#e07a00"}}
 
 
+def traits():
+    """Trois courbes NOIRES distinguées par leur seul tracé.
+
+    Le cas des planches en noir et blanc, et la raison d'être du tri par type de
+    trait : ici la couleur ne distingue rien du tout, les trois courbes étant
+    rigoureusement identiques de ce point de vue.
+    """
+    fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=100)
+
+    x = np.linspace(0, 10, 500)
+    styles = {"continu": "-", "tirets": "--", "pointille": ":"}
+    reference = {}
+    for i, (nom, style) in enumerate(styles.items()):
+        y = 1.0 - 0.08 * (i + 1) * x + 0.004 * (i + 1) * x ** 2
+        ax.plot(x, y, style, color="#101010", linewidth=1.8, label=nom)
+        reference[nom] = {"x": x.tolist(), "y": y.tolist()}
+
+    ax.set_xlabel("x  [-]")
+    ax.set_ylabel("y  [-]")
+    ax.set_title("Trois tracés, une seule couleur")
+    ax.grid(True, color="#cccccc", linewidth=0.6)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 1.1)
+    legende = ax.legend(loc="upper right", framealpha=1.0)
+    fig.tight_layout()
+    fig.canvas.draw()
+    cadre = cadres(fig, ax, legende)
+    cal = ancres(fig, ax, {
+        "x1": (2, 0.0, 2), "x2": (8, 0.0, 8),
+        "y1": (0, 0.2, 0.2), "y2": (0, 1.0, 1.0),
+    })
+    fig.savefig(ICI / "exemple_traits.png")
+    plt.close(fig)
+    return {"calibration": cal, "courbes": reference, "cadres": cadre,
+            "couleurs": {nom: "#101010" for nom in styles},
+            "styles": {"continu": "continu", "tirets": "tirets",
+                       "pointille": "pointillé"}}
+
+
 def main():
-    ref = {"exemple_polaire.png": polaire(), "exemple_convergence.png": convergence()}
+    ref = {"exemple_polaire.png": polaire(),
+           "exemple_convergence.png": convergence(),
+           "exemple_traits.png": traits()}
     with open(ICI / "reference.json", "w", encoding="utf-8") as f:
         json.dump(ref, f)
     for chemin in sorted(ICI.glob("*.png")):

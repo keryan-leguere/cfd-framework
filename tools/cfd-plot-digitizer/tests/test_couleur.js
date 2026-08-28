@@ -86,6 +86,39 @@
       a.egalProfond(dom, { r: 200, g: 20, b: 20 });
     });
 
+    test('choisit une surbrillance qui tranche sur la cible et sur le fond', function (a) {
+      /* Un aperçu magenta sur une courbe magenta est invisible — or c'est
+         justement là que l'utilisateur regarde. */
+      var surMagenta = C.contrastee({ r: 255, g: 0, b: 255 });
+      a.ok(C.deltaE(C.rgbVersLab(surMagenta.r, surMagenta.g, surMagenta.b),
+                    C.rgbVersLab(255, 0, 255)) > 60, 'assez loin du magenta');
+
+      var surBlanc = C.contrastee({ r: 250, g: 250, b: 250 });
+      a.ok(C.deltaE(C.rgbVersLab(surBlanc.r, surBlanc.g, surBlanc.b),
+                    C.rgbVersLab(255, 255, 255)) > 40, 'assez loin du blanc');
+    });
+
+    test('la surbrillance tranche aussi sur le fond donné', function (a) {
+      /* Cible noire sur fond blanc : la surbrillance doit éviter les deux. */
+      var c = C.contrastee({ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 });
+      var lab = C.rgbVersLab(c.r, c.g, c.b);
+      a.ok(C.deltaE(lab, C.rgbVersLab(0, 0, 0)) > 40);
+      a.ok(C.deltaE(lab, C.rgbVersLab(255, 255, 255)) > 40);
+    });
+
+    test('la surbrillance sort toujours de la palette prévue', function (a) {
+      for (var i = 0; i < 12; i++) {
+        var cible = { r: (i * 37) % 256, g: (i * 91) % 256, b: (i * 53) % 256 };
+        var choisie = C.contrastee(cible);
+        var dedans = false;
+        for (var j = 0; j < C.PALETTE_SURBRILLANCE.length; j++) {
+          var p = C.PALETTE_SURBRILLANCE[j];
+          if (p.r === choisie.r && p.g === choisie.g && p.b === choisie.b) { dedans = true; }
+        }
+        a.ok(dedans, 'couleur hors palette pour ' + JSON.stringify(cible));
+      }
+    });
+
     test('ignore les pixels totalement transparents', function (a) {
       var img = T.imageVide(3, 3, { r: 255, g: 255, b: 255 });
       img.data[3] = 0;   /* pixel (0,0) transparent */
