@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cfd-plot-digitizer</title>
+<link rel="stylesheet" href="app/css/style.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque">
+    <span class="logo" aria-hidden="true">&#9678;</span>
+    <span>cfd-plot-digitizer</span>
+  </div>
+  <div class="actions">
+    <button id="btn-ouvrir-image" class="primaire">Ouvrir une image…</button>
+    <button id="btn-exemple">Exemple</button>
+    <span class="separateur"></span>
+    <button id="btn-ouvrir-projet">Ouvrir un projet</button>
+    <button id="btn-enregistrer-projet">Enregistrer le projet</button>
+    <span class="separateur"></span>
+    <button id="btn-aide">Aide</button>
+  </div>
+  <input type="file" id="fichier-image" accept="image/*" hidden>
+  <input type="file" id="fichier-projet" accept=".json,application/json" hidden>
+</header>
+
+<main class="grille">
+
+  <!-- ================= Plan de travail ================= -->
+  <section class="atelier">
+    <div class="outils" role="toolbar" aria-label="Outils">
+      <button class="outil actif" data-outil="navigation" title="Naviguer  (V)">
+        <span class="pictogramme">&#10021;</span><span>Naviguer</span></button>
+      <button class="outil" data-outil="calibration" title="Placer les repères d’axes  (C)">
+        <span class="pictogramme">&#8853;</span><span>Repères</span></button>
+      <button class="outil" data-outil="pipette" title="Prélever une couleur  (P)">
+        <span class="pictogramme">&#9673;</span><span>Pipette</span></button>
+      <button class="outil" data-outil="zone" title="Délimiter la zone d’analyse  (Z)">
+        <span class="pictogramme">&#9633;</span><span>Zone</span></button>
+      <button class="outil" data-outil="exclusion" title="Exclure un rectangle (légende…)  (X)">
+        <span class="pictogramme">&#9634;</span><span>Exclure</span></button>
+      <button class="outil" data-outil="points" title="Ajouter des points à la main  (A)">
+        <span class="pictogramme">&#43;</span><span>Pointer</span></button>
+      <button class="outil" data-outil="gomme" title="Supprimer des points  (E)">
+        <span class="pictogramme">&#8722;</span><span>Gommer</span></button>
+
+      <span class="ecart"></span>
+
+      <button id="btn-zoom-moins" title="Dézoomer  (-)">&#8722;</button>
+      <span id="etiquette-zoom" class="valeur-zoom">100 %</span>
+      <button id="btn-zoom-plus" title="Zoomer  (+)">&#43;</button>
+      <button id="btn-ajuster" title="Ajuster à la fenêtre  (0)">Ajuster</button>
+    </div>
+
+    <div class="scene" id="scene">
+      <canvas id="canevas"></canvas>
+      <canvas id="loupe" width="150" height="150" class="loupe" hidden></canvas>
+      <div class="accueil" id="accueil">
+        <p class="titre-accueil">Déposez une image de graphique ici</p>
+        <p>ou <button class="lien" id="lien-ouvrir">choisissez un fichier</button>,
+           ou collez une capture d’écran&nbsp;(<kbd>Ctrl</kbd>+<kbd>V</kbd>).</p>
+        <p class="discret">Aucune donnée ne quitte cette machine : tout se passe
+           dans le navigateur, sans réseau ni serveur.</p>
+      </div>
+    </div>
+
+    <div class="etat" id="etat">
+      <span id="etat-position">—</span>
+      <span id="etat-message"></span>
+    </div>
+  </section>
+
+  <!-- ================= Panneau latéral ================= -->
+  <aside class="panneau">
+
+    <details class="bloc" open>
+      <summary>1. Image</summary>
+      <div class="contenu">
+        <p id="info-image" class="discret">Aucune image chargée.</p>
+      </div>
+    </details>
+
+    <details class="bloc" open>
+      <summary>2. Calibration des axes</summary>
+      <div class="contenu">
+        <p class="aide">
+          Placez quatre repères : deux sur l’axe X (seule leur valeur X compte),
+          deux sur l’axe Y. Les axes peuvent être inclinés ou cisaillés.
+        </p>
+        <table class="reperes">
+          <thead><tr><th>Repère</th><th>Valeur</th><th>Position</th></tr></thead>
+          <tbody id="corps-reperes"></tbody>
+        </table>
+        <div class="ligne">
+          <label><input type="checkbox" id="log-x"> Axe X logarithmique</label>
+          <label><input type="checkbox" id="log-y"> Axe Y logarithmique</label>
+        </div>
+        <p id="etat-calibration" class="etat-calibration"></p>
+      </div>
+    </details>
+
+    <details class="bloc" open>
+      <summary>3. Zone d’analyse</summary>
+      <div class="contenu">
+        <p class="aide">
+          Restreindre la détection au cadre du tracé évite de capter les axes et
+          les étiquettes. Excluez la légende : elle contient des segments de la
+          couleur exacte des courbes, qu’aucune tolérance ne peut distinguer.
+        </p>
+        <p id="info-zone" class="discret">Zone : image entière.</p>
+        <div class="ligne">
+          <button id="btn-zone-cadre">Zone = image entière</button>
+          <button id="btn-zone-effacer">Effacer</button>
+        </div>
+        <ul id="liste-exclusions" class="liste-compacte"></ul>
+      </div>
+    </details>
+
+    <details class="bloc" open>
+      <summary>4. Séries</summary>
+      <div class="contenu">
+        <ul id="liste-series" class="liste-series"></ul>
+        <div class="ligne">
+          <button id="btn-ajouter-serie">Nouvelle série</button>
+          <button id="btn-supprimer-serie">Supprimer</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="bloc" open>
+      <summary>5. Détection automatique</summary>
+      <div class="contenu">
+        <div class="ligne cible">
+          <label for="couleur-cible">Couleur</label>
+          <input type="color" id="couleur-cible" value="#c1121f">
+          <button id="btn-pipette" title="Prélever la couleur dans l’image">Pipette</button>
+        </div>
+        <div id="palette" class="palette"></div>
+        <button id="btn-palette" class="pleine-largeur">Proposer les couleurs du graphique</button>
+
+        <label class="curseur">
+          <span>Tolérance de teinte <b id="val-chroma">20</b></span>
+          <input type="range" id="tol-chroma" min="1" max="60" value="20">
+        </label>
+        <label class="curseur">
+          <span>Tolérance de clarté <b id="val-lum">30</b></span>
+          <input type="range" id="tol-lum" min="1" max="100" value="30">
+        </label>
+        <p class="aide">
+          La teinte distingue les courbes entre elles ; la clarté absorbe
+          l’anticrénelage des bords du trait. Pour une courbe noire ou grise,
+          seule la clarté discrimine : resserrez-la.
+        </p>
+
+        <div class="ligne">
+          <label class="champ">Balayage
+            <select id="orientation">
+              <option value="colonnes">en colonnes — courbe y = f(x)</option>
+              <option value="lignes">en lignes — courbe x = f(y)</option>
+            </select>
+          </label>
+        </div>
+        <div class="ligne">
+          <label class="champ">Mode
+            <select id="mode">
+              <option value="moyenne">un point par ligne (moyenne)</option>
+              <option value="tous">tous les segments</option>
+              <option value="suivi">suivi de continuité</option>
+            </select>
+          </label>
+        </div>
+        <div class="ligne">
+          <label class="champ">Pas <input type="number" id="pas" min="1" max="50" value="1"></label>
+          <label class="champ">Épaisseur min. <input type="number" id="longueur-min" min="1" max="99" value="1"></label>
+          <label class="champ">Épaisseur max. <input type="number" id="longueur-max" min="0" max="999" value="0"></label>
+        </div>
+        <div class="ligne">
+          <label class="champ">Allègement (px)
+            <input type="number" id="simplification" min="0" max="20" step="0.1" value="0"></label>
+          <label class="interrupteur"><input type="checkbox" id="apercu" checked> Aperçu du masque</label>
+        </div>
+
+        <button id="btn-detecter" class="primaire pleine-largeur">Détecter la courbe</button>
+        <p id="stats-detection" class="stats"></p>
+      </div>
+    </details>
+
+    <details class="bloc" open>
+      <summary>6. Export</summary>
+      <div class="contenu">
+        <div class="ligne">
+          <label class="champ">Format
+            <select id="format">
+              <option value="csv-long">CSV — format long</option>
+              <option value="csv-large">CSV — colonnes par série</option>
+              <option value="colonnes">Texte — deux colonnes</option>
+              <option value="json">JSON</option>
+              <option value="python">Python / NumPy</option>
+              <option value="matlab">MATLAB</option>
+            </select>
+          </label>
+        </div>
+        <div class="ligne">
+          <label class="champ">Séparateur
+            <select id="separateur">
+              <option value=",">virgule</option>
+              <option value=";">point-virgule</option>
+              <option value="&#9;">tabulation</option>
+            </select>
+          </label>
+          <label class="champ">Chiffres significatifs
+            <input type="number" id="decimales" min="1" max="15" value="6"></label>
+        </div>
+        <textarea id="apercu-export" class="apercu-export" readonly
+                  spellcheck="false" aria-label="Aperçu de l’export"></textarea>
+        <div class="ligne">
+          <button id="btn-copier">Copier</button>
+          <button id="btn-telecharger" class="primaire">Télécharger</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="bloc">
+      <summary>7. Notes</summary>
+      <div class="contenu">
+        <textarea id="notes" class="notes" rows="4"
+          placeholder="Provenance de la figure, page du rapport, incertitudes…"></textarea>
+      </div>
+    </details>
+
+  </aside>
+</main>
+
+<dialog id="dialogue-aide">
+  <h2>Aide-mémoire</h2>
+  <h3>Marche à suivre</h3>
+  <ol>
+    <li>Ouvrez l’image du graphique (bouton, glisser-déposer ou <kbd>Ctrl</kbd>+<kbd>V</kbd>).</li>
+    <li>Placez les quatre repères d’axes et saisissez leurs valeurs.</li>
+    <li>Délimitez la zone d’analyse, et excluez la légende.</li>
+    <li>Prélevez la couleur d’une courbe à la pipette, puis lancez la détection.</li>
+    <li>Corrigez à la main si besoin, puis exportez.</li>
+  </ol>
+  <h3>Raccourcis</h3>
+  <table class="raccourcis">
+    <tr><td><kbd>V</kbd> <kbd>C</kbd> <kbd>P</kbd> <kbd>Z</kbd> <kbd>X</kbd> <kbd>A</kbd> <kbd>E</kbd></td>
+        <td>naviguer, repères, pipette, zone, exclure, pointer, gommer</td></tr>
+    <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></td><td>zoom avant, arrière, ajuster</td></tr>
+    <tr><td>molette</td><td>zoom autour du curseur</td></tr>
+    <tr><td>glisser au bouton du milieu, ou <kbd>Espace</kbd>+glisser</td><td>déplacer l’image</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>annuler la dernière action</td></tr>
+    <tr><td><kbd>Suppr</kbd></td><td>vider la série active</td></tr>
+  </table>
+  <h3>Hors réseau</h3>
+  <p>
+    Cette page est entièrement autonome : aucun script distant, aucune requête.
+    Elle fonctionne en ouvrant <code>index.html</code> dans Firefox, y compris
+    sur une machine sans réseau. Les projets et les exports sont écrits par le
+    navigateur dans votre dossier de téléchargements.
+  </p>
+  <form method="dialog"><button class="primaire">Fermer</button></form>
+</dialog>
+
+<script src="app/js/00_base.js"></script>
+<script src="app/js/10_couleur.js"></script>
+<script src="app/js/20_calibration.js"></script>
+<script src="app/js/30_detection.js"></script>
+<script src="app/js/40_export.js"></script>
+<script src="app/js/50_projet.js"></script>
+<script src="app/js/60_vue.js"></script>
+<script src="app/js/80_exemple.js"></script>
+<script src="app/js/90_main.js"></script>
+</body>
+</html>

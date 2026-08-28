@@ -1,0 +1,286 @@
+/*
+ * style.css — feuille unique, sans dépendance ni police distante.
+ *
+ * Les couleurs sont regroupées en variables : la teinte d'accent sert aussi
+ * aux repères tracés sur le canevas (voir 90_main.js), les deux doivent rester
+ * cohérentes.
+ */
+:root {
+  --fond: #f2f3f5;
+  --fond-panneau: #ffffff;
+  --fond-barre: #1f2430;
+  --fond-scene: #6b7280;
+  --trait: #d6d9de;
+  --texte: #1c1f26;
+  --texte-doux: #656b76;
+  --accent: #1b6ec2;
+  --accent-clair: #e8f1fb;
+  --alerte: #b42318;
+  --succes: #17683a;
+  --rayon: 5px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--texte);
+  background: var(--fond);
+}
+
+body { display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---------- Barre de titre ---------- */
+.barre {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 14px;
+  background: var(--fond-barre);
+  color: #eef0f4;
+  flex: 0 0 auto;
+}
+.marque { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .2px; }
+.marque .logo { color: #6fb1f0; font-size: 18px; }
+.barre .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.barre .separateur { width: 1px; height: 22px; background: #3a4150; }
+
+/* ---------- Boutons et champs ---------- */
+button {
+  font: inherit;
+  padding: 5px 11px;
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon);
+  background: #fff;
+  color: var(--texte);
+  cursor: pointer;
+}
+button:hover { background: var(--accent-clair); border-color: #a9c8e8; }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; background: #fff; }
+button.primaire { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primaire:hover { background: #1760a8; }
+button.pleine-largeur { width: 100%; margin-top: 6px; }
+button.lien {
+  border: 0; background: none; color: var(--accent);
+  text-decoration: underline; padding: 0; font: inherit;
+}
+
+input[type=text], input[type=number], select, textarea {
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon);
+  background: #fff;
+  color: var(--texte);
+  min-width: 0;
+}
+input[type=color] {
+  width: 40px; height: 28px; padding: 1px;
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  background: #fff; cursor: pointer;
+}
+input:focus-visible, select:focus-visible, button:focus-visible, textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+kbd {
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 2px 5px; border: 1px solid var(--trait);
+  border-bottom-width: 2px; border-radius: 4px; background: #fafbfc;
+}
+
+/* ---------- Disposition générale ---------- */
+.grille { flex: 1 1 auto; display: flex; min-height: 0; }
+.atelier { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* ---------- Barre d'outils ---------- */
+.outils {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 10px;
+  background: var(--fond-panneau);
+  border-bottom: 1px solid var(--trait);
+  flex: 0 0 auto; flex-wrap: wrap;
+}
+.outil { display: flex; align-items: center; gap: 6px; }
+.outil .pictogramme { font-size: 15px; line-height: 1; }
+.outil.actif { background: var(--accent); border-color: var(--accent); color: #fff; }
+.outils .ecart { flex: 1 1 auto; }
+.valeur-zoom {
+  min-width: 62px; text-align: center;
+  font-variant-numeric: tabular-nums; color: var(--texte-doux);
+}
+
+/* ---------- Scène ---------- */
+.scene {
+  position: relative; flex: 1 1 auto; min-height: 0;
+  background: var(--fond-scene);
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,.08) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.08) 75%),
+    linear-gradient(45deg, rgba(0,0,0,.08) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.08) 75%);
+  background-size: 22px 22px;
+  background-position: 0 0, 11px 11px;
+  overflow: hidden;
+}
+.scene canvas#canevas { display: block; width: 100%; height: 100%; }
+.scene.glisser { outline: 3px dashed #fff; outline-offset: -8px; }
+
+/* Curseurs : dire au geste ce qu'il fera avant qu'il ne le fasse. */
+.scene[data-outil=navigation] canvas#canevas { cursor: grab; }
+.scene[data-outil=navigation].saisie canvas#canevas { cursor: grabbing; }
+.scene[data-outil=calibration] canvas#canevas,
+.scene[data-outil=points] canvas#canevas,
+.scene[data-outil=gomme] canvas#canevas { cursor: crosshair; }
+.scene[data-outil=pipette] canvas#canevas { cursor: cell; }
+.scene[data-outil=zone] canvas#canevas,
+.scene[data-outil=exclusion] canvas#canevas { cursor: crosshair; }
+
+.loupe {
+  position: absolute; right: 12px; top: 12px;
+  width: 150px; height: 150px;
+  border: 1px solid #fff; border-radius: var(--rayon);
+  box-shadow: 0 2px 10px rgba(0,0,0,.35);
+  background: #fff; pointer-events: none;
+}
+
+/*
+ * L'attribut `hidden` de HTML pose display:none via une règle de la feuille du
+ * navigateur, que n'importe quelle règle d'auteur portant sur `display` prend
+ * en défaut — ici `.accueil { display: flex }`. Sans cette remise à zéro
+ * explicite, l'accueil resterait affiché par-dessus l'image une fois celle-ci
+ * chargée. Posée globalement, la règle protège aussi la loupe et tout élément
+ * masqué par la suite.
+ */
+[hidden] { display: none !important; }
+
+.accueil {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; text-align: center; color: #f4f5f7; padding: 24px;
+  text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.accueil .titre-accueil { font-size: 19px; font-weight: 600; margin: 0; }
+.accueil p { margin: 0; }
+.accueil .lien { color: #cfe4fb; }
+.accueil .discret { color: #dfe3ea; font-size: 13px; max-width: 46ch; margin-top: 10px; }
+
+.etat {
+  display: flex; gap: 18px; align-items: center;
+  padding: 4px 12px; min-height: 26px;
+  background: var(--fond-panneau);
+  border-top: 1px solid var(--trait);
+  font-variant-numeric: tabular-nums;
+  color: var(--texte-doux); flex: 0 0 auto;
+}
+#etat-message { color: var(--texte); }
+#etat-message.alerte { color: var(--alerte); }
+#etat-message.succes { color: var(--succes); }
+
+/* ---------- Panneau latéral ---------- */
+.panneau {
+  flex: 0 0 340px; overflow-y: auto;
+  background: var(--fond-panneau);
+  border-left: 1px solid var(--trait);
+}
+.bloc { border-bottom: 1px solid var(--trait); }
+.bloc > summary {
+  cursor: pointer; padding: 9px 12px;
+  font-weight: 600; background: #fafbfc;
+  list-style: none;
+}
+.bloc > summary::-webkit-details-marker { display: none; }
+.bloc > summary::before { content: "\25B8  "; color: var(--texte-doux); }
+.bloc[open] > summary::before { content: "\25BE  "; }
+.contenu { padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+
+.ligne { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ligne .champ { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--texte-doux); flex: 1 1 90px; }
+.ligne .champ input, .ligne .champ select { width: 100%; }
+.aide { margin: 0; font-size: 12px; color: var(--texte-doux); }
+.discret { color: var(--texte-doux); margin: 0; }
+.stats { margin: 4px 0 0; font-size: 12px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+
+/* ---------- Repères ---------- */
+table.reperes { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.reperes th {
+  text-align: left; font-weight: 600; font-size: 11px;
+  color: var(--texte-doux); text-transform: uppercase; letter-spacing: .04em;
+  padding-bottom: 3px;
+}
+table.reperes td { padding: 2px 0; }
+table.reperes tr.actif td:first-child { color: var(--accent); font-weight: 600; }
+table.reperes input { width: 100%; }
+table.reperes .position { font-size: 11px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+table.reperes .repere-nom { cursor: pointer; }
+
+.etat-calibration { margin: 0; font-size: 12px; }
+.etat-calibration.ok { color: var(--succes); }
+.etat-calibration.souci { color: var(--alerte); }
+
+/* ---------- Séries ---------- */
+.liste-series { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.liste-series li {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 6px; border: 1px solid transparent; border-radius: var(--rayon);
+  cursor: pointer;
+}
+.liste-series li:hover { background: #f6f8fa; }
+.liste-series li.actif { background: var(--accent-clair); border-color: #b7d3ef; }
+.liste-series .nom { flex: 1 1 auto; min-width: 0; border: 0; background: none; padding: 2px 3px; }
+.liste-series .nom:focus { background: #fff; border: 1px solid var(--trait); }
+.liste-series .compte { font-size: 11px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+.liste-series .oeil { border: 0; background: none; padding: 2px 4px; font-size: 13px; cursor: pointer; }
+.liste-series .oeil.masquee { opacity: .35; }
+
+.liste-compacte { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.liste-compacte li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--texte-doux);
+  font-variant-numeric: tabular-nums;
+}
+.liste-compacte button { padding: 1px 7px; font-size: 12px; }
+
+/* ---------- Détection ---------- */
+.cible label { font-size: 12px; color: var(--texte-doux); }
+.palette { display: flex; flex-wrap: wrap; gap: 5px; }
+.palette button {
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid rgba(0,0,0,.25); border-radius: var(--rayon);
+}
+.curseur { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--texte-doux); }
+.curseur input[type=range] { width: 100%; }
+.curseur b { color: var(--texte); font-variant-numeric: tabular-nums; }
+.interrupteur { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--texte-doux); }
+
+/* ---------- Export ---------- */
+.apercu-export, .notes {
+  width: 100%; resize: vertical;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre; overflow: auto;
+}
+.apercu-export { height: 130px; background: #fafbfc; }
+.notes { font-family: inherit; font-size: 13px; white-space: pre-wrap; }
+
+/* ---------- Dialogue ---------- */
+dialog {
+  border: 1px solid var(--trait); border-radius: 8px;
+  padding: 20px 24px; max-width: 640px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  color: var(--texte);
+}
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog h2 { margin: 0 0 12px; font-size: 18px; }
+dialog h3 { margin: 16px 0 6px; font-size: 14px; }
+dialog ol { margin: 0; padding-left: 20px; }
+dialog p { margin: 6px 0; }
+dialog code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: #f2f3f5; padding: 1px 4px; border-radius: 3px; }
+table.raccourcis { border-collapse: collapse; font-size: 13px; }
+table.raccourcis td { padding: 3px 12px 3px 0; vertical-align: top; }
+dialog form { margin-top: 18px; text-align: right; }
+
+/* Écran étroit : le panneau passe sous la scène plutôt que de l'écraser. */
+@media (max-width: 900px) {
+  .grille { flex-direction: column; }
+  .panneau { flex: 0 0 auto; max-height: 45vh; border-left: 0; border-top: 1px solid var(--trait); }
+}

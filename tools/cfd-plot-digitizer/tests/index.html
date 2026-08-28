@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>cfd-plot-digitizer — tests</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; background: #f7f8fa; color: #1c1f26; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sous-titre { color: #656b76; margin: 0 0 18px; }
+  .bilan { padding: 10px 14px; border-radius: 6px; font-weight: 600; margin-bottom: 16px; }
+  .bilan.ok { background: #dff5e6; color: #17683a; }
+  .bilan.ko { background: #fde8e6; color: #b42318; }
+  h2 { font-size: 14px; margin: 18px 0 6px; color: #1b6ec2; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 2px 0 2px 22px; position: relative; }
+  li.ok::before { content: "ok"; position: absolute; left: 0; color: #17683a; font-size: 12px; }
+  li.echec::before { content: "\2717"; position: absolute; left: 0; color: #b42318; }
+  li.echec { color: #b42318; }
+  li .detail { display: block; margin-left: 0; color: #b42318; font-size: 12px; }
+  code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: #eceef1; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>cfd-plot-digitizer — suite de tests</h1>
+<p class="sous-titre">
+  Les mêmes fichiers que <code>node tests/executer.js</code>. Ouvrir cette page
+  suffit : aucun réseau, aucun outil à installer. Les tests d’intégration sur
+  les figures réelles, qui demandent de lire des fichiers, ne tournent que sous
+  node&nbsp;; tout le reste s’exécute ici.
+</p>
+<div id="bilan" class="bilan">Exécution…</div>
+<div id="resultats"></div>
+
+<script src="../app/js/00_base.js"></script>
+<script src="../app/js/10_couleur.js"></script>
+<script src="../app/js/20_calibration.js"></script>
+<script src="../app/js/30_detection.js"></script>
+<script src="../app/js/40_export.js"></script>
+<script src="../app/js/50_projet.js"></script>
+<script src="../app/js/60_vue.js"></script>
+<script src="00_cadre.js"></script>
+<script src="test_base.js"></script>
+<script src="test_couleur.js"></script>
+<script src="test_calibration.js"></script>
+<script src="test_detection.js"></script>
+<script src="test_export.js"></script>
+<script src="test_projet.js"></script>
+<script src="test_vue.js"></script>
+<script src="test_integration.js"></script>
+<script>
+(function () {
+  'use strict';
+  var resultats = document.getElementById('resultats');
+  var liste = null;
+  var debut = performance.now();
+
+  var bilan = CFDD.Tests.executer(function (ev) {
+    if (ev.type === 'suite') {
+      var titre = document.createElement('h2');
+      titre.textContent = ev.nom;
+      resultats.appendChild(titre);
+      liste = document.createElement('ul');
+      resultats.appendChild(liste);
+    } else if (ev.type === 'ok' || ev.type === 'echec') {
+      var li = document.createElement('li');
+      li.className = (ev.type === 'ok') ? 'ok' : 'echec';
+      li.textContent = ev.titre;
+      if (ev.type === 'echec') {
+        var detail = document.createElement('span');
+        detail.className = 'detail';
+        detail.textContent = ev.erreur.message;
+        li.appendChild(detail);
+      }
+      liste.appendChild(li);
+    }
+  });
+
+  var duree = ((performance.now() - debut) / 1000).toFixed(2);
+  var boite = document.getElementById('bilan');
+  boite.className = 'bilan ' + (bilan.echecs === 0 ? 'ok' : 'ko');
+  boite.textContent = (bilan.echecs === 0)
+    ? (bilan.total + ' tests passés en ' + duree + ' s')
+    : (bilan.echecs + ' échec(s) sur ' + bilan.total + ' tests, en ' + duree + ' s');
+  document.title = (bilan.echecs === 0 ? 'OK' : 'ECHEC') + ' — ' + bilan.total + ' tests';
+})();
+</script>
+</body>
+</html>

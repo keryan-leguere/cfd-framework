@@ -205,6 +205,36 @@ not part of the Bash framework's runtime:
       aligned, so θn and θe move together) — fixed and tested.
   Terminal report is Rich **in French** and avoids bold (`report/theme.py`, `CFD_NOZZLE_GRAS=1`
   restores it); figures use `cfd-plot` when installed, else plain Matplotlib.
+- **`tools/cfd-plot-digitizer/`** — **not a Python package**: a dependency-free browser app that
+  recovers numeric data from a picture of a plot (paper figure, scanned report, vendor chart). Runs by
+  opening `index.html` in a browser — no server, no install, no network — because the target is an
+  air-gapped workstation; `python3 outils/construire_autonome.py` inlines everything into one
+  ~170 ko `cfd-plot-digitizer.html` for carrying on a USB stick. Layout mirrors the other tools:
+  `00_DOC/` (FR docs — `01_CALIBRATION.md`, `02_DETECTION_COULEUR.md`, `03_EXPORT_ET_PROJET.md`),
+  `app/js/` (`00_base` → `60_vue` are DOM-free and unit-tested, `90_main` holds all UI wiring),
+  `exemples/`, `outils/`, `tests/`. UI, comments and docs are French, like cfd-perf/atm/nozzle.
+    - **No ES modules anywhere.** Firefox gives a `file://` page an opaque origin and refuses
+      `import`, so scripts load as classic `<script>` tags onto a `CFDD` namespace. Same reason the
+      demo figure is embedded as a data URL in the generated `app/js/80_exemple.js` (regenerate with
+      `outils/generer_exemple_embarque.py`): an `<img>` read from a sibling file taints the canvas and
+      kills `getImageData`, hence all detection.
+    - **Headline feature — pick a colour, get the curve.** Matching uses CIE L\*a\*b\* with *two*
+      tolerances, chroma and lightness, kept separate on purpose: anti-aliasing moves lightness far
+      more than hue, and for a black/grey curve a\* and b\* are zero on both sides so only lightness
+      discriminates. Then a scan of the mask takes the *centre* of each contiguous run.
+    - Three traps, all documented and tested: a **polar** `Cz(Cx)` is a lying arc, so column scanning
+      averages its two branches into a wrong curve — switch `orientation` to rows; a **legend**
+      contains segments of the exact curve colour that no tolerance can reject — hence rectangular
+      **exclusion zones** (forgetting one moved the log-plot error from 0.03 % to 1.9 decades); and
+      where the curve runs *parallel* to the scan direction the error rises to 1–2 px instead of
+      0.1–0.5 px.
+    - Series points are stored in **pixel** coordinates, never physical units, so fixing a mistyped
+      axis value re-derives every series without re-picking anything.
+    - Tests: `node tests/executer.js` (89, under a second) **or** open `tests/index.html` in a
+      browser — same files, and the 6 file-reading integration tests disable themselves there. Those
+      six digitize real matplotlib figures and compare against the data that drew them, measuring
+      distance to the reference curve in axis-normalised coordinates (a vertical gap would just be
+      measuring the local slope). `outils/verifier_navigateur.sh` screenshots a real browser.
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).
 - **`tools/slurm-utils/`** — Slurm command aliases, priority explorer, queue recommender (`slurm-utils` CLI).
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).
@@ -217,7 +247,8 @@ not part of the Bash framework's runtime:
   stay deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).
   mypy runs here at `check_untyped_defs` level, not `strict` like the other packages — see TODO.md.
 
-Each has its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.12) with a `dev` extra
+Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
+its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.12) with a `dev` extra
 (`pytest`, `ruff`, `mypy`/`pytest-cov`). There is no workspace tool, no lockfile and no
 `requirements.txt` anywhere: you `cd` into a package, install it editable into a venv, and run the
 tools directly. Install and test one in isolation, e.g.:
