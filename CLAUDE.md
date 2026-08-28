@@ -208,8 +208,10 @@ not part of the Bash framework's runtime:
 - **`tools/cfd-plot-digitizer/`** — **not a Python package**: a dependency-free browser app that
   recovers numeric data from a picture of a plot (paper figure, scanned report, vendor chart). Runs by
   opening `index.html` in a browser — no server, no install, no network — because the target is an
-  air-gapped workstation; `python3 outils/construire_autonome.py` inlines everything into one
-  ~170 ko `cfd-plot-digitizer.html` for carrying on a USB stick. Layout mirrors the other tools:
+  air-gapped workstation. `cfd-plot-digitizer.html` at the root is the same app inlined into one
+  168 ko file (built by `outils/construire_autonome.py`) and is **committed**, so it can be copied
+  to a stick with nothing else — which also means it can go stale: rebuild after touching any
+  source, and `construire_autonome.py --verifier` exits 1 when it has drifted. Layout mirrors the other tools:
   `00_DOC/` (FR docs — `01_CALIBRATION.md`, `02_DETECTION_COULEUR.md`, `03_EXPORT_ET_PROJET.md`),
   `app/js/` (`00_base` → `60_vue` are DOM-free and unit-tested, `90_main` holds all UI wiring),
   `exemples/`, `outils/`, `tests/`. UI, comments and docs are French, like cfd-perf/atm/nozzle.

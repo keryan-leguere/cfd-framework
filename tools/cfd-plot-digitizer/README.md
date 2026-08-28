@@ -14,14 +14,24 @@ firefox index.html
 ```
 
 C'est tout. Ou, plus commode encore pour transporter l'outil sur une clé :
+`cfd-plot-digitizer.html` à la racine est un **fichier unique de 168 ko** —
+interface, code et figure d'exemple compris — versionné tel quel, à copier et à
+ouvrir. Rien d'autre à emporter.
+
+Cliquer sur **Exemple** charge un cas complet, calibration et zones déjà posées,
+pour prendre l'outil en main en une minute.
+
+Après toute modification des sources, le reconstruire — et le vérifier :
 
 ```
-python3 outils/construire_autonome.py     # produit cfd-plot-digitizer.html
+python3 outils/construire_autonome.py              # reconstruit
+python3 outils/construire_autonome.py --verifier   # 0 si à jour, 1 sinon
 ```
 
-un **fichier unique de 170 ko** — interface, code et figure d'exemple compris —
-qu'on copie et qu'on ouvre. Cliquer sur **Exemple** charge un cas complet,
-calibration et zones déjà posées, pour prendre l'outil en main en une minute.
+Un fichier construit et versionné peut se désynchroniser de ses sources sans
+que rien ne le signale, et un fichier périmé livré sur une clé est pire que pas
+de fichier du tout : il a l'air de fonctionner. D'où `--verifier`, à brancher
+dans un contrôle avant commit.
 
 ## Ce que ça fait
 
@@ -94,6 +104,7 @@ Les deux sont détaillés dans [`00_DOC/02_DETECTION_COULEUR.md`](00_DOC/02_DETE
 
 ```
 index.html                  l'application
+cfd-plot-digitizer.html     la même, en un seul fichier (construit, versionné)
 app/css/style.css           feuille unique, aucune police distante
 app/js/
   00_base.js                algèbre, formatage, Douglas-Peucker

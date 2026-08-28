@@ -7,6 +7,12 @@ moitié. Ce script produit un `cfd-plot-digitizer.html` unique — CSS, scripts 
 figure d'exemple compris — qu'on copie sur une clé et qu'on ouvre directement.
 
     python3 outils/construire_autonome.py [-s SORTIE]
+    python3 outils/construire_autonome.py --verifier
+
+Le fichier construit étant versionné, il peut se désynchroniser des sources
+sans que rien ne le signale — et un fichier périmé livré sur une clé est pire
+que pas de fichier du tout, puisqu'il a l'air de fonctionner. `--verifier`
+reconstruit en mémoire et compare : à brancher dans un contrôle avant commit.
 
 Bibliothèque standard uniquement. Aucune minification : le fichier reste
 lisible et modifiable sur place, ce qui compte davantage que sa taille quand on
@@ -62,7 +68,8 @@ def proteger(source, quoi):
     return source
 
 
-def construire(sortie):
+def assembler():
+    """Rend le document complet, sans rien écrire."""
     page = lire(RACINE / "index.html")
 
     collecteur = Collecteur()
@@ -101,14 +108,33 @@ def construire(sortie):
     )
     page = page.replace("<!DOCTYPE html>", "<!DOCTYPE html>\n" + entete, 1)
 
-    with io.open(sortie, "w", encoding="utf-8") as f:
-        f.write(page)
-
     reste = [m for m in ('src="app/', "href=\"app/") if m in page]
     if reste:
         raise SystemExit("des références locales subsistent : %s" % reste)
 
-    return len(collecteur.feuilles), len(collecteur.scripts), sortie.stat().st_size
+    return page, len(collecteur.feuilles), len(collecteur.scripts)
+
+
+def construire(sortie):
+    page, feuilles, scripts = assembler()
+    with io.open(sortie, "w", encoding="utf-8") as f:
+        f.write(page)
+    return feuilles, scripts, sortie.stat().st_size
+
+
+def verifier(cible):
+    """Compare le fichier versionné à une reconstruction. 0 si à jour."""
+    attendu, _, _ = assembler()
+    if not cible.exists():
+        print("%s absent — lancer la construction." % cible.name)
+        return 1
+    if lire(cible) != attendu:
+        print("%s est périmé : les sources ont changé depuis sa construction."
+              % cible.name)
+        print("Reconstruire avec :  python3 outils/construire_autonome.py")
+        return 1
+    print("%s est à jour." % cible.name)
+    return 0
 
 
 def main():
@@ -116,7 +142,13 @@ def main():
     analyseur.add_argument(
         "-s", "--sortie", default=str(RACINE / "cfd-plot-digitizer.html"),
         help="fichier HTML à écrire (défaut : cfd-plot-digitizer.html à la racine)")
+    analyseur.add_argument(
+        "--verifier", action="store_true",
+        help="ne rien écrire : vérifier que le fichier existant est à jour")
     args = analyseur.parse_args()
+
+    if args.verifier:
+        return verifier(pathlib.Path(args.sortie))
 
     feuilles, scripts, taille = construire(pathlib.Path(args.sortie))
     print("%s écrit — %d feuille(s) de style, %d script(s), %.0f ko"
