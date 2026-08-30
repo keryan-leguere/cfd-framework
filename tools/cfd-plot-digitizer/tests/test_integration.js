@@ -433,4 +433,63 @@
       }
     });
   });
+
+  T.suite('Intégration — cadre détecté sur figures réelles', function (test) {
+
+    /*
+     * La détection du cadre est jugée contre la boîte que matplotlib a
+     * réellement dessinée (`cadres.trace`), pas contre une valeur devinée.
+     * Tolérance de 2 px : l'axe est tracé sur ~1,3 px et le centre du trait
+     * mesuré peut légitimement tomber d'un côté ou de l'autre du bord
+     * géométrique rapporté par matplotlib.
+     */
+    Object.keys(R.reference).forEach(function (figure) {
+      test(figure + ' : les quatre bords tombent sur les axes', function (a) {
+        var attendu = R.reference[figure].cadres.trace;
+        var res = CFDD.Cadre.detecter(R.images[figure]);
+        a.ok(res, 'un cadre est détecté');
+        a.egal(res.confiance, 1, 'les quatre côtés sont vus comme des traits');
+        a.proche(res.cadre.x0, attendu.x0, 2, 'bord gauche');
+        a.proche(res.cadre.x1, attendu.x1, 2, 'bord droit');
+        a.proche(res.cadre.y0, attendu.y0, 2, 'bord haut');
+        a.proche(res.cadre.y1, attendu.y1, 2, 'bord bas');
+      });
+    });
+
+    test('les repères déduits calibrent au niveau du pointage manuel', function (a) {
+      /*
+       * Le vrai juge : on remplace les repères « parfaits » de la référence
+       * par ceux que produit la détection, on saisit les bornes des axes, et
+       * on mesure l'écart sur un point connu. S'il reste sous le pixel, le
+       * bouton fait gagner du temps sans rien coûter en exactitude.
+       */
+      var figure = 'exemple_convergence.png';
+      var lim = R.reference[figure].cadres.limites;
+      var res = CFDD.Cadre.detecter(R.images[figure]);
+      var r = CFDD.Cadre.reperes(res.cadre);
+
+      var cal = CFDD.Calibration.creer({
+        reperes: {
+          x1: { px: r.x1.px, py: r.x1.py, valeur: lim.x[0] },
+          x2: { px: r.x2.px, py: r.x2.py, valeur: lim.x[1] },
+          y1: { px: r.y1.px, py: r.y1.py, valeur: lim.y[0] },
+          y2: { px: r.y2.px, py: r.y2.py, valeur: lim.y[1] }
+        },
+        logX: lim.logX, logY: lim.logY
+      });
+
+      var parfaite = CFDD.Calibration.creer(R.reference[figure].calibration);
+      var norme = normaliseur(figure);
+      var pire = 0;
+      [[120, 90], [300, 200], [500, 380]].forEach(function (pt) {
+        var a1 = cal.versDonnees(pt[0], pt[1]);
+        var a2 = parfaite.versDonnees(pt[0], pt[1]);
+        pire = Math.max(pire,
+          Math.abs(norme.x(a1.x) - norme.x(a2.x)),
+          Math.abs(norme.y(a1.y) - norme.y(a2.y)));
+      });
+      a.ok(pire < 0.006, 'écart max à la calibration parfaite : '
+        + (pire * 100).toFixed(3) + ' % de l’étendue');
+    });
+  });
 })();

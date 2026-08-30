@@ -89,10 +89,22 @@
           Placez quatre repères : deux sur l’axe X (seule leur valeur X compte),
           deux sur l’axe Y. Les axes peuvent être inclinés ou cisaillés.
         </p>
+        <button id="btn-detecter-cadre" class="pleine-largeur">
+          Détecter le cadre automatiquement</button>
+        <p id="etat-cadre" class="stats"></p>
+        <label class="interrupteur">
+          <input type="checkbox" id="origine-commune" checked>
+          X1 et Y1 au même point (coin d’origine)
+        </label>
         <table class="reperes">
-          <thead><tr><th>Repère</th><th>Valeur</th><th>Position</th></tr></thead>
+          <thead><tr><th>Repère</th><th>Valeur</th><th>Position px</th></tr></thead>
           <tbody id="corps-reperes"></tbody>
         </table>
+        <p class="aide">
+          Les positions se corrigent au clavier autant qu’à la souris : saisir
+          « 84, 315 » place le repère au pixel exact, ce qu’un clic ne garantit
+          jamais.
+        </p>
         <div class="ligne">
           <label><input type="checkbox" id="log-x"> Axe X logarithmique</label>
           <label><input type="checkbox" id="log-y"> Axe Y logarithmique</label>
@@ -126,6 +138,31 @@
           <button id="btn-ajouter-serie">Nouvelle série</button>
           <button id="btn-supprimer-serie">Supprimer</button>
         </div>
+
+        <fieldset class="marqueur" id="bloc-marqueur">
+          <legend>Marqueur de la série active</legend>
+          <div class="ligne">
+            <label class="champ">Couleur
+              <input type="color" id="marqueur-couleur" value="#c1121f"></label>
+            <label class="champ">Forme
+              <select id="marqueur-forme"></select></label>
+            <label class="champ">Taille
+              <input type="number" id="marqueur-taille" min="1" max="12" step="0.5" value="2.5"></label>
+          </div>
+          <canvas id="apercu-marqueur" class="apercu-marqueur" width="300" height="40"></canvas>
+          <p class="aide">
+            Un disque de deux pixels posé sur un trait noir de deux pixels est
+            invisible : c’est exactement là qu’on pointe. Les formes creuses —
+            anneau, croix, plus — laissent voir la courbe sous le marqueur.
+          </p>
+        </fieldset>
+
+        <p class="aide">
+          <b>Pointer</b> ajoute un point à la série active.
+          <b>Gommer</b> retire le point le plus proche d’un clic&nbsp;; en
+          glissant, il retire d’un coup tous les points de la série active
+          contenus dans le rectangle.
+        </p>
       </div>
     </details>
 
@@ -146,24 +183,21 @@
               <input type="checkbox" id="apercu" checked> Aperçu du masque
             </label>
           </legend>
-          <div class="ligne">
-            <label class="champ">Rendu
-              <select id="apercu-mode">
-                <option value="les-deux">surligner et estomper le reste</option>
-                <option value="surbrillance">surligner seulement</option>
-                <option value="isoler">estomper le reste seulement</option>
-              </select>
-            </label>
-          </div>
+          <label class="champ">Rendu
+            <select id="apercu-mode">
+              <option value="les-deux" data-court="les deux">surligner et estomper le reste</option>
+              <option value="surbrillance" data-court="surligner">surligner seulement</option>
+              <option value="isoler" data-court="estomper">estomper le reste seulement</option>
+            </select>
+          </label>
+          <div class="vignettes" data-pour="apercu-mode" data-prefixe="apercuMode"></div>
           <label class="curseur">
             <span>Intensité <b id="val-apercu-opacite">85</b> %</span>
             <input type="range" id="apercu-opacite" min="20" max="100" value="85">
           </label>
-          <div class="ligne">
-            <label class="interrupteur">
-              <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
-            </label>
-          </div>
+          <label class="interrupteur">
+            <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
+          </label>
         </fieldset>
 
         <label class="curseur">
@@ -180,39 +214,39 @@
           seule la clarté discrimine : resserrez-la.
         </p>
 
-        <div class="ligne">
-          <label class="champ">Balayage
-            <select id="orientation">
-              <option value="colonnes">en colonnes — courbe y = f(x)</option>
-              <option value="lignes">en lignes — courbe x = f(y)</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Mode
-            <select id="mode">
-              <option value="moyenne">un point par ligne (moyenne)</option>
-              <option value="tous">tous les segments</option>
-              <option value="suivi">suivi de continuité</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Type de trait
-            <select id="filtre-trait">
-              <option value="tous">indifférent</option>
-              <option value="continu">continu</option>
-              <option value="tirets">tirets</option>
-              <option value="pointillé">pointillé</option>
-              <option value="discontinu">tout discontinu (tirets et pointillés)</option>
-            </select>
-          </label>
-        </div>
+        <label class="champ">Sens de balayage
+          <select id="orientation">
+            <option value="colonnes" data-court="colonnes">en colonnes — courbe y = f(x)</option>
+            <option value="lignes" data-court="lignes">en lignes — courbe x = f(y)</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="orientation" data-prefixe="orientation"></div>
+
+        <label class="champ">Mode d’extraction
+          <select id="mode">
+            <option value="moyenne" data-court="moyenne">un point par ligne (moyenne)</option>
+            <option value="tous" data-court="tous">tous les segments</option>
+            <option value="suivi" data-court="suivi">suivi de continuité</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="mode" data-prefixe="mode"></div>
+
+        <label class="champ">Type de trait
+          <select id="filtre-trait">
+            <option value="tous" data-court="tous">indifférent</option>
+            <option value="continu" data-court="continu">continu</option>
+            <option value="tirets" data-court="tirets">tirets</option>
+            <option value="pointillé" data-court="pointillé">pointillé</option>
+            <option value="discontinu" data-court="discontinu">tout discontinu</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="filtre-trait" data-prefixe="filtreTrait"></div>
         <p class="aide">
           Sur une planche en noir et blanc, deux courbes n’ont souvent que leur
           tracé pour les distinguer. Aucune tolérance de couleur ne peut les
           séparer&nbsp;; le tri sur le type de trait, si.
         </p>
+
         <div class="ligne">
           <label class="champ">Pas <input type="number" id="pas" min="1" max="50" value="1"></label>
           <label class="champ">Épaisseur min. <input type="number" id="longueur-min" min="1" max="99" value="1"></label>
@@ -224,12 +258,11 @@
           <label class="champ">Combler les lacunes (px)
             <input type="number" id="combler" min="0" max="200" value="0"></label>
         </div>
-        <p class="aide">
-          Le comblement relie les tronçons d’un trait discontinu par
-          interpolation. Le plafond évite de relier aussi une vraie interruption
-          — courbe masquée par un symbole, sortie du cadre — et d’inventer des
-          points. Le viser un peu au-dessus de l’espace mesuré ci-dessous.
-        </p>
+
+        <details class="galerie">
+          <summary>À quoi servent ces réglages chiffrés ?</summary>
+          <div id="galerie-numerique" class="galerie-numerique"></div>
+        </details>
 
         <button id="btn-detecter" class="primaire pleine-largeur">Détecter la courbe</button>
         <p id="stats-detection" class="stats"></p>
@@ -240,21 +273,13 @@
     <details class="bloc" open>
       <summary>6. Export</summary>
       <div class="contenu">
-        <div class="ligne">
-          <label class="champ">Format
-            <select id="format">
-              <option value="csv-long">CSV — format long</option>
-              <option value="csv-large">CSV — colonnes par série</option>
-              <option value="csv-grille">CSV — grille X commune (interpolée)</option>
-              <option value="colonnes">Texte — deux colonnes</option>
-              <option value="json">JSON</option>
-              <option value="python">Python / NumPy</option>
-              <option value="matlab">MATLAB</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Séparateur
+        <p class="aide">Choisissez la forme du fichier à écrire :</p>
+        <ul id="liste-formats" class="formats"></ul>
+        <p id="usage-format" class="aide usage-format"></p>
+        <pre id="exemple-format" class="exemple-format" aria-label="Exemple de rendu"></pre>
+
+        <div class="ligne" id="reglages-texte">
+          <label class="champ" id="champ-separateur">Séparateur
             <select id="separateur">
               <option value=",">virgule</option>
               <option value=";">point-virgule</option>
@@ -264,6 +289,7 @@
           <label class="champ">Chiffres significatifs
             <input type="number" id="decimales" min="1" max="15" value="6"></label>
         </div>
+
         <div id="reglages-grille" class="reglages-grille" hidden>
           <div class="ligne">
             <label class="champ">Points <input type="number" id="grille-points" min="2" max="20000" value="200"></label>
@@ -281,18 +307,19 @@
             </label>
           </div>
           <p class="aide">
-            Toutes les séries sont interpolées sur une même abscisse — la forme
-            qu’il faut pour les superposer dans un tableur ou en retrancher une
-            d’une autre. Hors du domaine propre d’une série, la cellule reste
-            vide&nbsp;: extrapoler inventerait des valeurs absentes de l’image.
+            Hors du domaine propre d’une série, la cellule reste vide&nbsp;:
+            extrapoler inventerait des valeurs absentes de l’image.
           </p>
           <p id="avertissements-grille" class="avertissements"></p>
         </div>
+
+        <p id="bilan-export" class="bilan-export"></p>
         <textarea id="apercu-export" class="apercu-export" readonly
                   spellcheck="false" aria-label="Aperçu de l’export"></textarea>
         <div class="ligne">
           <button id="btn-copier">Copier</button>
           <button id="btn-telecharger" class="primaire">Télécharger</button>
+          <span id="nom-fichier" class="nom-fichier"></span>
         </div>
       </div>
     </details>
@@ -313,7 +340,7 @@
   <h3>Marche à suivre</h3>
   <ol>
     <li>Ouvrez l’image du graphique (bouton, glisser-déposer ou <kbd>Ctrl</kbd>+<kbd>V</kbd>).</li>
-    <li>Placez les quatre repères d’axes et saisissez leurs valeurs.</li>
+    <li>Cliquez « Détecter le cadre », vérifiez les quatre repères, saisissez leurs valeurs.</li>
     <li>Délimitez la zone d’analyse, et excluez la légende.</li>
     <li>Prélevez la couleur d’une courbe à la pipette, puis lancez la détection.</li>
     <li>Corrigez à la main si besoin, puis exportez.</li>
@@ -327,6 +354,7 @@
     <tr><td>glisser au bouton du milieu, ou <kbd>Espace</kbd>+glisser</td><td>déplacer l’image</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>annuler la dernière action</td></tr>
     <tr><td><kbd>Suppr</kbd></td><td>vider la série active</td></tr>
+    <tr><td>glisser avec la gomme</td><td>effacer tous les points d’un rectangle</td></tr>
   </table>
   <h3>Hors réseau</h3>
   <p>
@@ -340,12 +368,14 @@
 
 <script src="app/js/00_base.js"></script>
 <script src="app/js/10_couleur.js"></script>
+<script src="app/js/15_cadre.js"></script>
 <script src="app/js/20_calibration.js"></script>
 <script src="app/js/25_trait.js"></script>
 <script src="app/js/30_detection.js"></script>
 <script src="app/js/40_export.js"></script>
 <script src="app/js/50_projet.js"></script>
 <script src="app/js/60_vue.js"></script>
+<script src="app/js/70_vignettes.js"></script>
 <script src="app/js/80_exemple.js"></script>
 <script src="app/js/90_main.js"></script>
 </body>

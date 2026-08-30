@@ -14,7 +14,7 @@ firefox index.html
 ```
 
 C'est tout. Ou, plus commode encore pour transporter l'outil sur une clé :
-`cfd-plot-digitizer.html` à la racine est un **fichier unique de 200 ko** —
+`cfd-plot-digitizer.html` à la racine est un **fichier unique de 254 ko** —
 interface, code et figure d'exemple compris — versionné tel quel, à copier et à
 ouvrir. Rien d'autre à emporter.
 
@@ -42,12 +42,22 @@ dans un contrôle avant commit.
   Avec comblement des lacunes, pour qu'une courbe en tirets ressorte continue.
 - **Axes linéaires ou logarithmiques**, y compris **inclinés ou cisaillés** :
   une figure scannée de travers se calibre sans redressement.
+- **Détection automatique du cadre** : un bouton place les quatre repères sur
+  les axes, à moins de deux pixels près sur les figures d'essai — il ne reste
+  qu'à saisir les valeurs. `X1` et `Y1` sont liés par défaut au coin d'origine,
+  soit trois repères à poser au lieu de quatre, et chaque position se corrige
+  aussi au clavier.
 - **Zones d'analyse et d'exclusion** — indispensables pour écarter la légende,
   qui contient des segments de la couleur exacte des courbes.
 - **Pointage manuel** à la loupe, mélangeable avec la détection dans une même
-  série.
+  série. Marqueur réglable par série — couleur, forme (dont anneau, croix,
+  plus, qui laissent voir la courbe dessous) et taille. La gomme retire un
+  point au clic, ou tout un rectangle en glissant.
+- **Réglages illustrés** : chaque option de détection porte une vignette qui
+  montre ce qu'elle fait, plutôt qu'un intitulé de trois mots à deviner.
 - **Export** CSV (long, large, ou **grille X commune interpolée**), texte,
-  JSON, Python/NumPy, MATLAB.
+  JSON, Python/NumPy, MATLAB — présentés en fiches, avec un exemple du rendu et
+  un bilan de ce qui sera écrit avant de l'écrire.
 - **Projets `.digit.json`** autonomes : image, calibration, séries et réglages
   dans un seul fichier, rouvrable ailleurs.
 
@@ -59,8 +69,9 @@ courbe vraie (voir « Tests » plus bas).
 
 1. **Ouvrir une image** — bouton, glisser-déposer, ou <kbd>Ctrl</kbd>+<kbd>V</kbd>
    pour coller une capture d'écran.
-2. **Caler les axes** — outil *Repères*, quatre clics, quatre valeurs. Viser des
-   graduations franches et les écarter au maximum ; la loupe est là pour ça.
+2. **Caler les axes** — bouton *Détecter le cadre automatiquement*, puis
+   saisir les quatre valeurs. À défaut, outil *Repères* : viser des graduations
+   franches et les écarter au maximum ; la loupe est là pour ça.
 3. **Cadrer** — outil *Zone* sur le tracé, outil *Exclure* sur la légende.
 4. **Prélever la couleur** — outil *Pipette*, clic sur la courbe. Cocher
    *Aperçu du masque* et régler les deux tolérances jusqu'à ce que la courbe
@@ -135,12 +146,14 @@ app/css/style.css           feuille unique, aucune police distante
 app/js/
   00_base.js                algèbre, formatage, Douglas-Peucker
   10_couleur.js             sRGB -> CIE L*a*b*, critère de correspondance
+  15_cadre.js               détection du cadre du tracé (profils d'encre)
   20_calibration.js         pixels <-> grandeurs physiques
   25_trait.js               composantes connexes, type de tracé
   30_detection.js           masque, balayage, extraction
   40_export.js              CSV, JSON, Python, MATLAB
   50_projet.js              sauvegarde et relecture
-  60_vue.js                 cadrage, zoom, rendu du canevas
+  60_vue.js                 cadrage, zoom, rendu du canevas, marqueurs
+  70_vignettes.js           illustrations SVG des réglages
   80_exemple.js             figure de démonstration embarquée (engendré)
   90_main.js                état et câblage de l'interface
 00_DOC/                     01 calibration, 02 détection, 03 export
@@ -149,7 +162,7 @@ outils/                     construction du fichier unique, vérifications
 tests/                      suite de tests (node et navigateur)
 ```
 
-Les modules `00` à `60` ne touchent jamais au DOM et sont testés isolément ;
+Les modules `00` à `70` ne touchent jamais au DOM et sont testés isolément ;
 seul `90_main.js` connaît l'interface.
 
 **Aucun module ES.** Firefox refuse les `import` sur une page ouverte en
@@ -160,14 +173,15 @@ d'ouvrir `index.html` sans serveur — la contrainte de départ.
 ## Tests
 
 ```
-node tests/executer.js          # 130 tests, moins d'une seconde
+node tests/executer.js          # 172 tests, environ une seconde
 ```
 
 ou, sans node — ce qui arrive sur un poste verrouillé — **ouvrir
 `tests/index.html` dans le navigateur** : mêmes fichiers, mêmes tests.
 
-Les neuf tests d'intégration lisent de vraies figures matplotlib et comparent au
-jeu de données qui a servi à les tracer ; ils ne tournent que sous node et se
+Les quatorze tests d'intégration lisent de vraies figures matplotlib et
+comparent au jeu de données qui a servi à les tracer — courbes extraites, et
+cadre détecté contre la boîte que matplotlib a réellement dessinée ; ils ne tournent que sous node et se
 désactivent d'eux-mêmes dans le navigateur. Ils mesurent la distance entre
 courbe extraite et courbe vraie, dans un repère normalisé par l'étendue des
 axes — la seule mesure honnête, un écart vertical étant amplifié par la pente

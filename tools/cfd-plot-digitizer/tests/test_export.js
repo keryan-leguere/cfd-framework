@@ -231,4 +231,77 @@
       a.egal(E.extension('colonnes'), 'txt');
     });
   });
+
+  T.suite('Export — fiches de format', function (test) {
+
+    test('chaque format proposé a sa fiche', function (a) {
+      /* L'interface construit sa liste à partir de FORMATS et lit la fiche de
+         chacun : un format sans fiche disparaîtrait purement du panneau. */
+      E.FORMATS.forEach(function (format) {
+        var d = E.description(format);
+        a.ok(d, 'fiche manquante : ' + format);
+        a.ok(d.titre && d.resume && d.usage && d.exemple,
+          'fiche incomplète : ' + format);
+        a.ok(d.extension, 'extension manquante : ' + format);
+      });
+    });
+
+    test('aucune fiche ne décrit un format inexistant', function (a) {
+      Object.keys(E.DESCRIPTIONS).forEach(function (format) {
+        a.ok(E.FORMATS.indexOf(format) !== -1, 'fiche orpheline : ' + format);
+      });
+    });
+
+    test('un format inconnu ne lève pas', function (a) {
+      a.egal(E.description('parquet'), null);
+      a.egal(E.extension('parquet'), 'txt');
+    });
+
+    test('le séparateur n’est annoncé que là où il agit', function (a) {
+      /*
+       * Ce drapeau pilote l'affichage du réglage : le montrer pour du JSON ou
+       * du Python ferait tourner un bouton sans effet. La vérité est donnée
+       * par le rendu lui-même — un format qui utilise le séparateur doit
+       * changer quand on le change.
+       */
+      var series = [{ nom: 'S', points: [{ x: 1, y: 2 }, { x: 3, y: 4 }] }];
+      E.FORMATS.forEach(function (format) {
+        var virgule = E.rendre(format, series, { separateur: ',' });
+        var pointVirgule = E.rendre(format, series, { separateur: ';' });
+        a.egal(E.description(format).separateur, virgule !== pointVirgule,
+          'drapeau séparateur incohérent pour ' + format);
+      });
+    });
+  });
+
+  T.suite('Export — bilan avant écriture', function (test) {
+
+    test('compte séries et points, et donne les étendues', function (a) {
+      var b = E.bilan([
+        { nom: 'A', points: [{ x: 0, y: 1 }, { x: 2, y: -3 }] },
+        { nom: 'B', points: [{ x: 5, y: 0 }] }
+      ]);
+      a.egal(b.nbSeries, 2);
+      a.egal(b.nbPoints, 3);
+      a.egal(b.x.min, 0); a.egal(b.x.max, 5);
+      a.egal(b.y.min, -3); a.egal(b.y.max, 1);
+    });
+
+    test('une série vide ne fabrique pas d’étendue', function (a) {
+      /* Sans ce garde-fou l'étendue vaudrait Infinity..-Infinity, affiché tel
+         quel dans le bandeau récapitulatif. */
+      var b = E.bilan([{ nom: 'A', points: [] }]);
+      a.egal(b.nbSeries, 1);
+      a.egal(b.nbPoints, 0);
+      a.egal(b.x, null);
+      a.egal(b.y, null);
+    });
+
+    test('aucune série du tout', function (a) {
+      var b = E.bilan([]);
+      a.egal(b.nbSeries, 0);
+      a.egal(b.nbPoints, 0);
+      a.egal(b.x, null);
+    });
+  });
 })();

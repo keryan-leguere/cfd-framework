@@ -70,4 +70,54 @@
       a.egal(s.length, 20000, 'aucune dent n’est éliminable');
     });
   });
+
+  T.suite('Base — rectangles et gomme en zone', function (test) {
+
+    test('normalise un rectangle tracé à l’envers', function (a) {
+      var r = B.normaliserRectangle({ x0: 40, y0: 30, x1: 10, y1: 5 });
+      a.egalProfond(r, { x0: 10, y0: 5, x1: 40, y1: 30 });
+    });
+
+    test('l’appartenance ignore le sens du tracé', function (a) {
+      /* Le rectangle vient d'un glisser à la souris : rien ne garantit qu'il
+         ait été tracé du coin haut-gauche vers le bas-droit. */
+      var envers = { x0: 40, y0: 30, x1: 10, y1: 5 };
+      a.ok(B.dansRectangle({ px: 20, py: 20 }, envers), 'point intérieur');
+      a.ok(!B.dansRectangle({ px: 45, py: 20 }, envers), 'point extérieur');
+    });
+
+    test('les bords sont inclus', function (a) {
+      var r = { x0: 0, y0: 0, x1: 10, y1: 10 };
+      a.ok(B.dansRectangle({ px: 0, py: 0 }, r), 'coin haut-gauche');
+      a.ok(B.dansRectangle({ px: 10, py: 10 }, r), 'coin bas-droit');
+    });
+
+    test('retire les points d’une zone et les compte', function (a) {
+      var points = [{ px: 1, py: 1 }, { px: 5, py: 5 }, { px: 9, py: 9 },
+                    { px: 20, py: 20 }];
+      var res = B.retirerDansRectangle(points, { x0: 4, y0: 4, x1: 10, y1: 10 });
+      a.egal(res.retires, 2, 'points retirés');
+      a.egal(res.points.length, 2, 'points conservés');
+      a.egal(res.points[0].px, 1, 'premier conservé');
+      a.egal(res.points[1].px, 20, 'dernier conservé');
+    });
+
+    test('l’ordre des points survivants est conservé', function (a) {
+      /* L'export doit rester monotone : réordonner la série en gommant
+         produirait un tracé en zigzag à la relecture. */
+      var points = [];
+      for (var i = 0; i < 20; i++) { points.push({ px: i, py: 0 }); }
+      var res = B.retirerDansRectangle(points, { x0: 5, y0: -1, x1: 8, y1: 1 });
+      for (var k = 1; k < res.points.length; k++) {
+        a.ok(res.points[k].px > res.points[k - 1].px, 'ordre croissant en x');
+      }
+    });
+
+    test('une zone vide ne retire rien et ne recopie pas moins', function (a) {
+      var points = [{ px: 1, py: 1 }, { px: 2, py: 2 }];
+      var res = B.retirerDansRectangle(points, { x0: 50, y0: 50, x1: 60, y1: 60 });
+      a.egal(res.retires, 0);
+      a.egal(res.points.length, 2);
+    });
+  });
 })();

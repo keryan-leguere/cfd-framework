@@ -104,4 +104,31 @@
       a.proche(P.seriesEnDonnees([{ nom: 'S', points: pts }], juste)[0].points[0].x, 50, 1e-9);
     });
   });
+
+  T.suite('Projet — marqueur de série', function (test) {
+
+    test('la forme et la taille survivent à l’aller-retour', function (a) {
+      var texte = P.serialiser({
+        series: [{ nom: 'A', couleurHex: '#123456',
+                   marqueur: { forme: 'losange', taille: 4 },
+                   points: [{ px: 1, py: 2 }] }]
+      });
+      var relu = P.deserialiser(texte);
+      a.egal(relu.series[0].marqueur.forme, 'losange');
+      a.egal(relu.series[0].marqueur.taille, 4);
+    });
+
+    test('un projet antérieur au marqueur se relit sans marqueur', function (a) {
+      /* Les fichiers déjà enregistrés doivent rester lisibles : l'interface
+         attribuera une forme par défaut, pas un plantage. */
+      var texte = P.serialiser({
+        series: [{ nom: 'A', couleurHex: '#123456', points: [{ px: 1, py: 2 }] }]
+      });
+      var brut = JSON.parse(texte);
+      delete brut.series[0].marqueur;
+      var relu = P.deserialiser(JSON.stringify(brut));
+      a.egal(relu.series[0].marqueur, null);
+      a.egal(relu.series[0].points.length, 1, 'les points sont intacts');
+    });
+  });
 })();

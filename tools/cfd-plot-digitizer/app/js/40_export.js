@@ -413,6 +413,105 @@
     return blocs.join('\n\n') + '\n';
   };
 
+  /* --- Description des formats ---------------------------------------
+   *
+   * Le choix du format est le seul endroit de l'outil où l'utilisateur doit
+   * deviner ce qu'il va obtenir. Ces fiches — un résumé, ce à quoi ça sert, et
+   * trois lignes du rendu réel — vivent ici plutôt que dans le HTML : c'est le
+   * module qui sait ce qu'il produit, et l'exemple reste ainsi à côté du code
+   * qui l'écrit.
+   *
+   *   separateur / decimales : le réglage s'applique-t-il à ce format ?
+   *     Les masquer ailleurs évite de faire tourner un bouton sans effet.
+   */
+  Export.DESCRIPTIONS = {
+    'csv-long': {
+      titre: 'CSV — format long',
+      resume: 'Une ligne par point, le nom de la série en première colonne.',
+      usage: 'Le format à donner à pandas ou R. Seul à accepter sans trou des '
+        + 'séries de longueurs différentes.',
+      exemple: 'serie,x,y\nCz(alpha),0.5,0.128\nCz(alpha),1.0,0.214',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    'csv-large': {
+      titre: 'CSV — colonnes par série',
+      resume: 'Deux colonnes (x, y) par série, côte à côte.',
+      usage: 'À ouvrir dans un tableur pour tracer directement. Les séries '
+        + 'courtes laissent des cellules vides en bas.',
+      exemple: 'Cz_x,Cz_y,Cx_x,Cx_y\n0.5,0.128,0.5,0.011\n1.0,0.214,1.0,0.013',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    'csv-grille': {
+      titre: 'CSV — grille X commune',
+      resume: 'Toutes les séries interpolées sur une seule abscisse.',
+      usage: 'La forme qu’il faut pour superposer ou soustraire deux courbes '
+        + 'digitalisées séparément — elles ne partagent jamais leurs abscisses.',
+      exemple: 'x,Cz,Cx\n0.50,0.128,0.011\n0.75,0.171,0.012',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    colonnes: {
+      titre: 'Texte — deux colonnes',
+      resume: 'x et y séparés par une tabulation, un bloc par série.',
+      usage: 'À coller tel quel dans un tableur ou un fichier d’entrée de '
+        + 'solveur. Aucun en-tête à retirer.',
+      exemple: '# Cz(alpha)\n0.5\t0.128\n1.0\t0.214',
+      extension: 'txt', separateur: false, decimales: true
+    },
+    json: {
+      titre: 'JSON',
+      resume: 'Structure complète : nom, couleur et points de chaque série.',
+      usage: 'Pour un script qui relit les séries en gardant leurs noms.',
+      exemple: '{\n  "series": [\n    {"nom": "Cz", "points": [[0.5, 0.128]]}',
+      extension: 'json', separateur: false, decimales: true
+    },
+    python: {
+      titre: 'Python / NumPy',
+      resume: 'Un tableau np.array par série, prêt à coller.',
+      usage: 'Pour un notebook ou un script de tracé. Les noms de séries sont '
+        + 'transformés en identifiants valides.',
+      exemple: 'import numpy as np\n\ncz_x = np.array([0.5, 1.0])\ncz_y = np.array([0.128, 0.214])',
+      extension: 'py', separateur: false, decimales: true
+    },
+    matlab: {
+      titre: 'MATLAB / Octave',
+      resume: 'Un vecteur ligne par série.',
+      usage: 'À coller dans un script .m ou directement dans la console.',
+      exemple: '% Cz(alpha)\ncz_x = [0.5 1.0];\ncz_y = [0.128 0.214];',
+      extension: 'm', separateur: false, decimales: true
+    }
+  };
+
+  Export.description = function (format) {
+    return Object.prototype.hasOwnProperty.call(Export.DESCRIPTIONS, format)
+      ? Export.DESCRIPTIONS[format] : null;
+  };
+
+  /*
+   * Ce que l'export contiendra, avant de le produire : de quoi vérifier d'un
+   * coup d'œil qu'on exporte bien ce qu'on croit — la bonne étendue, le bon
+   * nombre de séries — plutôt que de le découvrir dans le fichier écrit.
+   */
+  Export.bilan = function (series) {
+    var nbPoints = 0;
+    var xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (var i = 0; i < (series || []).length; i++) {
+      var pts = series[i].points || [];
+      nbPoints += pts.length;
+      for (var j = 0; j < pts.length; j++) {
+        if (pts[j].x < xMin) { xMin = pts[j].x; }
+        if (pts[j].x > xMax) { xMax = pts[j].x; }
+        if (pts[j].y < yMin) { yMin = pts[j].y; }
+        if (pts[j].y > yMax) { yMax = pts[j].y; }
+      }
+    }
+    return {
+      nbSeries: (series || []).length,
+      nbPoints: nbPoints,
+      x: nbPoints ? { min: xMin, max: xMax } : null,
+      y: nbPoints ? { min: yMin, max: yMax } : null
+    };
+  };
+
   Export.rendre = function (format, series, options) {
     switch (format) {
       case 'csv-long': return Export.versCSVLong(series, options);
@@ -427,13 +526,8 @@
   };
 
   Export.extension = function (format) {
-    switch (format) {
-      case 'csv-long': case 'csv-large': case 'csv-grille': return 'csv';
-      case 'json': return 'json';
-      case 'python': return 'py';
-      case 'matlab': return 'm';
-      default: return 'txt';
-    }
+    var d = Export.description(format);
+    return d ? d.extension : 'txt';
   };
 
   CFDD.Export = Export;

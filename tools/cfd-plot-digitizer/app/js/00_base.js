@@ -143,6 +143,41 @@
     return sortie;
   };
 
+  /*
+   * Rectangle {x0, y0, x1, y1} donné dans n'importe quel sens : normalise les
+   * coins. Les rectangles de l'interface sont tracés à la souris, donc x1 peut
+   * très bien être à gauche de x0.
+   */
+  Base.normaliserRectangle = function (rect) {
+    return {
+      x0: Math.min(rect.x0, rect.x1),
+      y0: Math.min(rect.y0, rect.y1),
+      x1: Math.max(rect.x0, rect.x1),
+      y1: Math.max(rect.y0, rect.y1)
+    };
+  };
+
+  Base.dansRectangle = function (point, rect) {
+    var r = Base.normaliserRectangle(rect);
+    return point.px >= r.x0 && point.px <= r.x1
+        && point.py >= r.y0 && point.py <= r.y1;
+  };
+
+  /*
+   * Retire d'un nuage les points tombant dans un rectangle, et dit combien.
+   * C'est la gomme « en zone » : effacer point par point un artefact de
+   * plusieurs centaines de pixels — une légende captée, une grille prise pour
+   * une courbe — demande autant de clics que de points.
+   */
+  Base.retirerDansRectangle = function (points, rect) {
+    var gardes = [], retires = 0;
+    for (var i = 0; i < points.length; i++) {
+      if (Base.dansRectangle(points[i], rect)) { retires++; }
+      else { gardes.push(points[i]); }
+    }
+    return { points: gardes, retires: retires };
+  };
+
   CFDD.Base = Base;
 
   /* Permet d'exécuter la même source sous node pour les tests. */

@@ -85,6 +85,77 @@ point courant plutôt qu'une résolution globale trompeuse.
 Le seuil de 5° n'est pas décoratif : à 2°, une erreur de pointage d'un pixel se
 traduit par plusieurs pour cent d'erreur sur la valeur lue.
 
+## Détection automatique du cadre
+
+Le bouton **« Détecter le cadre automatiquement »** place les quatre repères
+sans un clic sur l'image. Il ne lit aucune valeur — il n'y a pas d'OCR ici —
+mais c'est le pointage, pas la frappe, qui coûte du temps et de la précision :
+un repère posé trois pixels à côté de l'axe fausse *toutes* les valeurs
+exportées, et rien ne le signale.
+
+La méthode (`app/js/15_cadre.js`) tient en quatre étapes :
+
+1. **Couleur de fond** = la couleur la plus fréquente de l'image, le papier.
+2. **Masque d'encre** = tout pixel qui s'en écarte de plus de 40 sur un canal.
+3. **Profils** : nombre de pixels d'encre par colonne, puis par ligne. Un axe
+   est un trait plein d'un bord à l'autre du tracé : il domine son profil de
+   très loin. Une courbe ne contribue qu'un ou deux pixels par colonne, une
+   étiquette de graduation guère plus.
+4. Les colonnes (resp. lignes) au-dessus du seuil sont **regroupées en traits** :
+   deux voisines appartiennent au même axe, sans quoi un axe tracé à 1,5 px de
+   large donnerait deux bords là où il n'y en a qu'un.
+
+Le seuil est double — dominer le profil **et** couvrir au moins 35 % de
+l'étendue encrée. La première condition suffirait sur une figure encadrée ; la
+seconde empêche une image sans le moindre axe, un nuage de points nu, de
+promouvoir sa colonne la plus dense au rang de bord.
+
+### Les planches sans cadre fermé
+
+Beaucoup de figures ne tracent que deux axes, l'ordonnée à gauche et l'abscisse
+en bas. Le profil ne livre alors qu'un seul pic par direction, et deux pièges
+s'ouvrent :
+
+- **Duquel des deux bords s'agit-il ?** Le prendre pour le premier serait faux
+  une fois sur deux : l'abscisse serait décrétée bord *supérieur*, ce qui
+  replie le cadre sur une ligne et rend la calibration dégénérée. C'est la
+  position du trait dans l'encre qui tranche, sans préjugé.
+- **Où est le bord d'en face ?** Sur l'**étendue** du trait trouvé : la ligne
+  d'axe du bas court exactement sur la largeur du tracé, donc son premier et
+  son dernier pixel donnent les bords gauche et droit. Ce repli est ce qui
+  évite de retomber sur la boîte englobante de l'encre — laquelle inclut le
+  titre et les étiquettes, et déborde donc largement du cadre.
+
+Le résultat reste une **proposition**. Le panneau affiche une *confiance* : la
+part des quatre côtés vus comme de vrais traits (100 % pour une figure
+encadrée). En dessous de 60 %, il invite explicitement à vérifier.
+
+Mesuré sur les trois figures matplotlib de `exemples/`, les quatre bords
+tombent à **moins de 2 px** des axes réellement tracés, et la calibration qui
+en découle reste à moins de 0,6 % de l'étendue de la calibration parfaite —
+soit le niveau d'un pointage manuel soigné.
+
+## X1 et Y1 au même point
+
+La case **« X1 et Y1 au même point (coin d'origine) »**, cochée par défaut,
+lie les deux repères : placer l'un place l'autre, et le balayage automatique
+saute `Y1`. Trois repères à poser au lieu de quatre.
+
+C'est la géométrie de la quasi-totalité des figures, et la lier vaut mieux que
+la laisser au hasard : deux repères censés être confondus mais posés à un pixel
+l'un de l'autre introduisent un cisaillement parasite dans la calibration, que
+rien n'affiche.
+
+Décocher la case libère `Y1` — pour un axe décalé, une échelle brisée, ou une
+planche où l'origine n'est tout simplement pas au coin.
+
+## Corriger une position au clavier
+
+La colonne **Position px** est un champ de saisie, pas un affichage : écrire
+`84, 315` place le repère au pixel exact, ce qu'un clic ne garantit jamais.
+C'est aussi la façon de reporter une position lue ailleurs, ou de décaler un
+repère d'un pixel sans repartir à la souris.
+
 ## Conseils de pointage
 
 - Viser des **graduations franches** (les grands traits étiquetés), pas des
@@ -93,8 +164,8 @@ traduit par plusieurs pour cent d'erreur sur la valeur lue.
   calibration est inversement proportionnelle à cet écart.
 - Utiliser la **loupe** : elle est là précisément pour viser le centre d'un
   trait de graduation à mieux qu'un pixel.
-- `X1` et `Y1` peuvent être le même point (l'origine), c'est le cas courant et
-  parfaitement admis.
+- `X1` et `Y1` peuvent être le même point (l'origine) : c'est le cas courant,
+  et la case dédiée le fait pour vous.
 
 ## Corriger après coup
 

@@ -169,4 +169,56 @@
     });
 
   });
+
+  T.suite('Vue — marqueurs de série', function (test) {
+
+    test('une simple couleur reste acceptée', function (a) {
+      /* Signature d'origine : le reste du code, et les projets enregistrés
+         avant le réglage de marqueur, passent encore une chaîne. */
+      var s = V.normaliserStyle('#123456');
+      a.egal(s.couleur, '#123456');
+      a.egal(s.forme, 'cercle', 'forme par défaut');
+      a.egal(s.taille, 2.5, 'taille par défaut');
+    });
+
+    test('une forme inconnue retombe sur le disque', function (a) {
+      a.egal(V.normaliserStyle({ forme: 'hexagone' }).forme, 'cercle');
+    });
+
+    test('la taille est bornée et jamais nulle', function (a) {
+      a.egal(V.normaliserStyle({ taille: 0 }).taille, 2.5, 'zéro rejeté');
+      a.egal(V.normaliserStyle({ taille: -3 }).taille, 2.5, 'négatif rejeté');
+      a.egal(V.normaliserStyle({ taille: 999 }).taille, 20, 'plafonnée');
+      a.egal(V.normaliserStyle({ taille: 'x' }).taille, 2.5, 'non numérique rejeté');
+    });
+
+    test('chaque forme est libellée', function (a) {
+      a.ok(V.FORMES.length >= 5, 'assez de formes pour distinguer les séries');
+      V.FORMES.forEach(function (forme) {
+        a.ok(V.LIBELLES_FORME[forme], 'libellé manquant : ' + forme);
+        a.egal(V.normaliserStyle({ forme: forme }).forme, forme, forme + ' accepté');
+      });
+    });
+
+    test('chaque forme trace quelque chose', function (a) {
+      /*
+       * Contexte 2D factice : on ne juge pas le dessin, seulement qu'aucune
+       * forme ne se contente d'ouvrir un chemin sans le remplir ni le tracer —
+       * un marqueur invisible ne se verrait qu'à l'usage.
+       */
+      V.FORMES.forEach(function (forme) {
+        var actes = [];
+        var faux = {
+          beginPath: function () { actes.push('begin'); },
+          moveTo: function () {}, lineTo: function () {}, rect: function () {},
+          arc: function () {}, closePath: function () {},
+          fill: function () { actes.push('peint'); },
+          stroke: function () { actes.push('peint'); }
+        };
+        V.tracerMarque(faux, 10, 10, forme, 3);
+        a.egal(actes[0], 'begin', forme + ' : chemin non ouvert');
+        a.ok(actes.indexOf('peint') > 0, forme + ' : rien n’est peint');
+      });
+    });
+  });
 })();

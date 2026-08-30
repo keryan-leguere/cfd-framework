@@ -200,6 +200,9 @@ kbd {
 .aide { margin: 0; font-size: 12px; color: var(--texte-doux); }
 .discret { color: var(--texte-doux); margin: 0; }
 .stats { margin: 4px 0 0; font-size: 12px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+.stats:empty { display: none; }
+.stats.ok { color: var(--succes); }
+.stats.souci { color: var(--alerte); }
 
 /* ---------- Repères ---------- */
 table.reperes { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -211,7 +214,12 @@ table.reperes th {
 table.reperes td { padding: 2px 0; }
 table.reperes tr.actif td:first-child { color: var(--accent); font-weight: 600; }
 table.reperes input { width: 100%; }
-table.reperes .position { font-size: 11px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+table.reperes .position input {
+  width: 100%; font-size: 11px; padding: 3px 4px;
+  font-variant-numeric: tabular-nums; color: var(--texte-doux);
+}
+table.reperes .position input.vide { font-style: italic; }
+table.reperes tr.liee .position input { background: #f2f3f5; }
 table.reperes .repere-nom { cursor: pointer; }
 
 .etat-calibration { margin: 0; font-size: 12px; }
@@ -292,6 +300,88 @@ dialog code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: #
 table.raccourcis { border-collapse: collapse; font-size: 13px; }
 table.raccourcis td { padding: 3px 12px 3px 0; vertical-align: top; }
 dialog form { margin-top: 18px; text-align: right; }
+
+/* ---------- Vignettes d'illustration ---------- */
+/*
+ * Une vignette est un bouton : cliquer l'image sélectionne l'option qu'elle
+ * illustre. La liste déroulante reste au-dessus, seule à recevoir le focus par
+ * défaut — les deux restent synchronisées par 90_main.js.
+ */
+.vignettes { display: flex; flex-wrap: wrap; gap: 5px; }
+.vignettes .vignette {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 3px; border: 1px solid var(--trait); border-radius: var(--rayon);
+  background: #fff; cursor: pointer; line-height: 1.15;
+}
+.vignettes .vignette svg { display: block; }
+.vignettes .vignette .etiquette {
+  font-size: 10px; color: var(--texte-doux);
+  max-width: 72px; text-align: center;
+}
+.vignettes .vignette.actif { border-color: var(--accent); background: var(--accent-clair); }
+.vignettes .vignette.actif .etiquette { color: var(--accent); }
+
+.galerie > summary {
+  cursor: pointer; font-size: 12px; color: var(--accent);
+  padding: 2px 0; list-style: none;
+}
+.galerie > summary::-webkit-details-marker { display: none; }
+.galerie > summary::before { content: "\25B8  "; }
+.galerie[open] > summary::before { content: "\25BE  "; }
+.galerie-numerique { display: flex; flex-direction: column; gap: 9px; padding: 6px 0 2px; }
+.galerie-numerique .fiche { display: flex; gap: 9px; align-items: flex-start; }
+.galerie-numerique .fiche .image { flex: 0 0 auto; line-height: 0; }
+.galerie-numerique .fiche .texte { margin: 0; font-size: 11.5px; color: var(--texte-doux); }
+.galerie-numerique .fiche .texte b { color: var(--texte); font-weight: 600; }
+
+/* ---------- Marqueur de série ---------- */
+fieldset.marqueur {
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  padding: 2px 10px 10px; margin: 2px 0 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+fieldset.marqueur legend { padding: 0 4px; font-size: 12px; color: var(--texte-doux); }
+fieldset.marqueur input[type=color] { width: 100%; }
+.apercu-marqueur {
+  width: 100%; height: 40px; display: block;
+  border: 1px solid var(--trait); border-radius: var(--rayon); background: #fff;
+}
+
+/* ---------- Export ---------- */
+/*
+ * Fiches de format plutôt que liste déroulante : le choix du format engage la
+ * suite du travail (tableur, script, solveur) et se faisait jusqu'ici à
+ * l'aveugle, sur un intitulé de trois mots.
+ */
+.formats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.formats li { margin: 0; }
+.formats label {
+  display: block; padding: 6px 8px;
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  cursor: pointer;
+}
+.formats label:hover { background: #f6f8fa; }
+.formats li.actif label { border-color: var(--accent); background: var(--accent-clair); }
+.formats input[type=radio] { margin-right: 6px; }
+.formats .titre-format { font-weight: 600; font-size: 13px; }
+.formats .resume { display: block; margin-left: 20px; font-size: 11.5px; color: var(--texte-doux); }
+
+.usage-format:empty { display: none; }
+.exemple-format {
+  margin: 0; padding: 7px 9px; overflow-x: auto;
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fafbfc; border: 1px solid var(--trait); border-radius: var(--rayon);
+  color: var(--texte-doux); white-space: pre;
+}
+.exemple-format:empty { display: none; }
+.bilan-export {
+  margin: 0; font-size: 12px; color: var(--texte-doux);
+  font-variant-numeric: tabular-nums;
+}
+.nom-fichier {
+  font: 11.5px ui-monospace, Menlo, Consolas, monospace;
+  color: var(--texte-doux); margin-left: auto;
+}
 
 /* Écran étroit : le panneau passe sous la scène plutôt que de l'écraser. */
 @media (max-width: 900px) {

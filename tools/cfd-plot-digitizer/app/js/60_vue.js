@@ -85,7 +85,6 @@
   /* --- Rendu -------------------------------------------------------- */
 
   Vue.RAYON_REPERE = 7;
-  Vue.RAYON_POINT = 2.5;
 
   /*
    * Dessine l'image source. `lisser` doit être faux au-delà de 1:1 : à fort
@@ -139,28 +138,96 @@
   };
 
   /*
-   * Nuage de points d'une série. Au-delà de quelques milliers de points le
-   * tracé arc par arc devient le poste de coût dominant du rafraîchissement :
-   * on bascule alors sur des carrés d'un pixel, visuellement équivalents à
-   * cette densité.
+   * Formes de marqueur. Une planche digitalisée porte souvent trois ou quatre
+   * séries qui se croisent : la couleur seule ne suffit plus à savoir laquelle
+   * on est en train de pointer, surtout imprimée en noir et blanc. La forme,
+   * elle, reste lisible partout.
    */
-  Vue.dessinerPoints = function (ctx, vue, points, couleur, selection) {
+  Vue.FORMES = ['cercle', 'anneau', 'carre', 'losange', 'triangle', 'croix', 'plus'];
+
+  Vue.LIBELLES_FORME = {
+    cercle: 'disque', anneau: 'anneau', carre: 'carré', losange: 'losange',
+    triangle: 'triangle', croix: 'croix ×', plus: 'plus +'
+  };
+
+  Vue.STYLE_POINT = { couleur: '#c1121f', forme: 'cercle', taille: 2.5 };
+
+  Vue.normaliserStyle = function (style) {
+    /* Tolère une simple couleur : c'était la signature d'origine. */
+    if (typeof style === 'string') { style = { couleur: style }; }
+    style = style || {};
+    var forme = style.forme;
+    if (Vue.FORMES.indexOf(forme) === -1) { forme = Vue.STYLE_POINT.forme; }
+    var taille = Number(style.taille);
+    if (!isFinite(taille) || taille <= 0) { taille = Vue.STYLE_POINT.taille; }
+    return {
+      couleur: style.couleur || Vue.STYLE_POINT.couleur,
+      forme: forme,
+      taille: Base.borner(taille, 0.5, 20)
+    };
+  };
+
+  /*
+   * Trace une marque au rayon `r`. Les formes creuses (anneau, croix, plus)
+   * sont tracées au trait : posées sur la courbe elles la laissent voir, ce
+   * qui est précisément ce qu'on veut en pointant à la main.
+   */
+  Vue.tracerMarque = function (ctx, cx, cy, forme, r) {
+    ctx.beginPath();
+    switch (forme) {
+      case 'carre':
+        ctx.rect(cx - r, cy - r, 2 * r, 2 * r); ctx.fill(); break;
+      case 'losange':
+        ctx.moveTo(cx, cy - r * 1.25); ctx.lineTo(cx + r * 1.25, cy);
+        ctx.lineTo(cx, cy + r * 1.25); ctx.lineTo(cx - r * 1.25, cy);
+        ctx.closePath(); ctx.fill(); break;
+      case 'triangle':
+        ctx.moveTo(cx, cy - r * 1.3); ctx.lineTo(cx + r * 1.2, cy + r * 0.9);
+        ctx.lineTo(cx - r * 1.2, cy + r * 0.9);
+        ctx.closePath(); ctx.fill(); break;
+      case 'anneau':
+        ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); break;
+      case 'croix':
+        ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+        ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+        ctx.stroke(); break;
+      case 'plus':
+        ctx.moveTo(cx - r * 1.2, cy); ctx.lineTo(cx + r * 1.2, cy);
+        ctx.moveTo(cx, cy - r * 1.2); ctx.lineTo(cx, cy + r * 1.2);
+        ctx.stroke(); break;
+      default:
+        ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); break;
+    }
+  };
+
+  /*
+   * Nuage de points d'une série. `style` accepte une couleur seule ou
+   * {couleur, forme, taille}.
+   *
+   * Au-delà de quelques milliers de points le tracé marque par marque devient
+   * le poste de coût dominant du rafraîchissement : on bascule alors sur des
+   * carrés pleins, visuellement équivalents à cette densité — et à cette
+   * densité, la forme du marqueur ne se distingue plus de toute façon.
+   */
+  Vue.dessinerPoints = function (ctx, vue, points, style, selection) {
     if (!points.length) { return; }
+    var s = Vue.normaliserStyle(style);
     ctx.save();
-    ctx.fillStyle = couleur;
+    ctx.fillStyle = s.couleur;
+    ctx.strokeStyle = s.couleur;
+    ctx.lineWidth = Math.max(1, s.taille * 0.6);
 
     var i, e;
     if (points.length > 4000) {
+      var cote = Math.max(1.5, s.taille);
       for (i = 0; i < points.length; i++) {
         e = Vue.versEcran(vue, points[i].px, points[i].py);
-        ctx.fillRect(e.cx - 0.5, e.cy - 0.5, 1.5, 1.5);
+        ctx.fillRect(e.cx - cote / 2, e.cy - cote / 2, cote, cote);
       }
     } else {
       for (i = 0; i < points.length; i++) {
         e = Vue.versEcran(vue, points[i].px, points[i].py);
-        ctx.beginPath();
-        ctx.arc(e.cx, e.cy, Vue.RAYON_POINT, 0, Math.PI * 2);
-        ctx.fill();
+        Vue.tracerMarque(ctx, e.cx, e.cy, s.forme, s.taille);
       }
     }
 
@@ -168,10 +235,10 @@
       e = Vue.versEcran(vue, points[selection].px, points[selection].py);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(e.cx, e.cy, Vue.RAYON_POINT + 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = couleur;
+      ctx.beginPath(); ctx.arc(e.cx, e.cy, s.taille + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = s.couleur;
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(e.cx, e.cy, Vue.RAYON_POINT + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(e.cx, e.cy, s.taille + 3, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.restore();
   };

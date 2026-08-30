@@ -15,13 +15,16 @@
   var CFDD = globalThis.CFDD;
   var Base = CFDD.Base, Couleur = CFDD.Couleur, Calibration = CFDD.Calibration;
   var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet;
-  var Vue = CFDD.Vue, Trait = CFDD.Trait;
+  var Vue = CFDD.Vue, Trait = CFDD.Trait, Cadre = CFDD.Cadre, Vignettes = CFDD.Vignettes;
 
   var COULEURS_SERIE = ['#c1121f', '#1d3557', '#2a9d8f', '#e07a00',
                         '#7b2cbf', '#0b7285', '#a4133c', '#386641'];
   var COULEUR_REPERE = '#1b6ec2';
   var COULEUR_ZONE = '#12b886';
   var COULEUR_EXCLUSION = '#e8590c';
+  var COULEUR_GOMME = '#b42318';
+
+  var MARQUEUR_DEFAUT = { forme: 'cercle', taille: 2.5 };
 
   /* ================== État ================== */
 
@@ -33,6 +36,10 @@
     outil: 'navigation',
     reperes: { x1: null, x2: null, y1: null, y2: null },
     repereActif: 'x1',
+    /* X1 et Y1 désignent le même pixel — le coin d'origine du tracé. C'est le
+       cas de la quasi-totalité des figures, et cela retire un repère à placer
+       sur quatre. Décochable pour les axes décalés ou brisés. */
+    origineCommune: true,
     valeurs: { x1: '', x2: '', y1: '', y2: '' },
     logX: false, logY: false,
     calibration: null,
@@ -46,6 +53,7 @@
       pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0,
       filtreTrait: 'tous', comblerLacunes: 0
     },
+    format: 'csv-long',
     apercu: true,
     apercuMode: 'les-deux',
     apercuOpacite: 0.85,
@@ -99,38 +107,47 @@
 
   /* ================== Chargement d'image ================== */
 
+  /*
+   * Adopte une image DÉJÀ décodée. Séparé du chargement pour que la partie
+   * utile reste synchrone : c'est ce qui permet de piloter l'application dans
+   * un navigateur sans course avec l'évènement `load` (cf.
+   * outils/verifier_navigateur.sh), et de partir d'une image quelconque.
+   */
+  function adopterImage(img, nom, dataURL) {
+    etat.image = img;
+    etat.imageMeta = { nom: nom || 'image', dataURL: dataURL,
+                       largeur: img.naturalWidth, hauteur: img.naturalHeight };
+
+    /*
+     * Copie hors écran pour getImageData : l'élément <img> ne donne pas
+     * accès aux pixels. Comme la source est une data URL, le canevas n'est
+     * pas « teinté » et la lecture reste autorisée, y compris en file://.
+     */
+    var tampon = document.createElement('canvas');
+    tampon.width = img.naturalWidth;
+    tampon.height = img.naturalHeight;
+    var c = tampon.getContext('2d', { willReadFrequently: true });
+    c.drawImage(img, 0, 0);
+    try {
+      etat.imageData = c.getImageData(0, 0, tampon.width, tampon.height);
+    } catch (e) {
+      etat.imageData = null;
+      message('Pixels illisibles : la détection automatique sera indisponible.', 'alerte');
+    }
+
+    etat.calqueMasque = null;
+    $('accueil').hidden = true;
+    $('info-image').textContent = etat.imageMeta.nom + ' — '
+      + img.naturalWidth + ' x ' + img.naturalHeight + ' pixels';
+    ajusterVue();
+    rafraichirZone();
+    rafraichirExport();
+    message('Image chargée.', 'succes');
+  }
+
   function chargerDataURL(dataURL, nom) {
     var img = new Image();
-    img.onload = function () {
-      etat.image = img;
-      etat.imageMeta = { nom: nom || 'image', dataURL: dataURL,
-                         largeur: img.naturalWidth, hauteur: img.naturalHeight };
-
-      /*
-       * Copie hors écran pour getImageData : l'élément <img> ne donne pas
-       * accès aux pixels. Comme la source est une data URL, le canevas n'est
-       * pas « teinté » et la lecture reste autorisée, y compris en file://.
-       */
-      var tampon = document.createElement('canvas');
-      tampon.width = img.naturalWidth;
-      tampon.height = img.naturalHeight;
-      var c = tampon.getContext('2d', { willReadFrequently: true });
-      c.drawImage(img, 0, 0);
-      try {
-        etat.imageData = c.getImageData(0, 0, tampon.width, tampon.height);
-      } catch (e) {
-        etat.imageData = null;
-        message('Pixels illisibles : la détection automatique sera indisponible.', 'alerte');
-      }
-
-      etat.calqueMasque = null;
-      $('accueil').hidden = true;
-      $('info-image').textContent = etat.imageMeta.nom + ' — '
-        + img.naturalWidth + ' x ' + img.naturalHeight + ' pixels';
-      ajusterVue();
-      rafraichirZone();
-      message('Image chargée.', 'succes');
-    };
+    img.onload = function () { adopterImage(img, nom, dataURL); };
     img.onerror = function () { message('Image illisible.', 'alerte'); };
     img.src = dataURL;
   }
@@ -192,15 +209,17 @@
       Vue.dessinerRectangle(ctx, etat.vue, etat.exclusions[i], COULEUR_EXCLUSION, true);
     }
     if (etat.tirage) {
-      Vue.dessinerRectangle(ctx, etat.vue, etat.tirage,
-        etat.outil === 'exclusion' ? COULEUR_EXCLUSION : COULEUR_ZONE,
-        etat.outil === 'exclusion');
+      var couleurTirage = COULEUR_ZONE;
+      if (etat.outil === 'exclusion') { couleurTirage = COULEUR_EXCLUSION; }
+      else if (etat.outil === 'gomme') { couleurTirage = COULEUR_GOMME; }
+      Vue.dessinerRectangle(ctx, etat.vue, etat.tirage, couleurTirage,
+        etat.outil !== 'zone');
     }
 
     for (var s = 0; s < etat.series.length; s++) {
       var serie = etat.series[s];
       if (serie.masquee) { continue; }
-      Vue.dessinerPoints(ctx, etat.vue, serie.points, serie.couleurHex, null);
+      Vue.dessinerPoints(ctx, etat.vue, serie.points, styleSerie(serie), null);
     }
 
     /*
@@ -257,6 +276,7 @@
       var tdValeur = document.createElement('td');
       var champ = document.createElement('input');
       champ.type = 'text';
+      champ.className = 'valeur';
       champ.inputMode = 'decimal';
       champ.placeholder = (cle[0] === 'x') ? 'valeur X' : 'valeur Y';
       champ.addEventListener('input', function () {
@@ -267,6 +287,25 @@
 
       var tdPos = document.createElement('td');
       tdPos.className = 'position';
+      var champPos = document.createElement('input');
+      champPos.type = 'text';
+      champPos.inputMode = 'numeric';
+      champPos.placeholder = 'non placé';
+      champPos.title = 'Position en pixels : « x, y »';
+      champPos.addEventListener('input', function () {
+        var m = champPos.value.split(/[;,\s]+/).filter(function (t) { return t !== ''; });
+        if (m.length !== 2) { return; }
+        var px = lireNombre(m[0]), py = lireNombre(m[1]);
+        if (!Base.estFini(px) || !Base.estFini(py)) { return; }
+        placerRepere(cle, px, py);
+        /* Pas de rafraichirCalibration() ici : réécrire le champ pendant la
+           frappe replacerait le curseur au bout et rendrait la saisie
+           inutilisable. Seul l'état de calibration est recalculé. */
+        marquerLiees();
+        recalculerCalibration();
+        redessiner();
+      });
+      tdPos.appendChild(champPos);
 
       tr.appendChild(tdNom); tr.appendChild(tdValeur); tr.appendChild(tdPos);
       corps.appendChild(tr);
@@ -321,11 +360,24 @@
       var cle = tr.dataset.repere;
       var r = etat.reperes[cle];
       tr.classList.toggle('actif', cle === etat.repereActif);
-      tr.querySelector('input').value = etat.valeurs[cle];
-      tr.querySelector('.position').textContent =
-        r ? (Math.round(r.px) + ', ' + Math.round(r.py)) : 'non placé';
+      tr.classList.toggle('liee', etat.origineCommune && cle === 'y1');
+      tr.querySelector('.valeur').value = etat.valeurs[cle];
+      var champPos = tr.querySelector('.position input');
+      champPos.value = r ? (Math.round(r.px) + ', ' + Math.round(r.py)) : '';
     }
     recalculerCalibration();
+  }
+
+  /*
+   * Pose un repère, en propageant l'origine commune : X1 et Y1 sont alors le
+   * même point physique, et les laisser diverger d'un pixel introduirait une
+   * erreur de calibration silencieuse.
+   */
+  function placerRepere(cle, px, py) {
+    etat.reperes[cle] = { px: px, py: py };
+    if (etat.origineCommune && (cle === 'x1' || cle === 'y1')) {
+      etat.reperes[cle === 'x1' ? 'y1' : 'x1'] = { px: px, py: py };
+    }
   }
 
   /* Repère suivant non encore placé : évite de recliquer dans la liste. */
@@ -333,8 +385,52 @@
     var ordre = Calibration.ORDRE;
     for (var i = 0; i < ordre.length; i++) {
       var candidat = ordre[(ordre.indexOf(etat.repereActif) + 1 + i) % ordre.length];
+      /* Y1 n'est plus un repère à placer quand il suit X1. */
+      if (etat.origineCommune && candidat === 'y1') { continue; }
       if (!etat.reperes[candidat]) { etat.repereActif = candidat; return; }
     }
+  }
+
+  function marquerLiees() {
+    var lignes = $('corps-reperes').children;
+    for (var i = 0; i < lignes.length; i++) {
+      lignes[i].classList.toggle('liee',
+        etat.origineCommune && lignes[i].dataset.repere === 'y1');
+    }
+  }
+
+  /*
+   * Détection du cadre : place les quatre repères d'un coup. Les VALEURS
+   * restent à saisir — rien ici ne lit les graduations — mais c'est le
+   * pointage, pas la frappe, qui coûte du temps et de la précision.
+   */
+  function detecterCadre() {
+    var el = $('etat-cadre');
+    if (!etat.imageData) { message('Chargez d’abord une image.', 'alerte'); return; }
+
+    var resultat = Cadre.detecter(etat.imageData, { zone: etat.zone });
+    if (!resultat) {
+      el.textContent = 'Aucun cadre reconnaissable : placez les repères à la main.';
+      el.className = 'stats souci';
+      return;
+    }
+
+    var reperes = Cadre.reperes(resultat.cadre);
+    Calibration.ORDRE.forEach(function (cle) {
+      etat.reperes[cle] = { px: reperes[cle].px, py: reperes[cle].py };
+    });
+    etat.repereActif = 'x1';
+
+    var c = resultat.cadre;
+    el.textContent = 'Cadre proposé : ' + (c.x1 - c.x0 + 1) + ' x ' + (c.y1 - c.y0 + 1)
+      + ' px, confiance ' + Math.round(resultat.confiance * 100) + ' %.'
+      + (resultat.confiance < 0.6
+        ? ' Vérifiez les repères avant de saisir les valeurs.' : '');
+    el.className = 'stats' + (resultat.confiance < 0.6 ? ' souci' : ' ok');
+
+    rafraichirCalibration();
+    redessiner();
+    message('Cadre détecté : saisissez les quatre valeurs.', 'succes');
   }
 
   /* ================== Zones ================== */
@@ -373,11 +469,25 @@
     var serie = {
       nom: nom || ('Série ' + (etat.series.length + 1)),
       couleurHex: couleur || COULEURS_SERIE[etat.series.length % COULEURS_SERIE.length],
+      /* Forme tournante comme la couleur : deux séries voisines se
+         distinguent alors même en niveaux de gris, ou pour un daltonien. */
+      marqueur: {
+        forme: Vue.FORMES[etat.series.length % Vue.FORMES.length],
+        taille: MARQUEUR_DEFAUT.taille
+      },
       points: [], masquee: false, detection: null
     };
     etat.series.push(serie);
     etat.serieActive = etat.series.length - 1;
     return serie;
+  }
+
+  /* Style de tracé d'une série, tolérant aux projets antérieurs au marqueur. */
+  function styleSerie(serie) {
+    var m = serie.marqueur || MARQUEUR_DEFAUT;
+    return Vue.normaliserStyle({
+      couleur: serie.couleurHex, forme: m.forme, taille: m.taille
+    });
   }
 
   function serieCourante() {
@@ -445,7 +555,67 @@
       liste.appendChild(li);
     });
 
+    majMarqueur();
     rafraichirExport();
+  }
+
+  /*
+   * Réglages du marqueur de la série active. Le champ « couleur » y fait
+   * double emploi avec la pastille de la liste, à dessein : c'est ici qu'on
+   * règle l'apparence, et devoir remonter d'un bloc pour la couleur casserait
+   * le geste.
+   */
+  function majMarqueur() {
+    var bloc = $('bloc-marqueur');
+    var serie = serieCourante();
+    bloc.disabled = !serie;
+    if (serie) {
+      var st = styleSerie(serie);
+      $('marqueur-couleur').value = serie.couleurHex;
+      $('marqueur-forme').value = st.forme;
+      $('marqueur-taille').value = st.taille;
+    }
+    dessinerApercuMarqueur();
+  }
+
+  /*
+   * Aperçu du marqueur posé SUR un trait, et non sur fond blanc : un disque
+   * plein de la couleur de la courbe y disparaît, ce qui est justement le
+   * défaut que ce réglage corrige.
+   */
+  function dessinerApercuMarqueur() {
+    var c = $('apercu-marqueur');
+    var ratio = window.devicePixelRatio || 1;
+    var l = c.clientWidth || 300, h = 40;
+    c.width = Math.round(l * ratio);
+    c.height = Math.round(h * ratio);
+    var g = c.getContext('2d');
+    g.setTransform(ratio, 0, 0, ratio, 0, 0);
+    g.clearRect(0, 0, l, h);
+
+    var serie = serieCourante();
+    if (!serie) { return; }
+    var st = styleSerie(serie);
+    var util = l - 16;
+    function ondule(x) {
+      return h / 2 + Math.sin((x - 8) / util * Math.PI * 2) * (h / 2 - 9);
+    }
+
+    g.strokeStyle = '#3d4450';
+    g.lineWidth = 2;
+    g.beginPath();
+    for (var x = 8; x <= l - 8; x++) {
+      if (x === 8) { g.moveTo(x, ondule(x)); } else { g.lineTo(x, ondule(x)); }
+    }
+    g.stroke();
+
+    g.fillStyle = st.couleur;
+    g.strokeStyle = st.couleur;
+    g.lineWidth = Math.max(1, st.taille * 0.6);
+    for (var k = 0; k <= 10; k++) {
+      var px = 8 + util * k / 10;
+      Vue.tracerMarque(g, px, ondule(px), st.forme, st.taille);
+    }
   }
 
   /* ================== Détection ================== */
@@ -597,6 +767,94 @@
     });
   }
 
+  /* ================== Vignettes ================== */
+
+  /*
+   * Chaque liste déroulante illustrée reçoit une rangée de vignettes cliquables.
+   * La liste reste la source de vérité — c'est elle qui porte le focus clavier
+   * et qui déclenche les gestionnaires existants ; la vignette ne fait que la
+   * régler puis émettre l'événement `change` que l'écriture de `.value`
+   * n'émet pas d'elle-même. Dupliquer la logique de chaque réglage dans les
+   * deux commandes aurait garanti qu'elles divergent.
+   */
+  function construireVignettes() {
+    var boites = document.querySelectorAll('.vignettes');
+    for (var i = 0; i < boites.length; i++) {
+      (function (boite) {
+        var liste = $(boite.dataset.pour);
+        var prefixe = boite.dataset.prefixe;
+        boite.textContent = '';
+
+        for (var k = 0; k < liste.options.length; k++) {
+          (function (option) {
+            var libelle = option.dataset.court || option.textContent.trim();
+            var svg = Vignettes.svg(prefixe + ':' + option.value, libelle);
+            if (!svg) { return; }
+
+            var bouton = document.createElement('button');
+            bouton.type = 'button';
+            bouton.className = 'vignette';
+            bouton.dataset.valeur = option.value;
+            bouton.title = option.textContent.trim();
+            bouton.innerHTML = svg;
+
+            var etiquette = document.createElement('span');
+            etiquette.className = 'etiquette';
+            etiquette.textContent = libelle;
+            bouton.appendChild(etiquette);
+
+            bouton.addEventListener('click', function () {
+              liste.value = option.value;
+              liste.dispatchEvent(new Event('change', { bubbles: true }));
+              rafraichirVignettes();
+            });
+            boite.appendChild(bouton);
+          })(liste.options[k]);
+        }
+      })(boites[i]);
+    }
+    rafraichirVignettes();
+  }
+
+  function rafraichirVignettes() {
+    var boites = document.querySelectorAll('.vignettes');
+    for (var i = 0; i < boites.length; i++) {
+      var valeur = $(boites[i].dataset.pour).value;
+      var enfants = boites[i].children;
+      for (var k = 0; k < enfants.length; k++) {
+        enfants[k].classList.toggle('actif', enfants[k].dataset.valeur === valeur);
+      }
+    }
+  }
+
+  /* Fiches illustrées des réglages chiffrés, qu'aucune liste ne peut porter. */
+  function construireGalerie() {
+    var boite = $('galerie-numerique');
+    boite.textContent = '';
+    Vignettes.NUMERIQUES.forEach(function (fiche) {
+      var svg = Vignettes.svg(fiche.cle, fiche.titre);
+      if (!svg) { return; }
+
+      var rangee = document.createElement('div');
+      rangee.className = 'fiche';
+
+      var image = document.createElement('div');
+      image.className = 'image';
+      image.innerHTML = svg;
+
+      var texte = document.createElement('p');
+      texte.className = 'texte';
+      var titre = document.createElement('b');
+      titre.textContent = fiche.titre + ' — ';
+      texte.appendChild(titre);
+      texte.appendChild(document.createTextNode(fiche.texte));
+
+      rangee.appendChild(image);
+      rangee.appendChild(texte);
+      boite.appendChild(rangee);
+    });
+  }
+
   /* ================== Export ================== */
 
   function seriesEnDonnees() {
@@ -618,44 +876,129 @@
   function texteExport() {
     var series = seriesEnDonnees();
     if (!series) { return null; }
-    return Export.rendre($('format').value, series, optionsExport());
+    return Export.rendre(etat.format, series, optionsExport());
+  }
+
+  /*
+   * Fiches de format. Le choix engage la suite du travail — tableur, script,
+   * fichier d'entrée de solveur — et se faisait jusqu'ici sur trois mots dans
+   * une liste déroulante. Chaque fiche porte son résumé, son usage et trois
+   * lignes du rendu réel, tous tirés du module d'export : c'est lui qui sait
+   * ce qu'il produit.
+   */
+  function construireFormats() {
+    var liste = $('liste-formats');
+    liste.textContent = '';
+    Export.FORMATS.forEach(function (format) {
+      var d = Export.description(format);
+      if (!d) { return; }
+
+      var li = document.createElement('li');
+      li.dataset.format = format;
+
+      var etiquette = document.createElement('label');
+      var radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'format-export';
+      radio.value = format;
+      radio.checked = (format === etat.format);
+      radio.addEventListener('change', function () {
+        if (!radio.checked) { return; }
+        etat.format = format;
+        rafraichirExport();
+      });
+
+      var titre = document.createElement('span');
+      titre.className = 'titre-format';
+      titre.textContent = d.titre;
+
+      var resume = document.createElement('span');
+      resume.className = 'resume';
+      resume.textContent = d.resume;
+
+      etiquette.appendChild(radio);
+      etiquette.appendChild(titre);
+      etiquette.appendChild(resume);
+      li.appendChild(etiquette);
+      liste.appendChild(li);
+    });
+  }
+
+  function formaterTaille(octets) {
+    if (octets < 1024) { return octets + " o"; }
+    if (octets < 1024 * 1024) { return (octets / 1024).toFixed(1) + " ko"; }
+    return (octets / (1024 * 1024)).toFixed(1) + " Mo";
   }
 
   function rafraichirExport() {
+    var format = etat.format;
+    var fiche = Export.description(format) || {};
+    var grille = (format === 'csv-grille');
     var zone = $('apercu-export');
-    var grille = ($('format').value === 'csv-grille');
+    var bilan = $('bilan-export');
+
+    var items = $('liste-formats').children;
+    for (var i = 0; i < items.length; i++) {
+      var choisi = (items[i].dataset.format === format);
+      items[i].classList.toggle('actif', choisi);
+      items[i].querySelector('input').checked = choisi;
+    }
+
+    $('usage-format').textContent = fiche.usage || '';
+    $('exemple-format').textContent = fiche.exemple || '';
+    /* Masquer un réglage sans effet vaut mieux que le laisser tourner à vide :
+       le séparateur ne veut rien dire pour du JSON ou du Python. */
+    $('champ-separateur').hidden = !fiche.separateur;
     $('reglages-grille').hidden = !grille;
+
+    var nom = nomDeBase() + '.' + Export.extension(format);
+    $('nom-fichier').textContent = nom;
+    $('btn-telecharger').title = 'Écrire ' + nom + ' dans vos téléchargements';
+
+    $('avertissements-grille').textContent = '';
+
+    if (!etat.calibration) {
+      zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
+      bilan.textContent = 'Rien à exporter pour l’instant.';
+      return;
+    }
+    var series = seriesEnDonnees();
+    if (!series || !series.length) {
+      zone.value = 'Aucune série visible.';
+      bilan.textContent = 'Rien à exporter pour l’instant.';
+      return;
+    }
 
     /*
      * Les séries écartées du ré-échantillonnage (courbe repliée, série trop
      * courte, domaines disjoints) doivent être dites : sans cela une colonne
      * manquerait au tableau sans que rien ne l'explique.
      */
-    var avertissements = $('avertissements-grille');
-    avertissements.textContent = '';
-    if (grille && etat.calibration) {
-      var series = seriesEnDonnees();
-      if (series && series.length) {
-        var resultat = Export.reechantillonner(series, optionsExport());
-        if (resultat.avertissements.length) {
-          avertissements.textContent = resultat.avertissements.join(' ');
-        }
+    if (grille) {
+      var resultat = Export.reechantillonner(series, optionsExport());
+      if (resultat.avertissements.length) {
+        $('avertissements-grille').textContent = resultat.avertissements.join(' ');
       }
     }
 
-    if (!etat.calibration) {
-      zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
-      return;
-    }
-    var series = seriesEnDonnees();
-    if (!series || !series.length) { zone.value = 'Aucune série visible.'; return; }
-
     var texte = texteExport();
+    var lignes = texte.split('\n');
+    var b = Export.bilan(series);
+    var resume = b.nbSeries + (b.nbSeries > 1 ? ' séries' : ' série')
+      + ' · ' + b.nbPoints + (b.nbPoints > 1 ? ' points' : ' point');
+    if (b.x) {
+      resume += ' · x de ' + Base.formaterNombre(b.x.min, 4)
+        + ' à ' + Base.formaterNombre(b.x.max, 4)
+        + ' · y de ' + Base.formaterNombre(b.y.min, 4)
+        + ' à ' + Base.formaterNombre(b.y.max, 4);
+    }
+    bilan.textContent = resume + ' — ' + nom + ', ' + lignes.length + ' lignes, '
+      + formaterTaille(new Blob([texte]).size) + '.';
+
     /*
      * Aperçu tronqué : afficher 50 000 lignes dans un <textarea> fige l'onglet
      * plusieurs secondes, sans rien apprendre de plus à l'utilisateur.
      */
-    var lignes = texte.split('\n');
     if (lignes.length > 200) {
       zone.value = lignes.slice(0, 200).join('\n')
         + '\n… (' + (lignes.length - 200) + ' lignes supplémentaires à l’export)';
@@ -724,7 +1067,7 @@
     if (e.button !== 0) { return; }
 
     if (etat.outil === 'calibration') {
-      etat.reperes[etat.repereActif] = { px: p.px, py: p.py };
+      placerRepere(etat.repereActif, p.px, p.py);
       glissement = { genre: 'repere', cle: etat.repereActif };
       avancerRepere();
       rafraichirCalibration(); redessiner();
@@ -746,15 +1089,10 @@
       rafraichirSeries(); redessiner();
 
     } else if (etat.outil === 'gomme') {
-      var courante = serieCourante();
-      if (courante) {
-        var index = pointLePlusProche(courante, p.px, p.py, 12);
-        if (index >= 0) {
-          memoriser();
-          courante.points.splice(index, 1);
-          rafraichirSeries(); redessiner();
-        }
-      }
+      /* Même geste que les rectangles de zone : le relâchement décidera s'il
+         s'agissait d'un clic (un point) ou d'un glisser (une sélection). */
+      glissement = { genre: 'rect', x0: p.px, y0: p.py };
+      etat.tirage = { x0: p.px, y0: p.py, x1: p.px, y1: p.py };
     }
   });
 
@@ -771,7 +1109,7 @@
       redessiner();
 
     } else if (glissement && glissement.genre === 'repere') {
-      etat.reperes[glissement.cle] = { px: p.px, py: p.py };
+      placerRepere(glissement.cle, p.px, p.py);
       rafraichirCalibration(); redessiner();
 
     } else if (glissement && glissement.genre === 'rect') {
@@ -783,12 +1121,45 @@
     majLoupe();
   });
 
+  /*
+   * Gomme. Un clic retire le point le plus proche ; un glisser retire tout le
+   * contenu du rectangle. Effacer point par point une centaine de pixels
+   * captés à tort — une grille prise pour une courbe, une légende oubliée —
+   * demandait autant de clics que de points.
+   */
+  function gommer(rect, enZone) {
+    var serie = serieCourante();
+    if (!serie || !serie.points.length) { return; }
+
+    if (enZone) {
+      var restant = Base.retirerDansRectangle(serie.points, rect);
+      if (!restant.retires) { message('Aucun point de la série dans ce rectangle.'); return; }
+      memoriser();
+      serie.points = restant.points;
+      rafraichirSeries(); redessiner();
+      message(restant.retires + (restant.retires > 1 ? ' points retirés.' : ' point retiré.'),
+        'succes');
+      return;
+    }
+
+    var index = pointLePlusProche(serie, rect.x0, rect.y0, 12);
+    if (index < 0) { return; }
+    memoriser();
+    serie.points.splice(index, 1);
+    rafraichirSeries(); redessiner();
+  }
+
   function terminerGlissement() {
     if (glissement && glissement.genre === 'rect' && etat.tirage) {
-      var zone = Detection.normaliserZone(etat.tirage,
-        etat.image.naturalWidth, etat.image.naturalHeight);
+      var t = etat.tirage;
       /* Un simple clic ne doit pas créer un rectangle de 1 px. */
-      if ((zone.x1 - zone.x0) > 4 && (zone.y1 - zone.y0) > 4) {
+      var etendu = Math.abs(t.x1 - t.x0) > 4 && Math.abs(t.y1 - t.y0) > 4;
+
+      if (etat.outil === 'gomme') {
+        gommer(t, etendu);
+      } else if (etendu) {
+        var zone = Detection.normaliserZone(t,
+          etat.image.naturalWidth, etat.image.naturalHeight);
         if (etat.outil === 'exclusion') { etat.exclusions.push(zone); }
         else { etat.zone = zone; }
         rafraichirZone();
@@ -923,9 +1294,13 @@
         return;
       }
 
-      etat.series = lu.series.map(function (s) {
+      etat.series = lu.series.map(function (s, index) {
         return {
           nom: s.nom, couleurHex: s.couleurHex || COULEURS_SERIE[0],
+          marqueur: s.marqueur || {
+            forme: Vue.FORMES[index % Vue.FORMES.length],
+            taille: MARQUEUR_DEFAUT.taille
+          },
           points: s.points, masquee: false, detection: s.detection
         };
       });
@@ -998,6 +1373,38 @@
     $('btn-zoom-moins').addEventListener('click', function () { zoomer(0.8); });
     $('btn-ajuster').addEventListener('click', ajusterVue);
 
+    $('btn-detecter-cadre').addEventListener('click', detecterCadre);
+    $('origine-commune').addEventListener('change', function () {
+      etat.origineCommune = $('origine-commune').checked;
+      /* En activant l'option, Y1 rejoint X1 : laisser deux repères à un pixel
+         l'un de l'autre alors que la case dit qu'ils sont confondus serait le
+         pire des deux mondes. */
+      if (etat.origineCommune && etat.reperes.x1) {
+        etat.reperes.y1 = { px: etat.reperes.x1.px, py: etat.reperes.x1.py };
+      }
+      if (etat.origineCommune && etat.repereActif === 'y1') { etat.repereActif = 'x1'; }
+      rafraichirCalibration(); redessiner();
+    });
+
+    $('marqueur-couleur').addEventListener('input', function () {
+      var serie = serieCourante();
+      if (!serie) { return; }
+      serie.couleurHex = $('marqueur-couleur').value;
+      rafraichirSeries(); redessiner();
+    });
+    ['marqueur-forme', 'marqueur-taille'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        var serie = serieCourante();
+        if (!serie) { return; }
+        serie.marqueur = {
+          forme: $('marqueur-forme').value,
+          taille: Number($('marqueur-taille').value) || MARQUEUR_DEFAUT.taille
+        };
+        dessinerApercuMarqueur();
+        redessiner();
+      });
+    });
+
     $('log-x').addEventListener('change', function () {
       etat.logX = $('log-x').checked; recalculerCalibration();
     });
@@ -1044,6 +1451,7 @@
     ['orientation', 'mode'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         etat.detection[id] = $(id).value;
+        rafraichirVignettes();
         /* L'orientation change le tri des composantes : l'aperçu doit suivre. */
         if (id === 'orientation') { majApercuMasque(); }
       });
@@ -1051,6 +1459,7 @@
 
     $('filtre-trait').addEventListener('change', function () {
       etat.detection.filtreTrait = $('filtre-trait').value;
+      rafraichirVignettes();
       majApercuMasque();
     });
     $('combler').addEventListener('input', function () {
@@ -1059,6 +1468,7 @@
 
     $('apercu-mode').addEventListener('change', function () {
       etat.apercuMode = $('apercu-mode').value;
+      rafraichirVignettes();
       majApercuMasque();
     });
     $('apercu-opacite').addEventListener('input', function () {
@@ -1094,7 +1504,7 @@
     });
     $('btn-detecter').addEventListener('click', detecter);
 
-    ['format', 'separateur', 'decimales'].forEach(function (id) {
+    ['separateur', 'decimales'].forEach(function (id) {
       $(id).addEventListener('input', rafraichirExport);
       $(id).addEventListener('change', rafraichirExport);
     });
@@ -1102,8 +1512,7 @@
     $('btn-telecharger').addEventListener('click', function () {
       var texte = texteExport();
       if (!texte) { message('Calibration incomplète.', 'alerte'); return; }
-      var format = $('format').value;
-      telecharger(nomDeBase() + '.' + Export.extension(format), texte);
+      telecharger(nomDeBase() + '.' + Export.extension(etat.format), texte);
       message('Fichier écrit dans vos téléchargements.', 'succes');
     });
 
@@ -1177,12 +1586,21 @@
 
   function rafraichirTout() {
     rafraichirSeries(); rafraichirZone(); rafraichirCalibration();
-    majApercuMasque(); redessiner();
+    rafraichirVignettes(); majApercuMasque(); redessiner();
   }
 
   /* ================== Démarrage ================== */
 
   construireLignesReperes();
+  Vue.FORMES.forEach(function (forme) {
+    var option = document.createElement('option');
+    option.value = forme;
+    option.textContent = Vue.LIBELLES_FORME[forme] || forme;
+    $('marqueur-forme').appendChild(option);
+  });
+  construireVignettes();
+  construireGalerie();
+  construireFormats();
   relier();
   choisirOutil('navigation');
   rafraichirSeries();
@@ -1191,6 +1609,21 @@
   dimensionnerCanevas();
   redessiner();
 
-  /* Exposé pour les essais manuels depuis la console du navigateur. */
-  CFDD.app = { etat: etat, redessiner: redessiner, rafraichirTout: rafraichirTout };
+  /* Exposé pour les essais manuels depuis la console du navigateur, et pour
+     le pilotage de la page par outils/verifier_navigateur.sh. */
+  CFDD.app = {
+    etat: etat,
+    redessiner: redessiner,
+    rafraichirTout: rafraichirTout,
+    adopterImage: adopterImage,
+    choisirOutil: choisirOutil,
+    detecterCadre: detecterCadre,
+    detecter: detecter,
+    gommer: gommer,
+    nouvelleSerie: nouvelleSerie,
+    rafraichirSeries: rafraichirSeries,
+    rafraichirCalibration: rafraichirCalibration,
+    rafraichirExport: rafraichirExport,
+    majApercuMasque: majApercuMasque
+  };
 })();

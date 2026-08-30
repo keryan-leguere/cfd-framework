@@ -55,6 +55,10 @@
         return {
           nom: s.nom,
           couleurHex: s.couleurHex || null,
+          /* Forme et taille du marqueur : purement visuel, mais c'est le
+             réglage qui rend une planche à quatre séries relisible, et le
+             reperdre à chaque réouverture serait pénible. */
+          marqueur: s.marqueur || null,
           detection: s.detection || null,
           /* Arrondi au centième de pixel : bien au-delà du pointage humain,
              et divise par deux la taille du fichier. */
@@ -130,6 +134,7 @@
       etat.series.push({
         nom: s.nom || ('Série ' + (i + 1)),
         couleurHex: s.couleurHex || null,
+        marqueur: s.marqueur || null,
         detection: s.detection || null,
         points: points
       });

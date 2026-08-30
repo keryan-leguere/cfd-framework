@@ -14,6 +14,33 @@ Détection automatique et pointage manuel se mélangent librement dans une même
 série : on détecte le gros de la courbe, puis on complète à la main les
 portions en pointillés ou masquées par un symbole.
 
+### Le marqueur : couleur, forme, taille
+
+Chaque série choisit sa **forme** de marqueur (disque, anneau, carré, losange,
+triangle, croix, plus) et sa **taille**, en plus de sa couleur. Ce n'est pas
+cosmétique : un disque de deux pixels posé sur un trait noir de deux pixels est
+invisible, et c'est exactement là qu'on pointe. Les formes creuses — anneau,
+croix, plus — laissent voir la courbe *sous* le marqueur, ce qui est la seule
+façon de juger si l'on a visé son centre.
+
+Les nouvelles séries reçoivent une forme tournante en même temps qu'une
+couleur : deux séries voisines se distinguent alors même en niveaux de gris, ou
+pour un daltonien. L'aperçu du panneau dessine les marqueurs **sur un trait**,
+pas sur fond blanc, puisque c'est dans cette situation qu'ils doivent rester
+lisibles.
+
+### Gommer en zone
+
+L'outil **Gommer** retire le point le plus proche d'un clic ; en *glissant*, il
+retire d'un coup tous les points de la série active contenus dans le rectangle.
+C'est le même geste que les rectangles de zone, et c'est le relâchement qui
+décide s'il s'agissait d'un clic ou d'une sélection.
+
+Effacer point par point une centaine de pixels captés à tort — une grille prise
+pour une courbe, une légende oubliée dans la zone — demandait sinon autant de
+clics que de points. L'ordre des points survivants est conservé : réordonner la
+série en gommant produirait un tracé en zigzag à la relecture.
+
 ## Formats d'export
 
 | Format | Écrit | Bon pour |
@@ -25,6 +52,25 @@ portions en pointillés ou masquées par un symbole.
 | **JSON** | structure imbriquée avec noms et couleurs | reprise par un script |
 | **Python / NumPy** | `import numpy as np` puis un couple de tableaux par série | collage dans un carnet ou un script |
 | **MATLAB** | un couple de vecteurs par série | collage dans un script `.m` |
+
+Le panneau présente ces formats en **fiches**, pas en liste déroulante :
+chacune porte son résumé, ce à quoi elle sert, et trois lignes du rendu réel.
+Le choix engage la suite du travail — tableur, script, fichier d'entrée de
+solveur — et se faisait jusqu'ici sur trois mots. Ces fiches vivent dans
+`40_export.js` plutôt que dans le HTML : c'est le module qui sait ce qu'il
+produit, et l'exemple reste ainsi à côté du code qui l'écrit. Un test vérifie
+qu'aucun format n'est sans fiche, et qu'aucune fiche ne décrit un format
+disparu.
+
+Les réglages sans effet sont masqués : le **séparateur** ne veut rien dire pour
+du JSON, du Python ou du MATLAB. Le drapeau qui pilote cet affichage n'est pas
+déclaratif — un test rend chaque format deux fois, avec deux séparateurs, et
+exige que le drapeau dise la vérité sur ce qui change.
+
+Sous l'aperçu, une ligne de **bilan** dit ce qui sera écrit avant de l'écrire :
+nombre de séries et de points, étendue en x et en y, nom du fichier, nombre de
+lignes et taille. De quoi vérifier d'un coup d'œil qu'on exporte bien ce qu'on
+croit, plutôt que de le découvrir dans le fichier écrit.
 
 Le **format long** est celui à préférer par défaut. C'est le seul qui reste
 correct quand les séries n'ont pas le même nombre de points, ce qui est la règle
@@ -101,13 +147,18 @@ cas où les domaines ne se recouvrent pas du tout.
 - la calibration : les quatre repères, leurs valeurs, les indicateurs
   logarithmiques ;
 - la zone d'analyse ;
-- les séries, en coordonnées pixel, avec les réglages de détection utilisés ;
+- les séries, en coordonnées pixel, avec leur marqueur (forme et taille) et les
+  réglages de détection utilisés ;
 - les notes libres.
 
 On peut donc poser ce fichier sur une clé, le rouvrir sur une autre machine
 hors réseau, et retrouver exactement l'état de travail. Les réglages de
 détection étant conservés série par série, un tiers peut voir *comment* chaque
 courbe a été obtenue — ce qui compte pour une donnée qui finira dans un rapport.
+
+Un projet enregistré avant l'apparition du marqueur se relit sans lui :
+l'interface attribue alors une forme par défaut. C'est vérifié par un test —
+un fichier déjà posé sur une clé ne doit pas devenir illisible.
 
 Les positions sont arrondies au centième de pixel : bien au-delà de la précision
 du pointage humain, et cela divise par deux la taille du fichier.

@@ -221,6 +221,31 @@ Le bouton **« Proposer les couleurs du graphique »** court-circuite l'étape 2
 il quantifie la zone, écarte le fond (le plus gros amas) et les nuances trop
 voisines, et propose directement les teintes des courbes présentes.
 
+## 6 bis. Les vignettes du panneau
+
+« Pas », « épaisseur min. », « suivi de continuité » : les intitulés sont
+exacts mais opaques tant qu'on n'a pas vu ce qu'ils font. Chaque liste — sens
+de balayage, mode d'extraction, type de trait, rendu de l'aperçu — porte donc
+sous elle une rangée de **vignettes cliquables** qui montrent l'effet de chaque
+option, et le repli *« À quoi servent ces réglages chiffrés ? »* fait de même
+pour les six champs numériques et les deux tolérances.
+
+Trois points de mise en œuvre (`app/js/70_vignettes.js`) :
+
+- Ce sont des **chaînes SVG**, pas des images ni des canevas. Elles restent
+  nettes à toute échelle et sur écran HiDPI, tiennent dans le fichier autonome
+  sans binaire, et se relisent et se corrigent à la main.
+- Le module ne touche pas au DOM : il rend des chaînes, ce qui le rend
+  vérifiable comme n'importe quelle autre fonction. Les tests contrôlent que
+  chaque option de l'interface a bien son dessin — une manquante laisserait un
+  trou silencieux dans le panneau — et qu'aucun SVG ne contient de `</script`
+  qui casserait le fichier d'un seul tenant.
+- La **liste déroulante reste la source de vérité** : elle garde le focus
+  clavier et déclenche les gestionnaires existants ; la vignette ne fait que la
+  régler puis émettre l'évènement `change` que l'écriture de `.value` n'émet
+  pas d'elle-même. Dupliquer la logique de chaque réglage dans les deux
+  commandes aurait garanti qu'elles divergent.
+
 ## 7. Ce que l'automatique ne fera pas
 
 - **Deux courbes de même couleur qui se superposent** sur une portion : aucune

@@ -209,11 +209,11 @@ not part of the Bash framework's runtime:
   recovers numeric data from a picture of a plot (paper figure, scanned report, vendor chart). Runs by
   opening `index.html` in a browser — no server, no install, no network — because the target is an
   air-gapped workstation. `cfd-plot-digitizer.html` at the root is the same app inlined into one
-  200 ko file (built by `outils/construire_autonome.py`) and is **committed**, so it can be copied
+  254 ko file (built by `outils/construire_autonome.py`) and is **committed**, so it can be copied
   to a stick with nothing else — which also means it can go stale: rebuild after touching any
   source, and `construire_autonome.py --verifier` exits 1 when it has drifted. Layout mirrors the other tools:
   `00_DOC/` (FR docs — `01_CALIBRATION.md`, `02_DETECTION_COULEUR.md`, `03_EXPORT_ET_PROJET.md`),
-  `app/js/` (`00_base` → `60_vue` are DOM-free and unit-tested, `90_main` holds all UI wiring),
+  `app/js/` (`00_base` → `70_vignettes` are DOM-free and unit-tested, `90_main` holds all UI wiring),
   `exemples/`, `outils/`, `tests/`. UI, comments and docs are French, like cfd-perf/atm/nozzle.
     - **No ES modules anywhere.** Firefox gives a `file://` page an opaque origin and refuses
       `import`, so scripts load as classic `<script>` tags onto a `CFDD` namespace. Same reason the
@@ -233,6 +233,29 @@ not part of the Bash framework's runtime:
       with the measured stroke thickness. `comblerLacunes` then bridges a dashed curve's gaps by
       interpolation, capped so a real interruption is never spanned; stats keep detected and
       interpolated points distinct.
+    - **Axis calibration is half-automated.** `15_cadre.js` finds the plot frame from ink
+      profiles: an axis line dominates its column/row profile, a curve contributes one or two
+      pixels per column. Thresholds are doubled — dominate the profile *and* cover 35 % of the
+      inked extent — so a bare scatter cannot crown its densest column a border. A plate with only
+      two spines gives one peak per direction, and *which* border it is cannot be assumed (calling
+      the x-axis the top edge folds the frame onto a line): its position within the ink decides,
+      and the found line's own extent supplies the opposite border. Measured against the three
+      matplotlib fixtures: all four sides within 2 px, and the calibration derived from them within
+      0.6 % of the perfect one. X1 and Y1 are linked to the origin corner by default (three markers
+      to place, not four) and every marker position is typeable as well as clickable.
+    - **Every detection setting carries an SVG thumbnail** (`70_vignettes.js` — DOM-free strings,
+      so they are unit-tested like anything else). The `<select>` stays the source of truth: the
+      thumbnail sets it and dispatches `change`, since assigning `.value` fires nothing on its own;
+      duplicating each setting's logic across both controls would have guaranteed drift. Tests
+      assert every option in `index.html` has a drawing, and that no SVG contains `</script`, which
+      would break the single-file build.
+    - **Per-series marker** — shape and size, not only colour — and a **drag-select eraser**. The
+      hollow shapes (ring, cross, plus) exist because a filled 2 px dot on a 2 px trace is
+      invisible, precisely where you are aiming.
+    - **Export is a card list**, each card carrying a summary, a use and three lines of real output,
+      all in `40_export.js` (`DESCRIPTIONS`) — the module knows what it emits. The `separateur`
+      flag that hides the irrelevant control is *verified*, by rendering every format twice with
+      two separators, not merely declared.
     - **`csv-grille` export** resamples every series onto one shared x by linear interpolation, since
       separately digitized curves never share abscissae. It never extrapolates (blank outside a
       series' own range) and it *refuses* folded curves — a polar has two y per x, and interpolating
@@ -247,9 +270,9 @@ not part of the Bash framework's runtime:
       0.1–0.5 px.
     - Series points are stored in **pixel** coordinates, never physical units, so fixing a mistyped
       axis value re-derives every series without re-picking anything.
-    - Tests: `node tests/executer.js` (89, under a second) **or** open `tests/index.html` in a
-      browser — same files, and the 6 file-reading integration tests disable themselves there. Those
-      six digitize real matplotlib figures and compare against the data that drew them, measuring
+    - Tests: `node tests/executer.js` (172, about a second) **or** open `tests/index.html` in a
+      browser — same files, and the 14 file-reading integration tests disable themselves there. Ten
+      of them digitize real matplotlib figures and compare against the data that drew them, measuring
       distance to the reference curve in axis-normalised coordinates (a vertical gap would just be
       measuring the local slope). `outils/verifier_navigateur.sh` screenshots a real browser.
 - **`tools/cfd-stats/`** — automatic convergence analysis/statistics for CFD time-series (`cfd-stats` CLI).

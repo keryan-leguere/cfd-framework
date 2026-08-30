@@ -216,6 +216,9 @@ kbd {
 .aide { margin: 0; font-size: 12px; color: var(--texte-doux); }
 .discret { color: var(--texte-doux); margin: 0; }
 .stats { margin: 4px 0 0; font-size: 12px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+.stats:empty { display: none; }
+.stats.ok { color: var(--succes); }
+.stats.souci { color: var(--alerte); }
 
 /* ---------- Repères ---------- */
 table.reperes { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -227,7 +230,12 @@ table.reperes th {
 table.reperes td { padding: 2px 0; }
 table.reperes tr.actif td:first-child { color: var(--accent); font-weight: 600; }
 table.reperes input { width: 100%; }
-table.reperes .position { font-size: 11px; color: var(--texte-doux); font-variant-numeric: tabular-nums; }
+table.reperes .position input {
+  width: 100%; font-size: 11px; padding: 3px 4px;
+  font-variant-numeric: tabular-nums; color: var(--texte-doux);
+}
+table.reperes .position input.vide { font-style: italic; }
+table.reperes tr.liee .position input { background: #f2f3f5; }
 table.reperes .repere-nom { cursor: pointer; }
 
 .etat-calibration { margin: 0; font-size: 12px; }
@@ -308,6 +316,88 @@ dialog code { font: 12px ui-monospace, Menlo, Consolas, monospace; background: #
 table.raccourcis { border-collapse: collapse; font-size: 13px; }
 table.raccourcis td { padding: 3px 12px 3px 0; vertical-align: top; }
 dialog form { margin-top: 18px; text-align: right; }
+
+/* ---------- Vignettes d'illustration ---------- */
+/*
+ * Une vignette est un bouton : cliquer l'image sélectionne l'option qu'elle
+ * illustre. La liste déroulante reste au-dessus, seule à recevoir le focus par
+ * défaut — les deux restent synchronisées par 90_main.js.
+ */
+.vignettes { display: flex; flex-wrap: wrap; gap: 5px; }
+.vignettes .vignette {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 3px; border: 1px solid var(--trait); border-radius: var(--rayon);
+  background: #fff; cursor: pointer; line-height: 1.15;
+}
+.vignettes .vignette svg { display: block; }
+.vignettes .vignette .etiquette {
+  font-size: 10px; color: var(--texte-doux);
+  max-width: 72px; text-align: center;
+}
+.vignettes .vignette.actif { border-color: var(--accent); background: var(--accent-clair); }
+.vignettes .vignette.actif .etiquette { color: var(--accent); }
+
+.galerie > summary {
+  cursor: pointer; font-size: 12px; color: var(--accent);
+  padding: 2px 0; list-style: none;
+}
+.galerie > summary::-webkit-details-marker { display: none; }
+.galerie > summary::before { content: "\25B8  "; }
+.galerie[open] > summary::before { content: "\25BE  "; }
+.galerie-numerique { display: flex; flex-direction: column; gap: 9px; padding: 6px 0 2px; }
+.galerie-numerique .fiche { display: flex; gap: 9px; align-items: flex-start; }
+.galerie-numerique .fiche .image { flex: 0 0 auto; line-height: 0; }
+.galerie-numerique .fiche .texte { margin: 0; font-size: 11.5px; color: var(--texte-doux); }
+.galerie-numerique .fiche .texte b { color: var(--texte); font-weight: 600; }
+
+/* ---------- Marqueur de série ---------- */
+fieldset.marqueur {
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  padding: 2px 10px 10px; margin: 2px 0 0;
+  display: flex; flex-direction: column; gap: 7px;
+}
+fieldset.marqueur legend { padding: 0 4px; font-size: 12px; color: var(--texte-doux); }
+fieldset.marqueur input[type=color] { width: 100%; }
+.apercu-marqueur {
+  width: 100%; height: 40px; display: block;
+  border: 1px solid var(--trait); border-radius: var(--rayon); background: #fff;
+}
+
+/* ---------- Export ---------- */
+/*
+ * Fiches de format plutôt que liste déroulante : le choix du format engage la
+ * suite du travail (tableur, script, solveur) et se faisait jusqu'ici à
+ * l'aveugle, sur un intitulé de trois mots.
+ */
+.formats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.formats li { margin: 0; }
+.formats label {
+  display: block; padding: 6px 8px;
+  border: 1px solid var(--trait); border-radius: var(--rayon);
+  cursor: pointer;
+}
+.formats label:hover { background: #f6f8fa; }
+.formats li.actif label { border-color: var(--accent); background: var(--accent-clair); }
+.formats input[type=radio] { margin-right: 6px; }
+.formats .titre-format { font-weight: 600; font-size: 13px; }
+.formats .resume { display: block; margin-left: 20px; font-size: 11.5px; color: var(--texte-doux); }
+
+.usage-format:empty { display: none; }
+.exemple-format {
+  margin: 0; padding: 7px 9px; overflow-x: auto;
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fafbfc; border: 1px solid var(--trait); border-radius: var(--rayon);
+  color: var(--texte-doux); white-space: pre;
+}
+.exemple-format:empty { display: none; }
+.bilan-export {
+  margin: 0; font-size: 12px; color: var(--texte-doux);
+  font-variant-numeric: tabular-nums;
+}
+.nom-fichier {
+  font: 11.5px ui-monospace, Menlo, Consolas, monospace;
+  color: var(--texte-doux); margin-left: auto;
+}
 
 /* Écran étroit : le panneau passe sous la scène plutôt que de l'écraser. */
 @media (max-width: 900px) {
@@ -400,10 +490,22 @@ dialog form { margin-top: 18px; text-align: right; }
           Placez quatre repères : deux sur l’axe X (seule leur valeur X compte),
           deux sur l’axe Y. Les axes peuvent être inclinés ou cisaillés.
         </p>
+        <button id="btn-detecter-cadre" class="pleine-largeur">
+          Détecter le cadre automatiquement</button>
+        <p id="etat-cadre" class="stats"></p>
+        <label class="interrupteur">
+          <input type="checkbox" id="origine-commune" checked>
+          X1 et Y1 au même point (coin d’origine)
+        </label>
         <table class="reperes">
-          <thead><tr><th>Repère</th><th>Valeur</th><th>Position</th></tr></thead>
+          <thead><tr><th>Repère</th><th>Valeur</th><th>Position px</th></tr></thead>
           <tbody id="corps-reperes"></tbody>
         </table>
+        <p class="aide">
+          Les positions se corrigent au clavier autant qu’à la souris : saisir
+          « 84, 315 » place le repère au pixel exact, ce qu’un clic ne garantit
+          jamais.
+        </p>
         <div class="ligne">
           <label><input type="checkbox" id="log-x"> Axe X logarithmique</label>
           <label><input type="checkbox" id="log-y"> Axe Y logarithmique</label>
@@ -437,6 +539,31 @@ dialog form { margin-top: 18px; text-align: right; }
           <button id="btn-ajouter-serie">Nouvelle série</button>
           <button id="btn-supprimer-serie">Supprimer</button>
         </div>
+
+        <fieldset class="marqueur" id="bloc-marqueur">
+          <legend>Marqueur de la série active</legend>
+          <div class="ligne">
+            <label class="champ">Couleur
+              <input type="color" id="marqueur-couleur" value="#c1121f"></label>
+            <label class="champ">Forme
+              <select id="marqueur-forme"></select></label>
+            <label class="champ">Taille
+              <input type="number" id="marqueur-taille" min="1" max="12" step="0.5" value="2.5"></label>
+          </div>
+          <canvas id="apercu-marqueur" class="apercu-marqueur" width="300" height="40"></canvas>
+          <p class="aide">
+            Un disque de deux pixels posé sur un trait noir de deux pixels est
+            invisible : c’est exactement là qu’on pointe. Les formes creuses —
+            anneau, croix, plus — laissent voir la courbe sous le marqueur.
+          </p>
+        </fieldset>
+
+        <p class="aide">
+          <b>Pointer</b> ajoute un point à la série active.
+          <b>Gommer</b> retire le point le plus proche d’un clic&nbsp;; en
+          glissant, il retire d’un coup tous les points de la série active
+          contenus dans le rectangle.
+        </p>
       </div>
     </details>
 
@@ -457,24 +584,21 @@ dialog form { margin-top: 18px; text-align: right; }
               <input type="checkbox" id="apercu" checked> Aperçu du masque
             </label>
           </legend>
-          <div class="ligne">
-            <label class="champ">Rendu
-              <select id="apercu-mode">
-                <option value="les-deux">surligner et estomper le reste</option>
-                <option value="surbrillance">surligner seulement</option>
-                <option value="isoler">estomper le reste seulement</option>
-              </select>
-            </label>
-          </div>
+          <label class="champ">Rendu
+            <select id="apercu-mode">
+              <option value="les-deux" data-court="les deux">surligner et estomper le reste</option>
+              <option value="surbrillance" data-court="surligner">surligner seulement</option>
+              <option value="isoler" data-court="estomper">estomper le reste seulement</option>
+            </select>
+          </label>
+          <div class="vignettes" data-pour="apercu-mode" data-prefixe="apercuMode"></div>
           <label class="curseur">
             <span>Intensité <b id="val-apercu-opacite">85</b> %</span>
             <input type="range" id="apercu-opacite" min="20" max="100" value="85">
           </label>
-          <div class="ligne">
-            <label class="interrupteur">
-              <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
-            </label>
-          </div>
+          <label class="interrupteur">
+            <input type="checkbox" id="apercu-epaissir" checked> Épaissir le tracé de l’aperçu
+          </label>
         </fieldset>
 
         <label class="curseur">
@@ -491,39 +615,39 @@ dialog form { margin-top: 18px; text-align: right; }
           seule la clarté discrimine : resserrez-la.
         </p>
 
-        <div class="ligne">
-          <label class="champ">Balayage
-            <select id="orientation">
-              <option value="colonnes">en colonnes — courbe y = f(x)</option>
-              <option value="lignes">en lignes — courbe x = f(y)</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Mode
-            <select id="mode">
-              <option value="moyenne">un point par ligne (moyenne)</option>
-              <option value="tous">tous les segments</option>
-              <option value="suivi">suivi de continuité</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Type de trait
-            <select id="filtre-trait">
-              <option value="tous">indifférent</option>
-              <option value="continu">continu</option>
-              <option value="tirets">tirets</option>
-              <option value="pointillé">pointillé</option>
-              <option value="discontinu">tout discontinu (tirets et pointillés)</option>
-            </select>
-          </label>
-        </div>
+        <label class="champ">Sens de balayage
+          <select id="orientation">
+            <option value="colonnes" data-court="colonnes">en colonnes — courbe y = f(x)</option>
+            <option value="lignes" data-court="lignes">en lignes — courbe x = f(y)</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="orientation" data-prefixe="orientation"></div>
+
+        <label class="champ">Mode d’extraction
+          <select id="mode">
+            <option value="moyenne" data-court="moyenne">un point par ligne (moyenne)</option>
+            <option value="tous" data-court="tous">tous les segments</option>
+            <option value="suivi" data-court="suivi">suivi de continuité</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="mode" data-prefixe="mode"></div>
+
+        <label class="champ">Type de trait
+          <select id="filtre-trait">
+            <option value="tous" data-court="tous">indifférent</option>
+            <option value="continu" data-court="continu">continu</option>
+            <option value="tirets" data-court="tirets">tirets</option>
+            <option value="pointillé" data-court="pointillé">pointillé</option>
+            <option value="discontinu" data-court="discontinu">tout discontinu</option>
+          </select>
+        </label>
+        <div class="vignettes" data-pour="filtre-trait" data-prefixe="filtreTrait"></div>
         <p class="aide">
           Sur une planche en noir et blanc, deux courbes n’ont souvent que leur
           tracé pour les distinguer. Aucune tolérance de couleur ne peut les
           séparer&nbsp;; le tri sur le type de trait, si.
         </p>
+
         <div class="ligne">
           <label class="champ">Pas <input type="number" id="pas" min="1" max="50" value="1"></label>
           <label class="champ">Épaisseur min. <input type="number" id="longueur-min" min="1" max="99" value="1"></label>
@@ -535,12 +659,11 @@ dialog form { margin-top: 18px; text-align: right; }
           <label class="champ">Combler les lacunes (px)
             <input type="number" id="combler" min="0" max="200" value="0"></label>
         </div>
-        <p class="aide">
-          Le comblement relie les tronçons d’un trait discontinu par
-          interpolation. Le plafond évite de relier aussi une vraie interruption
-          — courbe masquée par un symbole, sortie du cadre — et d’inventer des
-          points. Le viser un peu au-dessus de l’espace mesuré ci-dessous.
-        </p>
+
+        <details class="galerie">
+          <summary>À quoi servent ces réglages chiffrés ?</summary>
+          <div id="galerie-numerique" class="galerie-numerique"></div>
+        </details>
 
         <button id="btn-detecter" class="primaire pleine-largeur">Détecter la courbe</button>
         <p id="stats-detection" class="stats"></p>
@@ -551,21 +674,13 @@ dialog form { margin-top: 18px; text-align: right; }
     <details class="bloc" open>
       <summary>6. Export</summary>
       <div class="contenu">
-        <div class="ligne">
-          <label class="champ">Format
-            <select id="format">
-              <option value="csv-long">CSV — format long</option>
-              <option value="csv-large">CSV — colonnes par série</option>
-              <option value="csv-grille">CSV — grille X commune (interpolée)</option>
-              <option value="colonnes">Texte — deux colonnes</option>
-              <option value="json">JSON</option>
-              <option value="python">Python / NumPy</option>
-              <option value="matlab">MATLAB</option>
-            </select>
-          </label>
-        </div>
-        <div class="ligne">
-          <label class="champ">Séparateur
+        <p class="aide">Choisissez la forme du fichier à écrire :</p>
+        <ul id="liste-formats" class="formats"></ul>
+        <p id="usage-format" class="aide usage-format"></p>
+        <pre id="exemple-format" class="exemple-format" aria-label="Exemple de rendu"></pre>
+
+        <div class="ligne" id="reglages-texte">
+          <label class="champ" id="champ-separateur">Séparateur
             <select id="separateur">
               <option value=",">virgule</option>
               <option value=";">point-virgule</option>
@@ -575,6 +690,7 @@ dialog form { margin-top: 18px; text-align: right; }
           <label class="champ">Chiffres significatifs
             <input type="number" id="decimales" min="1" max="15" value="6"></label>
         </div>
+
         <div id="reglages-grille" class="reglages-grille" hidden>
           <div class="ligne">
             <label class="champ">Points <input type="number" id="grille-points" min="2" max="20000" value="200"></label>
@@ -592,18 +708,19 @@ dialog form { margin-top: 18px; text-align: right; }
             </label>
           </div>
           <p class="aide">
-            Toutes les séries sont interpolées sur une même abscisse — la forme
-            qu’il faut pour les superposer dans un tableur ou en retrancher une
-            d’une autre. Hors du domaine propre d’une série, la cellule reste
-            vide&nbsp;: extrapoler inventerait des valeurs absentes de l’image.
+            Hors du domaine propre d’une série, la cellule reste vide&nbsp;:
+            extrapoler inventerait des valeurs absentes de l’image.
           </p>
           <p id="avertissements-grille" class="avertissements"></p>
         </div>
+
+        <p id="bilan-export" class="bilan-export"></p>
         <textarea id="apercu-export" class="apercu-export" readonly
                   spellcheck="false" aria-label="Aperçu de l’export"></textarea>
         <div class="ligne">
           <button id="btn-copier">Copier</button>
           <button id="btn-telecharger" class="primaire">Télécharger</button>
+          <span id="nom-fichier" class="nom-fichier"></span>
         </div>
       </div>
     </details>
@@ -624,7 +741,7 @@ dialog form { margin-top: 18px; text-align: right; }
   <h3>Marche à suivre</h3>
   <ol>
     <li>Ouvrez l’image du graphique (bouton, glisser-déposer ou <kbd>Ctrl</kbd>+<kbd>V</kbd>).</li>
-    <li>Placez les quatre repères d’axes et saisissez leurs valeurs.</li>
+    <li>Cliquez « Détecter le cadre », vérifiez les quatre repères, saisissez leurs valeurs.</li>
     <li>Délimitez la zone d’analyse, et excluez la légende.</li>
     <li>Prélevez la couleur d’une courbe à la pipette, puis lancez la détection.</li>
     <li>Corrigez à la main si besoin, puis exportez.</li>
@@ -638,6 +755,7 @@ dialog form { margin-top: 18px; text-align: right; }
     <tr><td>glisser au bouton du milieu, ou <kbd>Espace</kbd>+glisser</td><td>déplacer l’image</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>annuler la dernière action</td></tr>
     <tr><td><kbd>Suppr</kbd></td><td>vider la série active</td></tr>
+    <tr><td>glisser avec la gomme</td><td>effacer tous les points d’un rectangle</td></tr>
   </table>
   <h3>Hors réseau</h3>
   <p>
@@ -794,6 +912,41 @@ dialog form { margin-top: 18px; text-align: right; }
       if (garder[k]) { sortie.push(points[k]); }
     }
     return sortie;
+  };
+
+  /*
+   * Rectangle {x0, y0, x1, y1} donné dans n'importe quel sens : normalise les
+   * coins. Les rectangles de l'interface sont tracés à la souris, donc x1 peut
+   * très bien être à gauche de x0.
+   */
+  Base.normaliserRectangle = function (rect) {
+    return {
+      x0: Math.min(rect.x0, rect.x1),
+      y0: Math.min(rect.y0, rect.y1),
+      x1: Math.max(rect.x0, rect.x1),
+      y1: Math.max(rect.y0, rect.y1)
+    };
+  };
+
+  Base.dansRectangle = function (point, rect) {
+    var r = Base.normaliserRectangle(rect);
+    return point.px >= r.x0 && point.px <= r.x1
+        && point.py >= r.y0 && point.py <= r.y1;
+  };
+
+  /*
+   * Retire d'un nuage les points tombant dans un rectangle, et dit combien.
+   * C'est la gomme « en zone » : effacer point par point un artefact de
+   * plusieurs centaines de pixels — une légende captée, une grille prise pour
+   * une courbe — demande autant de clics que de points.
+   */
+  Base.retirerDansRectangle = function (points, rect) {
+    var gardes = [], retires = 0;
+    for (var i = 0; i < points.length; i++) {
+      if (Base.dansRectangle(points[i], rect)) { retires++; }
+      else { gardes.push(points[i]); }
+    }
+    return { points: gardes, retires: retires };
   };
 
   CFDD.Base = Base;
@@ -1054,6 +1207,306 @@ dialog form { margin-top: 18px; text-align: right; }
 
   CFDD.Couleur = Couleur;
   if (typeof module !== 'undefined' && module.exports) { module.exports = Couleur; }
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+<script>
+/* app/js/15_cadre.js */
+/*
+ * 15_cadre.js — détection automatique du cadre du tracé.
+ *
+ * Placer les quatre repères de calibration à la main est le geste le plus
+ * fastidieux de la digitalisation, et le plus facile à rater : un repère posé
+ * trois pixels à côté de l'axe fausse TOUTES les valeurs exportées, sans que
+ * rien ne le signale. Or la position des quatre bornes est presque toujours
+ * lisible dans l'image elle-même : ce sont les traits d'axe.
+ *
+ * MÉTHODE
+ *
+ * 1. Couleur de fond = la couleur la plus fréquente de l'image (le papier).
+ * 2. Masque d'encre = tout pixel qui s'en écarte.
+ * 3. Profils : nombre de pixels d'encre par colonne, puis par ligne.
+ *    Un axe est un trait plein d'un bord à l'autre du tracé : il domine son
+ *    profil de très loin, alors qu'une courbe ne contribue qu'un ou deux
+ *    pixels par colonne, et une étiquette de graduation guère plus.
+ * 4. Les pics du profil sont regroupés en « traits » (deux colonnes voisines
+ *    au-dessus du seuil appartiennent au même trait) ; le premier et le
+ *    dernier donnent les deux bords.
+ *
+ * REPLI — les planches sans cadre fermé
+ *
+ * Beaucoup de figures ne tracent que deux axes (gauche et bas). Le profil ne
+ * livre alors qu'un seul pic par direction. Le bord manquant se lit sur
+ * l'ÉTENDUE du trait trouvé : la ligne d'axe du bas court exactement sur la
+ * largeur du tracé, donc son premier et son dernier pixel donnent les bords
+ * gauche et droit. C'est ce repli qui évite de retomber sur la boîte
+ * englobante de l'encre — laquelle inclut le titre et les étiquettes, et
+ * déborde donc largement du cadre.
+ *
+ * Le résultat reste une PROPOSITION : `confiance` dit combien des quatre côtés
+ * ont été vus comme de vrais traits, et l'interface laisse déplacer chaque
+ * repère. La détection ne lit pas les valeurs des graduations — aucune OCR
+ * ici — elle ne place que les positions.
+ */
+(function (racine) {
+  'use strict';
+
+  var CFDD = racine.CFDD || (racine.CFDD = {});
+  var Base = CFDD.Base;
+  var Cadre = {};
+
+  Cadre.DEFAUTS = {
+    /* Écart canal maximal au fond au-delà duquel un pixel est « de l'encre ». */
+    seuilEncre: 40,
+    /* Fraction du pic de profil à partir de laquelle une ligne est un axe. */
+    fractionPic: 0.6,
+    /* Un axe doit couvrir au moins cette fraction de l'étendue encrée. */
+    couvertureMin: 0.35,
+    /* Sous-échantillonnage de l'histogramme du fond. */
+    pasFond: 2
+  };
+
+  function fusionner(options) {
+    var o = {}, cle;
+    for (cle in Cadre.DEFAUTS) {
+      if (Object.prototype.hasOwnProperty.call(Cadre.DEFAUTS, cle)) {
+        o[cle] = (options && options[cle] !== undefined) ? options[cle] : Cadre.DEFAUTS[cle];
+      }
+    }
+    return o;
+  }
+
+  /*
+   * Couleur dominante de l'image, prise pour le fond. Les pixels sont comptés
+   * exacts, sans quantification : le fond d'une figure vectorielle rendue en
+   * PNG est un aplat rigoureusement uniforme, et quantifier n'y gagnerait rien
+   * tout en risquant de fusionner le papier avec un aplat clair voisin.
+   */
+  Cadre.couleurFond = function (image, options) {
+    var o = fusionner(options);
+    var d = image.data, w = image.width, h = image.height;
+    var compte = {};
+    var meilleur = null, meilleurCompte = -1;
+
+    for (var y = 0; y < h; y += o.pasFond) {
+      for (var x = 0; x < w; x += o.pasFond) {
+        var i = (y * w + x) * 4;
+        if (d[i + 3] < 128) { continue; }
+        var cle = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
+        var n = (compte[cle] || 0) + 1;
+        compte[cle] = n;
+        if (n > meilleurCompte) { meilleurCompte = n; meilleur = cle; }
+      }
+    }
+    if (meilleur === null) { return { r: 255, g: 255, b: 255 }; }
+    return { r: (meilleur >> 16) & 255, g: (meilleur >> 8) & 255, b: meilleur & 255 };
+  };
+
+  /*
+   * Masque d'encre de la zone : 1 dès qu'un canal s'écarte du fond de plus de
+   * `seuilEncre`. On compare canal par canal plutôt qu'en distance : un trait
+   * rouge vif sur fond blanc et un trait gris foncé doivent tous deux compter,
+   * et le maximum des écarts les attrape l'un comme l'autre.
+   */
+  Cadre.masqueEncre = function (image, fond, options) {
+    var o = fusionner(options);
+    var zone = normaliser(options && options.zone, image.width, image.height);
+    var w = zone.x1 - zone.x0 + 1, h = zone.y1 - zone.y0 + 1;
+    var encre = new Uint8Array(w * h);
+    var d = image.data, iw = image.width;
+    var total = 0;
+
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var i = ((y + zone.y0) * iw + (x + zone.x0)) * 4;
+        if (d[i + 3] < 128) { continue; }
+        var ecart = Math.max(Math.abs(d[i] - fond.r),
+          Math.abs(d[i + 1] - fond.g), Math.abs(d[i + 2] - fond.b));
+        if (ecart > o.seuilEncre) { encre[y * w + x] = 1; total++; }
+      }
+    }
+    return { encre: encre, largeur: w, hauteur: h, zone: zone, total: total };
+  };
+
+  function normaliser(zone, largeur, hauteur) {
+    if (!zone) { return { x0: 0, y0: 0, x1: largeur - 1, y1: hauteur - 1 }; }
+    return {
+      x0: Base.borner(Math.round(Math.min(zone.x0, zone.x1)), 0, largeur - 1),
+      x1: Base.borner(Math.round(Math.max(zone.x0, zone.x1)), 0, largeur - 1),
+      y0: Base.borner(Math.round(Math.min(zone.y0, zone.y1)), 0, hauteur - 1),
+      y1: Base.borner(Math.round(Math.max(zone.y0, zone.y1)), 0, hauteur - 1)
+    };
+  }
+
+  /*
+   * Regroupe en « traits » les indices dont le profil dépasse `seuil`. Deux
+   * indices voisins forment un seul trait : un axe tracé à 1,5 px de large
+   * couvre deux colonnes, et les compter séparément donnerait deux bords là où
+   * il n'y en a qu'un.
+   */
+  Cadre.traits = function (profil, seuil) {
+    var sortie = [];
+    var debut = -1;
+    for (var i = 0; i <= profil.length; i++) {
+      var fort = (i < profil.length) && (profil[i] >= seuil);
+      if (fort && debut < 0) { debut = i; }
+      if (!fort && debut >= 0) {
+        var somme = 0, pic = 0;
+        for (var k = debut; k < i; k++) { somme += profil[k]; pic = Math.max(pic, profil[k]); }
+        sortie.push({
+          debut: debut, fin: i - 1,
+          centre: (debut + i - 1) / 2,
+          pic: pic, somme: somme
+        });
+        debut = -1;
+      }
+    }
+    return sortie;
+  };
+
+  /* Premier et dernier pixel d'encre d'une colonne (vertical) ou d'une ligne. */
+  function etendue(masque, indice, vertical) {
+    var w = masque.largeur, h = masque.hauteur, e = masque.encre;
+    var n = vertical ? h : w;
+    var debut = -1, fin = -1;
+    for (var k = 0; k < n; k++) {
+      var p = vertical ? (k * w + indice) : (indice * w + k);
+      if (e[p]) { if (debut < 0) { debut = k; } fin = k; }
+    }
+    return (debut < 0) ? null : { debut: debut, fin: fin };
+  }
+
+  /*
+   * Détecte le cadre. Renvoie null si l'image ne contient pas d'encre.
+   *
+   *   {cadre: {x0, y0, x1, y1},        coordonnées image
+   *    sources: {gauche, droite, haut, bas},   'trait' | 'etendue' | 'boite'
+   *    confiance: 0..1,
+   *    fond: {r, g, b}}
+   */
+  Cadre.detecter = function (image, options) {
+    var o = fusionner(options);
+    var fond = (options && options.fond) || Cadre.couleurFond(image, options);
+    var masque = Cadre.masqueEncre(image, fond, options);
+    if (!masque.total) { return null; }
+
+    var w = masque.largeur, h = masque.hauteur, e = masque.encre;
+    var colonnes = new Int32Array(w), lignes = new Int32Array(h);
+    var x, y;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        if (e[y * w + x]) { colonnes[x]++; lignes[y]++; }
+      }
+    }
+
+    /* Boîte englobante de l'encre : dernier recours, et référence d'étendue. */
+    var boite = { x0: -1, x1: -1, y0: -1, y1: -1 };
+    for (x = 0; x < w; x++) { if (colonnes[x]) { if (boite.x0 < 0) { boite.x0 = x; } boite.x1 = x; } }
+    for (y = 0; y < h; y++) { if (lignes[y]) { if (boite.y0 < 0) { boite.y0 = y; } boite.y1 = y; } }
+    var etendueX = boite.x1 - boite.x0 + 1;
+    var etendueY = boite.y1 - boite.y0 + 1;
+
+    var picColonnes = 0, picLignes = 0;
+    for (x = 0; x < w; x++) { picColonnes = Math.max(picColonnes, colonnes[x]); }
+    for (y = 0; y < h; y++) { picLignes = Math.max(picLignes, lignes[y]); }
+
+    /*
+     * Double condition : dominer le profil ET couvrir une part réelle du
+     * tracé. La première seule suffirait sur une figure encadrée ; la seconde
+     * empêche une image sans le moindre axe — un nuage de points nu — de
+     * promouvoir sa colonne la plus dense au rang de bord.
+     */
+    var seuilV = Math.max(o.fractionPic * picColonnes, o.couvertureMin * etendueY);
+    var seuilH = Math.max(o.fractionPic * picLignes, o.couvertureMin * etendueX);
+    var verticaux = Cadre.traits(colonnes, seuilV);
+    var horizontaux = Cadre.traits(lignes, seuilH);
+
+    var sources = { gauche: 'boite', droite: 'boite', haut: 'boite', bas: 'boite' };
+    var bords = { gauche: boite.x0, droite: boite.x1, haut: boite.y0, bas: boite.y1 };
+
+    /*
+     * Deux traits : les deux bords. Un seul : encore faut-il savoir DUQUEL il
+     * s'agit. Le prendre pour le premier serait faux une fois sur deux — une
+     * planche à deux axes ne trace que l'ordonnée à gauche et l'abscisse en
+     * BAS, et l'abscisse serait alors décrétée bord supérieur, ce qui replie
+     * le cadre sur une ligne. Sa position dans l'encre tranche sans préjugé.
+     */
+    function assigner(traits, bordDebut, bordFin, milieu) {
+      if (!traits.length) { return; }
+      var premier = Math.round(traits[0].centre);
+      var dernier = Math.round(traits[traits.length - 1].centre);
+      if (traits.length > 1) {
+        bords[bordDebut] = premier; sources[bordDebut] = 'trait';
+        bords[bordFin] = dernier; sources[bordFin] = 'trait';
+      } else if (premier <= milieu) {
+        bords[bordDebut] = premier; sources[bordDebut] = 'trait';
+      } else {
+        bords[bordFin] = premier; sources[bordFin] = 'trait';
+      }
+    }
+    assigner(verticaux, 'gauche', 'droite', (boite.x0 + boite.x1) / 2);
+    assigner(horizontaux, 'haut', 'bas', (boite.y0 + boite.y1) / 2);
+
+    /*
+     * Repli : un trait d'axe court exactement sur la largeur (ou la hauteur)
+     * du tracé. Son étendue livre donc les deux bords perpendiculaires, ce qui
+     * rattrape les planches à deux axes seulement — sans retomber sur la boîte
+     * englobante, qui engloberait aussi le titre et les graduations.
+     */
+    var ligneAxe = (sources.bas === 'trait') ? bords.bas
+      : (sources.haut === 'trait') ? bords.haut : null;
+    var colonneAxe = (sources.gauche === 'trait') ? bords.gauche
+      : (sources.droite === 'trait') ? bords.droite : null;
+    var span;
+
+    if (ligneAxe !== null) {
+      span = etendue(masque, ligneAxe, false);
+      if (span) {
+        if (sources.gauche !== 'trait') { bords.gauche = span.debut; sources.gauche = 'etendue'; }
+        if (sources.droite !== 'trait') { bords.droite = span.fin; sources.droite = 'etendue'; }
+      }
+    }
+    if (colonneAxe !== null) {
+      span = etendue(masque, colonneAxe, true);
+      if (span) {
+        if (sources.haut !== 'trait') { bords.haut = span.debut; sources.haut = 'etendue'; }
+        if (sources.bas !== 'trait') { bords.bas = span.fin; sources.bas = 'etendue'; }
+      }
+    }
+
+    var confiance = 0;
+    ['gauche', 'droite', 'haut', 'bas'].forEach(function (cle) {
+      confiance += (sources[cle] === 'trait') ? 0.25 : (sources[cle] === 'etendue' ? 0.15 : 0);
+    });
+
+    var cadre = {
+      x0: bords.gauche + masque.zone.x0,
+      x1: bords.droite + masque.zone.x0,
+      y0: bords.haut + masque.zone.y0,
+      y1: bords.bas + masque.zone.y0
+    };
+    /* Un cadre plat ne sert à rien et rendrait la calibration dégénérée. */
+    if (cadre.x1 - cadre.x0 < 8 || cadre.y1 - cadre.y0 < 8) { return null; }
+
+    return { cadre: cadre, sources: sources, confiance: confiance, fond: fond };
+  };
+
+  /*
+   * Positions de repères déduites d'un cadre. X1 et Y1 tombent volontairement
+   * sur le MÊME pixel — le coin bas-gauche : c'est l'origine du tracé, et rien
+   * n'oblige à la pointer deux fois.
+   */
+  Cadre.reperes = function (cadre) {
+    return {
+      x1: { px: cadre.x0, py: cadre.y1 },
+      x2: { px: cadre.x1, py: cadre.y1 },
+      y1: { px: cadre.x0, py: cadre.y1 },
+      y2: { px: cadre.x0, py: cadre.y0 }
+    };
+  };
+
+  CFDD.Cadre = Cadre;
+  if (typeof module !== 'undefined' && module.exports) { module.exports = Cadre; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script>
@@ -2463,6 +2916,105 @@ dialog form { margin-top: 18px; text-align: right; }
     return blocs.join('\n\n') + '\n';
   };
 
+  /* --- Description des formats ---------------------------------------
+   *
+   * Le choix du format est le seul endroit de l'outil où l'utilisateur doit
+   * deviner ce qu'il va obtenir. Ces fiches — un résumé, ce à quoi ça sert, et
+   * trois lignes du rendu réel — vivent ici plutôt que dans le HTML : c'est le
+   * module qui sait ce qu'il produit, et l'exemple reste ainsi à côté du code
+   * qui l'écrit.
+   *
+   *   separateur / decimales : le réglage s'applique-t-il à ce format ?
+   *     Les masquer ailleurs évite de faire tourner un bouton sans effet.
+   */
+  Export.DESCRIPTIONS = {
+    'csv-long': {
+      titre: 'CSV — format long',
+      resume: 'Une ligne par point, le nom de la série en première colonne.',
+      usage: 'Le format à donner à pandas ou R. Seul à accepter sans trou des '
+        + 'séries de longueurs différentes.',
+      exemple: 'serie,x,y\nCz(alpha),0.5,0.128\nCz(alpha),1.0,0.214',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    'csv-large': {
+      titre: 'CSV — colonnes par série',
+      resume: 'Deux colonnes (x, y) par série, côte à côte.',
+      usage: 'À ouvrir dans un tableur pour tracer directement. Les séries '
+        + 'courtes laissent des cellules vides en bas.',
+      exemple: 'Cz_x,Cz_y,Cx_x,Cx_y\n0.5,0.128,0.5,0.011\n1.0,0.214,1.0,0.013',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    'csv-grille': {
+      titre: 'CSV — grille X commune',
+      resume: 'Toutes les séries interpolées sur une seule abscisse.',
+      usage: 'La forme qu’il faut pour superposer ou soustraire deux courbes '
+        + 'digitalisées séparément — elles ne partagent jamais leurs abscisses.',
+      exemple: 'x,Cz,Cx\n0.50,0.128,0.011\n0.75,0.171,0.012',
+      extension: 'csv', separateur: true, decimales: true
+    },
+    colonnes: {
+      titre: 'Texte — deux colonnes',
+      resume: 'x et y séparés par une tabulation, un bloc par série.',
+      usage: 'À coller tel quel dans un tableur ou un fichier d’entrée de '
+        + 'solveur. Aucun en-tête à retirer.',
+      exemple: '# Cz(alpha)\n0.5\t0.128\n1.0\t0.214',
+      extension: 'txt', separateur: false, decimales: true
+    },
+    json: {
+      titre: 'JSON',
+      resume: 'Structure complète : nom, couleur et points de chaque série.',
+      usage: 'Pour un script qui relit les séries en gardant leurs noms.',
+      exemple: '{\n  "series": [\n    {"nom": "Cz", "points": [[0.5, 0.128]]}',
+      extension: 'json', separateur: false, decimales: true
+    },
+    python: {
+      titre: 'Python / NumPy',
+      resume: 'Un tableau np.array par série, prêt à coller.',
+      usage: 'Pour un notebook ou un script de tracé. Les noms de séries sont '
+        + 'transformés en identifiants valides.',
+      exemple: 'import numpy as np\n\ncz_x = np.array([0.5, 1.0])\ncz_y = np.array([0.128, 0.214])',
+      extension: 'py', separateur: false, decimales: true
+    },
+    matlab: {
+      titre: 'MATLAB / Octave',
+      resume: 'Un vecteur ligne par série.',
+      usage: 'À coller dans un script .m ou directement dans la console.',
+      exemple: '% Cz(alpha)\ncz_x = [0.5 1.0];\ncz_y = [0.128 0.214];',
+      extension: 'm', separateur: false, decimales: true
+    }
+  };
+
+  Export.description = function (format) {
+    return Object.prototype.hasOwnProperty.call(Export.DESCRIPTIONS, format)
+      ? Export.DESCRIPTIONS[format] : null;
+  };
+
+  /*
+   * Ce que l'export contiendra, avant de le produire : de quoi vérifier d'un
+   * coup d'œil qu'on exporte bien ce qu'on croit — la bonne étendue, le bon
+   * nombre de séries — plutôt que de le découvrir dans le fichier écrit.
+   */
+  Export.bilan = function (series) {
+    var nbPoints = 0;
+    var xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    for (var i = 0; i < (series || []).length; i++) {
+      var pts = series[i].points || [];
+      nbPoints += pts.length;
+      for (var j = 0; j < pts.length; j++) {
+        if (pts[j].x < xMin) { xMin = pts[j].x; }
+        if (pts[j].x > xMax) { xMax = pts[j].x; }
+        if (pts[j].y < yMin) { yMin = pts[j].y; }
+        if (pts[j].y > yMax) { yMax = pts[j].y; }
+      }
+    }
+    return {
+      nbSeries: (series || []).length,
+      nbPoints: nbPoints,
+      x: nbPoints ? { min: xMin, max: xMax } : null,
+      y: nbPoints ? { min: yMin, max: yMax } : null
+    };
+  };
+
   Export.rendre = function (format, series, options) {
     switch (format) {
       case 'csv-long': return Export.versCSVLong(series, options);
@@ -2477,13 +3029,8 @@ dialog form { margin-top: 18px; text-align: right; }
   };
 
   Export.extension = function (format) {
-    switch (format) {
-      case 'csv-long': case 'csv-large': case 'csv-grille': return 'csv';
-      case 'json': return 'json';
-      case 'python': return 'py';
-      case 'matlab': return 'm';
-      default: return 'txt';
-    }
+    var d = Export.description(format);
+    return d ? d.extension : 'txt';
   };
 
   CFDD.Export = Export;
@@ -2550,6 +3097,10 @@ dialog form { margin-top: 18px; text-align: right; }
         return {
           nom: s.nom,
           couleurHex: s.couleurHex || null,
+          /* Forme et taille du marqueur : purement visuel, mais c'est le
+             réglage qui rend une planche à quatre séries relisible, et le
+             reperdre à chaque réouverture serait pénible. */
+          marqueur: s.marqueur || null,
           detection: s.detection || null,
           /* Arrondi au centième de pixel : bien au-delà du pointage humain,
              et divise par deux la taille du fichier. */
@@ -2625,6 +3176,7 @@ dialog form { margin-top: 18px; text-align: right; }
       etat.series.push({
         nom: s.nom || ('Série ' + (i + 1)),
         couleurHex: s.couleurHex || null,
+        marqueur: s.marqueur || null,
         detection: s.detection || null,
         points: points
       });
@@ -2743,7 +3295,6 @@ dialog form { margin-top: 18px; text-align: right; }
   /* --- Rendu -------------------------------------------------------- */
 
   Vue.RAYON_REPERE = 7;
-  Vue.RAYON_POINT = 2.5;
 
   /*
    * Dessine l'image source. `lisser` doit être faux au-delà de 1:1 : à fort
@@ -2797,28 +3348,96 @@ dialog form { margin-top: 18px; text-align: right; }
   };
 
   /*
-   * Nuage de points d'une série. Au-delà de quelques milliers de points le
-   * tracé arc par arc devient le poste de coût dominant du rafraîchissement :
-   * on bascule alors sur des carrés d'un pixel, visuellement équivalents à
-   * cette densité.
+   * Formes de marqueur. Une planche digitalisée porte souvent trois ou quatre
+   * séries qui se croisent : la couleur seule ne suffit plus à savoir laquelle
+   * on est en train de pointer, surtout imprimée en noir et blanc. La forme,
+   * elle, reste lisible partout.
    */
-  Vue.dessinerPoints = function (ctx, vue, points, couleur, selection) {
+  Vue.FORMES = ['cercle', 'anneau', 'carre', 'losange', 'triangle', 'croix', 'plus'];
+
+  Vue.LIBELLES_FORME = {
+    cercle: 'disque', anneau: 'anneau', carre: 'carré', losange: 'losange',
+    triangle: 'triangle', croix: 'croix ×', plus: 'plus +'
+  };
+
+  Vue.STYLE_POINT = { couleur: '#c1121f', forme: 'cercle', taille: 2.5 };
+
+  Vue.normaliserStyle = function (style) {
+    /* Tolère une simple couleur : c'était la signature d'origine. */
+    if (typeof style === 'string') { style = { couleur: style }; }
+    style = style || {};
+    var forme = style.forme;
+    if (Vue.FORMES.indexOf(forme) === -1) { forme = Vue.STYLE_POINT.forme; }
+    var taille = Number(style.taille);
+    if (!isFinite(taille) || taille <= 0) { taille = Vue.STYLE_POINT.taille; }
+    return {
+      couleur: style.couleur || Vue.STYLE_POINT.couleur,
+      forme: forme,
+      taille: Base.borner(taille, 0.5, 20)
+    };
+  };
+
+  /*
+   * Trace une marque au rayon `r`. Les formes creuses (anneau, croix, plus)
+   * sont tracées au trait : posées sur la courbe elles la laissent voir, ce
+   * qui est précisément ce qu'on veut en pointant à la main.
+   */
+  Vue.tracerMarque = function (ctx, cx, cy, forme, r) {
+    ctx.beginPath();
+    switch (forme) {
+      case 'carre':
+        ctx.rect(cx - r, cy - r, 2 * r, 2 * r); ctx.fill(); break;
+      case 'losange':
+        ctx.moveTo(cx, cy - r * 1.25); ctx.lineTo(cx + r * 1.25, cy);
+        ctx.lineTo(cx, cy + r * 1.25); ctx.lineTo(cx - r * 1.25, cy);
+        ctx.closePath(); ctx.fill(); break;
+      case 'triangle':
+        ctx.moveTo(cx, cy - r * 1.3); ctx.lineTo(cx + r * 1.2, cy + r * 0.9);
+        ctx.lineTo(cx - r * 1.2, cy + r * 0.9);
+        ctx.closePath(); ctx.fill(); break;
+      case 'anneau':
+        ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); break;
+      case 'croix':
+        ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+        ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+        ctx.stroke(); break;
+      case 'plus':
+        ctx.moveTo(cx - r * 1.2, cy); ctx.lineTo(cx + r * 1.2, cy);
+        ctx.moveTo(cx, cy - r * 1.2); ctx.lineTo(cx, cy + r * 1.2);
+        ctx.stroke(); break;
+      default:
+        ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); break;
+    }
+  };
+
+  /*
+   * Nuage de points d'une série. `style` accepte une couleur seule ou
+   * {couleur, forme, taille}.
+   *
+   * Au-delà de quelques milliers de points le tracé marque par marque devient
+   * le poste de coût dominant du rafraîchissement : on bascule alors sur des
+   * carrés pleins, visuellement équivalents à cette densité — et à cette
+   * densité, la forme du marqueur ne se distingue plus de toute façon.
+   */
+  Vue.dessinerPoints = function (ctx, vue, points, style, selection) {
     if (!points.length) { return; }
+    var s = Vue.normaliserStyle(style);
     ctx.save();
-    ctx.fillStyle = couleur;
+    ctx.fillStyle = s.couleur;
+    ctx.strokeStyle = s.couleur;
+    ctx.lineWidth = Math.max(1, s.taille * 0.6);
 
     var i, e;
     if (points.length > 4000) {
+      var cote = Math.max(1.5, s.taille);
       for (i = 0; i < points.length; i++) {
         e = Vue.versEcran(vue, points[i].px, points[i].py);
-        ctx.fillRect(e.cx - 0.5, e.cy - 0.5, 1.5, 1.5);
+        ctx.fillRect(e.cx - cote / 2, e.cy - cote / 2, cote, cote);
       }
     } else {
       for (i = 0; i < points.length; i++) {
         e = Vue.versEcran(vue, points[i].px, points[i].py);
-        ctx.beginPath();
-        ctx.arc(e.cx, e.cy, Vue.RAYON_POINT, 0, Math.PI * 2);
-        ctx.fill();
+        Vue.tracerMarque(ctx, e.cx, e.cy, s.forme, s.taille);
       }
     }
 
@@ -2826,10 +3445,10 @@ dialog form { margin-top: 18px; text-align: right; }
       e = Vue.versEcran(vue, points[selection].px, points[selection].py);
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(e.cx, e.cy, Vue.RAYON_POINT + 3, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = couleur;
+      ctx.beginPath(); ctx.arc(e.cx, e.cy, s.taille + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = s.couleur;
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(e.cx, e.cy, Vue.RAYON_POINT + 3, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(e.cx, e.cy, s.taille + 3, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.restore();
   };
@@ -2949,6 +3568,270 @@ dialog form { margin-top: 18px; text-align: right; }
 
   CFDD.Vue = Vue;
   if (typeof module !== 'undefined' && module.exports) { module.exports = Vue; }
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+<script>
+/* app/js/70_vignettes.js */
+/*
+ * 70_vignettes.js — illustrations des réglages de détection.
+ *
+ * « Pas », « épaisseur min. », « suivi de continuité » : les intitulés des
+ * réglages sont exacts mais opaques tant qu'on n'a pas vu ce qu'ils font. Une
+ * vignette de quarante pixels de haut le dit d'un coup d'œil, et ce module ne
+ * fait que cela — rendre des chaînes SVG, sans toucher au DOM, ce qui les rend
+ * vérifiables comme n'importe quelle autre fonction.
+ *
+ * SVG et non canvas, pour trois raisons : le dessin reste net à toute échelle
+ * et sur écran HiDPI, il tient dans le fichier autonome sans image binaire, et
+ * il se relit et se corrige à la main.
+ */
+(function (racine) {
+  'use strict';
+
+  var CFDD = racine.CFDD || (racine.CFDD = {});
+  var Vignettes = {};
+
+  Vignettes.LARGEUR = 72;
+  Vignettes.HAUTEUR = 48;
+
+  var GRIS = '#b6bcc6';
+  var ENCRE = '#3d4450';
+  var ACCENT = '#1b6ec2';
+  var CHAUD = '#e8590c';
+  var MAGENTA = '#d6249f';
+
+  /* Courbe témoin, en ligne brisée : connaître ses sommets exactement permet
+     de poser les points de balayage dessus sans approximation. */
+  var COURBE = 'M8 40 L16 34 L24 24 L32 16 L40 12 L48 12 L56 16 L64 24';
+  /* Courbe repliée : deux ordonnées pour une même abscisse — le cas où le
+     balayage en colonnes ment et où il faut passer en lignes. */
+  var REPLIEE = 'M20 8 L32 14 L28 22 L16 30 L22 40';
+
+  function trait(d, couleur, largeur, tirets) {
+    return '<path d="' + d + '" fill="none" stroke="' + couleur
+      + '" stroke-width="' + largeur + '" stroke-linecap="round" stroke-linejoin="round"'
+      + (tirets ? ' stroke-dasharray="' + tirets + '"' : '') + '/>';
+  }
+
+  function point(x, y, couleur, r) {
+    return '<circle cx="' + x + '" cy="' + y + '" r="' + (r || 2)
+      + '" fill="' + couleur + '"/>';
+  }
+
+  function anneau(x, y, couleur, r) {
+    return '<circle cx="' + x + '" cy="' + y + '" r="' + (r || 2)
+      + '" fill="#fff" stroke="' + couleur + '" stroke-width="1.2"/>';
+  }
+
+  function barre(x0, y0, x1, y1) {
+    return '<path d="M' + x0 + ' ' + y0 + ' L' + x1 + ' ' + y1
+      + '" stroke="' + GRIS + '" stroke-width="1" stroke-dasharray="2 2"/>';
+  }
+
+  function refus(x, y) {
+    var r = 5;
+    return '<path d="M' + (x - r) + ' ' + (y - r) + ' L' + (x + r) + ' ' + (y + r)
+      + ' M' + (x + r) + ' ' + (y - r) + ' L' + (x - r) + ' ' + (y + r)
+      + '" stroke="' + CHAUD + '" stroke-width="1.6" stroke-linecap="round"/>';
+  }
+
+  function disques(couleurs, retenus) {
+    var s = '', i;
+    for (i = 0; i < couleurs.length; i++) {
+      var x = 10 + i * 13;
+      s += '<circle cx="' + x + '" cy="24" r="5.5" fill="' + couleurs[i] + '"'
+        + (retenus > i ? ' stroke="' + ENCRE + '" stroke-width="1.6"' : '') + '/>';
+    }
+    return s;
+  }
+
+  /* Corps de chaque vignette, sans la balise <svg> englobante. */
+  var DESSINS = {
+
+    /* --- Sens de balayage --- */
+    'orientation:colonnes':
+      barre(16, 6, 16, 42) + barre(32, 6, 32, 42) + barre(48, 6, 48, 42) + barre(64, 6, 64, 42)
+      + trait(COURBE, GRIS, 3)
+      + point(16, 34, ACCENT) + point(32, 16, ACCENT)
+      + point(48, 12, ACCENT) + point(64, 24, ACCENT),
+
+    'orientation:lignes':
+      barre(6, 12, 66, 12) + barre(6, 20, 66, 20) + barre(6, 28, 66, 28) + barre(6, 36, 66, 36)
+      + trait(REPLIEE, GRIS, 3)
+      + point(28, 12, ACCENT) + point(29, 20, ACCENT)
+      + point(19, 28, ACCENT) + point(19.6, 36, ACCENT),
+
+    /* --- Mode d'extraction --- */
+    'mode:moyenne':
+      trait(COURBE, GRIS, 6)
+      + point(16, 34, ACCENT, 1.7) + point(24, 24, ACCENT, 1.7) + point(32, 16, ACCENT, 1.7)
+      + point(40, 12, ACCENT, 1.7) + point(48, 12, ACCENT, 1.7) + point(56, 16, ACCENT, 1.7),
+
+    'mode:tous':
+      '<ellipse cx="36" cy="24" rx="22" ry="14" fill="none" stroke="' + GRIS + '" stroke-width="3"/>'
+      + point(24, 12.3, ACCENT, 1.7) + point(24, 35.7, ACCENT, 1.7)
+      + point(36, 10, ACCENT, 1.7) + point(36, 38, ACCENT, 1.7)
+      + point(48, 12.3, ACCENT, 1.7) + point(48, 35.7, ACCENT, 1.7),
+
+    'mode:suivi':
+      trait('M8 10 L64 38', GRIS, 3)
+      + trait('M8 38 L64 10', GRIS, 3)
+      + point(12, 36, ACCENT, 1.7) + point(20, 32, ACCENT, 1.7) + point(28, 28, ACCENT, 1.7)
+      + point(36, 24, ACCENT, 1.7) + point(44, 20, ACCENT, 1.7) + point(52, 16, ACCENT, 1.7)
+      + point(60, 12, ACCENT, 1.7),
+
+    /* --- Type de trait --- */
+    'filtreTrait:tous':
+      trait('M8 14 H64', ACCENT, 2.6)
+      + trait('M8 24 H64', ACCENT, 2.6, '8 5')
+      + trait('M8 34 H64', ACCENT, 2.6, '1.5 4'),
+
+    'filtreTrait:continu':
+      trait('M8 14 H64', ACCENT, 2.6)
+      + trait('M8 24 H64', GRIS, 2.6, '8 5')
+      + trait('M8 34 H64', GRIS, 2.6, '1.5 4'),
+
+    'filtreTrait:tirets':
+      trait('M8 14 H64', GRIS, 2.6)
+      + trait('M8 24 H64', ACCENT, 2.6, '8 5')
+      + trait('M8 34 H64', GRIS, 2.6, '1.5 4'),
+
+    'filtreTrait:pointillé':
+      trait('M8 14 H64', GRIS, 2.6)
+      + trait('M8 24 H64', GRIS, 2.6, '8 5')
+      + trait('M8 34 H64', ACCENT, 2.6, '1.5 4'),
+
+    'filtreTrait:discontinu':
+      trait('M8 14 H64', GRIS, 2.6)
+      + trait('M8 24 H64', ACCENT, 2.6, '8 5')
+      + trait('M8 34 H64', ACCENT, 2.6, '1.5 4'),
+
+    /* --- Rendu de l'aperçu --- */
+    'apercuMode:surbrillance':
+      trait('M8 36 L28 30 L44 34 L64 28', '#8aa0b8', 2)
+      + trait(COURBE, MAGENTA, 4),
+
+    'apercuMode:isoler':
+      trait('M8 36 L28 30 L44 34 L64 28', '#8aa0b8', 2)
+      + trait(COURBE, '#c1121f', 3)
+      + '<rect x="1" y="1" width="70" height="46" fill="#fff" opacity="0.72"/>'
+      + trait(COURBE, '#c1121f', 3),
+
+    'apercuMode:les-deux':
+      trait('M8 36 L28 30 L44 34 L64 28', '#8aa0b8', 2)
+      + trait(COURBE, '#c1121f', 3)
+      + '<rect x="1" y="1" width="70" height="46" fill="#fff" opacity="0.72"/>'
+      + trait(COURBE, MAGENTA, 4),
+
+    /* --- Réglages numériques --- */
+    'pas':
+      trait('M8 16 H64', GRIS, 2.5)
+      + point(8, 16, ACCENT, 1.4) + point(14, 16, ACCENT, 1.4) + point(20, 16, ACCENT, 1.4)
+      + point(26, 16, ACCENT, 1.4) + point(32, 16, ACCENT, 1.4) + point(38, 16, ACCENT, 1.4)
+      + point(44, 16, ACCENT, 1.4) + point(50, 16, ACCENT, 1.4) + point(56, 16, ACCENT, 1.4)
+      + point(62, 16, ACCENT, 1.4)
+      + trait('M8 34 H64', GRIS, 2.5)
+      + point(8, 34, ACCENT, 2.2) + point(26, 34, ACCENT, 2.2)
+      + point(44, 34, ACCENT, 2.2) + point(62, 34, ACCENT, 2.2),
+
+    /* Le segment retenu à gauche, l'écarté à droite : c'est le contraste des
+       deux qui dit ce que le réglage rejette, pas le seul survivant. */
+    'epaisseur-min':
+      trait('M18 14 L18 34', ACCENT, 5)
+      + point(50, 15, GRIS, 1.8) + point(50, 24, GRIS, 1.8) + point(50, 33, GRIS, 1.8)
+      + refus(50, 24),
+
+    'epaisseur-max':
+      trait('M18 14 L18 34', ACCENT, 2.5)
+      + '<rect x="41" y="11" width="18" height="26" rx="3" fill="' + GRIS + '"/>'
+      + refus(50, 24),
+
+    'allegement':
+      trait('M8 16 L24 10 L40 18 L64 12', GRIS, 2)
+      + point(8, 16, ACCENT, 1.3) + point(12, 14.5, ACCENT, 1.3) + point(16, 13, ACCENT, 1.3)
+      + point(20, 11.5, ACCENT, 1.3) + point(24, 10, ACCENT, 1.3) + point(30, 13, ACCENT, 1.3)
+      + point(36, 16, ACCENT, 1.3) + point(40, 18, ACCENT, 1.3) + point(48, 16, ACCENT, 1.3)
+      + point(56, 14, ACCENT, 1.3) + point(64, 12, ACCENT, 1.3)
+      + trait('M8 40 L24 34 L40 42 L64 36', GRIS, 2)
+      + point(8, 40, ACCENT, 2.2) + point(24, 34, ACCENT, 2.2)
+      + point(40, 42, ACCENT, 2.2) + point(64, 36, ACCENT, 2.2),
+
+    'combler':
+      trait('M8 24 H64', GRIS, 3, '9 7')
+      + point(11, 24, ACCENT, 1.8) + point(15, 24, ACCENT, 1.8)
+      + anneau(20, 24, CHAUD, 1.8) + anneau(24, 24, CHAUD, 1.8)
+      + point(28, 24, ACCENT, 1.8) + point(32, 24, ACCENT, 1.8)
+      + anneau(37, 24, CHAUD, 1.8) + anneau(41, 24, CHAUD, 1.8)
+      + point(45, 24, ACCENT, 1.8) + point(49, 24, ACCENT, 1.8)
+      + anneau(54, 24, CHAUD, 1.8) + anneau(58, 24, CHAUD, 1.8)
+      + point(62, 24, ACCENT, 1.8),
+
+    'tol-chroma':
+      disques(['#1b6ec2', '#445799', '#6e4070', '#972947', '#c1121f'], 3),
+
+    'tol-lum':
+      disques(['#1b6ec2', '#5496d9', '#8db7e8', '#c6dbf3', '#f2f7fd'], 3)
+  };
+
+  /* Légendes des vignettes des réglages numériques (les autres sont libellées
+     par l'option de liste déroulante qu'elles illustrent). */
+  Vignettes.NUMERIQUES = [
+    { cle: 'pas', titre: 'Pas',
+      texte: 'Une ligne de balayage sur N. Pas = 1 échantillonne chaque pixel ; '
+        + 'l’augmenter allège la série sans rien changer à la forme.' },
+    { cle: 'epaisseur-min', titre: 'Épaisseur min.',
+      texte: 'Longueur minimale d’un segment retenu, le long de la ligne de '
+        + 'balayage. Écarte les pixels isolés : anticrénelage, grain du scan, '
+        + 'poussière.' },
+    { cle: 'epaisseur-max', titre: 'Épaisseur max.',
+      texte: 'Longueur maximale. 0 = sans limite. Écarte les aplats : zone '
+        + 'colorée, symbole plein, texte de la même couleur que la courbe.' },
+    { cle: 'allegement', titre: 'Allègement',
+      texte: 'Supprime les points qui n’apportent rien à la forme, à la '
+        + 'tolérance donnée près (en pixels). Une courbe lisse passe de mille '
+        + 'points à quelques dizaines, sans déformation visible.' },
+    { cle: 'combler', titre: 'Combler les lacunes',
+      texte: 'Relie par interpolation les tronçons d’un trait discontinu. Les '
+        + 'points ajoutés sont comptés à part : ils sont déduits, pas mesurés.' },
+    { cle: 'tol-chroma', titre: 'Tolérance de teinte',
+      texte: 'Écart de couleur admis dans le plan a*b*. C’est elle qui sépare '
+        + 'deux courbes de couleurs différentes.' },
+    { cle: 'tol-lum', titre: 'Tolérance de clarté',
+      texte: 'Écart admis sur L*. L’anticrénelage éclaircit fortement les bords '
+        + 'du trait sans en changer la teinte : c’est cette tolérance qui les '
+        + 'rattrape — et la seule qui discrimine une courbe noire ou grise.' }
+  ];
+
+  Vignettes.existe = function (cle) {
+    return Object.prototype.hasOwnProperty.call(DESSINS, cle);
+  };
+
+  Vignettes.cles = function () { return Object.keys(DESSINS); };
+
+  /*
+   * Rend la vignette `cle`, ou null si elle n'existe pas — un réglage sans
+   * illustration ne doit pas casser le panneau, juste ne rien afficher.
+   * `titre` alimente le <title> SVG, lu par les lecteurs d'écran.
+   */
+  Vignettes.svg = function (cle, titre) {
+    if (!Vignettes.existe(cle)) { return null; }
+    return '<svg viewBox="0 0 ' + Vignettes.LARGEUR + ' ' + Vignettes.HAUTEUR + '"'
+      + ' width="' + Vignettes.LARGEUR + '" height="' + Vignettes.HAUTEUR + '"'
+      + ' role="img" aria-label="' + echapper(titre || cle) + '">'
+      + '<title>' + echapper(titre || cle) + '</title>'
+      + '<rect x="0.5" y="0.5" width="' + (Vignettes.LARGEUR - 1) + '" height="'
+      + (Vignettes.HAUTEUR - 1) + '" rx="3" fill="#ffffff" stroke="#d6d9de"/>'
+      + DESSINS[cle] + '</svg>';
+  };
+
+  function echapper(texte) {
+    return String(texte).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  CFDD.Vignettes = Vignettes;
+  if (typeof module !== 'undefined' && module.exports) { module.exports = Vignettes; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 </script>
@@ -3492,13 +4375,16 @@ dialog form { margin-top: 18px; text-align: right; }
   var CFDD = globalThis.CFDD;
   var Base = CFDD.Base, Couleur = CFDD.Couleur, Calibration = CFDD.Calibration;
   var Detection = CFDD.Detection, Export = CFDD.Export, Projet = CFDD.Projet;
-  var Vue = CFDD.Vue, Trait = CFDD.Trait;
+  var Vue = CFDD.Vue, Trait = CFDD.Trait, Cadre = CFDD.Cadre, Vignettes = CFDD.Vignettes;
 
   var COULEURS_SERIE = ['#c1121f', '#1d3557', '#2a9d8f', '#e07a00',
                         '#7b2cbf', '#0b7285', '#a4133c', '#386641'];
   var COULEUR_REPERE = '#1b6ec2';
   var COULEUR_ZONE = '#12b886';
   var COULEUR_EXCLUSION = '#e8590c';
+  var COULEUR_GOMME = '#b42318';
+
+  var MARQUEUR_DEFAUT = { forme: 'cercle', taille: 2.5 };
 
   /* ================== État ================== */
 
@@ -3510,6 +4396,10 @@ dialog form { margin-top: 18px; text-align: right; }
     outil: 'navigation',
     reperes: { x1: null, x2: null, y1: null, y2: null },
     repereActif: 'x1',
+    /* X1 et Y1 désignent le même pixel — le coin d'origine du tracé. C'est le
+       cas de la quasi-totalité des figures, et cela retire un repère à placer
+       sur quatre. Décochable pour les axes décalés ou brisés. */
+    origineCommune: true,
     valeurs: { x1: '', x2: '', y1: '', y2: '' },
     logX: false, logY: false,
     calibration: null,
@@ -3523,6 +4413,7 @@ dialog form { margin-top: 18px; text-align: right; }
       pas: 1, longueurMin: 1, longueurMax: 0, simplification: 0,
       filtreTrait: 'tous', comblerLacunes: 0
     },
+    format: 'csv-long',
     apercu: true,
     apercuMode: 'les-deux',
     apercuOpacite: 0.85,
@@ -3576,38 +4467,47 @@ dialog form { margin-top: 18px; text-align: right; }
 
   /* ================== Chargement d'image ================== */
 
+  /*
+   * Adopte une image DÉJÀ décodée. Séparé du chargement pour que la partie
+   * utile reste synchrone : c'est ce qui permet de piloter l'application dans
+   * un navigateur sans course avec l'évènement `load` (cf.
+   * outils/verifier_navigateur.sh), et de partir d'une image quelconque.
+   */
+  function adopterImage(img, nom, dataURL) {
+    etat.image = img;
+    etat.imageMeta = { nom: nom || 'image', dataURL: dataURL,
+                       largeur: img.naturalWidth, hauteur: img.naturalHeight };
+
+    /*
+     * Copie hors écran pour getImageData : l'élément <img> ne donne pas
+     * accès aux pixels. Comme la source est une data URL, le canevas n'est
+     * pas « teinté » et la lecture reste autorisée, y compris en file://.
+     */
+    var tampon = document.createElement('canvas');
+    tampon.width = img.naturalWidth;
+    tampon.height = img.naturalHeight;
+    var c = tampon.getContext('2d', { willReadFrequently: true });
+    c.drawImage(img, 0, 0);
+    try {
+      etat.imageData = c.getImageData(0, 0, tampon.width, tampon.height);
+    } catch (e) {
+      etat.imageData = null;
+      message('Pixels illisibles : la détection automatique sera indisponible.', 'alerte');
+    }
+
+    etat.calqueMasque = null;
+    $('accueil').hidden = true;
+    $('info-image').textContent = etat.imageMeta.nom + ' — '
+      + img.naturalWidth + ' x ' + img.naturalHeight + ' pixels';
+    ajusterVue();
+    rafraichirZone();
+    rafraichirExport();
+    message('Image chargée.', 'succes');
+  }
+
   function chargerDataURL(dataURL, nom) {
     var img = new Image();
-    img.onload = function () {
-      etat.image = img;
-      etat.imageMeta = { nom: nom || 'image', dataURL: dataURL,
-                         largeur: img.naturalWidth, hauteur: img.naturalHeight };
-
-      /*
-       * Copie hors écran pour getImageData : l'élément <img> ne donne pas
-       * accès aux pixels. Comme la source est une data URL, le canevas n'est
-       * pas « teinté » et la lecture reste autorisée, y compris en file://.
-       */
-      var tampon = document.createElement('canvas');
-      tampon.width = img.naturalWidth;
-      tampon.height = img.naturalHeight;
-      var c = tampon.getContext('2d', { willReadFrequently: true });
-      c.drawImage(img, 0, 0);
-      try {
-        etat.imageData = c.getImageData(0, 0, tampon.width, tampon.height);
-      } catch (e) {
-        etat.imageData = null;
-        message('Pixels illisibles : la détection automatique sera indisponible.', 'alerte');
-      }
-
-      etat.calqueMasque = null;
-      $('accueil').hidden = true;
-      $('info-image').textContent = etat.imageMeta.nom + ' — '
-        + img.naturalWidth + ' x ' + img.naturalHeight + ' pixels';
-      ajusterVue();
-      rafraichirZone();
-      message('Image chargée.', 'succes');
-    };
+    img.onload = function () { adopterImage(img, nom, dataURL); };
     img.onerror = function () { message('Image illisible.', 'alerte'); };
     img.src = dataURL;
   }
@@ -3669,15 +4569,17 @@ dialog form { margin-top: 18px; text-align: right; }
       Vue.dessinerRectangle(ctx, etat.vue, etat.exclusions[i], COULEUR_EXCLUSION, true);
     }
     if (etat.tirage) {
-      Vue.dessinerRectangle(ctx, etat.vue, etat.tirage,
-        etat.outil === 'exclusion' ? COULEUR_EXCLUSION : COULEUR_ZONE,
-        etat.outil === 'exclusion');
+      var couleurTirage = COULEUR_ZONE;
+      if (etat.outil === 'exclusion') { couleurTirage = COULEUR_EXCLUSION; }
+      else if (etat.outil === 'gomme') { couleurTirage = COULEUR_GOMME; }
+      Vue.dessinerRectangle(ctx, etat.vue, etat.tirage, couleurTirage,
+        etat.outil !== 'zone');
     }
 
     for (var s = 0; s < etat.series.length; s++) {
       var serie = etat.series[s];
       if (serie.masquee) { continue; }
-      Vue.dessinerPoints(ctx, etat.vue, serie.points, serie.couleurHex, null);
+      Vue.dessinerPoints(ctx, etat.vue, serie.points, styleSerie(serie), null);
     }
 
     /*
@@ -3734,6 +4636,7 @@ dialog form { margin-top: 18px; text-align: right; }
       var tdValeur = document.createElement('td');
       var champ = document.createElement('input');
       champ.type = 'text';
+      champ.className = 'valeur';
       champ.inputMode = 'decimal';
       champ.placeholder = (cle[0] === 'x') ? 'valeur X' : 'valeur Y';
       champ.addEventListener('input', function () {
@@ -3744,6 +4647,25 @@ dialog form { margin-top: 18px; text-align: right; }
 
       var tdPos = document.createElement('td');
       tdPos.className = 'position';
+      var champPos = document.createElement('input');
+      champPos.type = 'text';
+      champPos.inputMode = 'numeric';
+      champPos.placeholder = 'non placé';
+      champPos.title = 'Position en pixels : « x, y »';
+      champPos.addEventListener('input', function () {
+        var m = champPos.value.split(/[;,\s]+/).filter(function (t) { return t !== ''; });
+        if (m.length !== 2) { return; }
+        var px = lireNombre(m[0]), py = lireNombre(m[1]);
+        if (!Base.estFini(px) || !Base.estFini(py)) { return; }
+        placerRepere(cle, px, py);
+        /* Pas de rafraichirCalibration() ici : réécrire le champ pendant la
+           frappe replacerait le curseur au bout et rendrait la saisie
+           inutilisable. Seul l'état de calibration est recalculé. */
+        marquerLiees();
+        recalculerCalibration();
+        redessiner();
+      });
+      tdPos.appendChild(champPos);
 
       tr.appendChild(tdNom); tr.appendChild(tdValeur); tr.appendChild(tdPos);
       corps.appendChild(tr);
@@ -3798,11 +4720,24 @@ dialog form { margin-top: 18px; text-align: right; }
       var cle = tr.dataset.repere;
       var r = etat.reperes[cle];
       tr.classList.toggle('actif', cle === etat.repereActif);
-      tr.querySelector('input').value = etat.valeurs[cle];
-      tr.querySelector('.position').textContent =
-        r ? (Math.round(r.px) + ', ' + Math.round(r.py)) : 'non placé';
+      tr.classList.toggle('liee', etat.origineCommune && cle === 'y1');
+      tr.querySelector('.valeur').value = etat.valeurs[cle];
+      var champPos = tr.querySelector('.position input');
+      champPos.value = r ? (Math.round(r.px) + ', ' + Math.round(r.py)) : '';
     }
     recalculerCalibration();
+  }
+
+  /*
+   * Pose un repère, en propageant l'origine commune : X1 et Y1 sont alors le
+   * même point physique, et les laisser diverger d'un pixel introduirait une
+   * erreur de calibration silencieuse.
+   */
+  function placerRepere(cle, px, py) {
+    etat.reperes[cle] = { px: px, py: py };
+    if (etat.origineCommune && (cle === 'x1' || cle === 'y1')) {
+      etat.reperes[cle === 'x1' ? 'y1' : 'x1'] = { px: px, py: py };
+    }
   }
 
   /* Repère suivant non encore placé : évite de recliquer dans la liste. */
@@ -3810,8 +4745,52 @@ dialog form { margin-top: 18px; text-align: right; }
     var ordre = Calibration.ORDRE;
     for (var i = 0; i < ordre.length; i++) {
       var candidat = ordre[(ordre.indexOf(etat.repereActif) + 1 + i) % ordre.length];
+      /* Y1 n'est plus un repère à placer quand il suit X1. */
+      if (etat.origineCommune && candidat === 'y1') { continue; }
       if (!etat.reperes[candidat]) { etat.repereActif = candidat; return; }
     }
+  }
+
+  function marquerLiees() {
+    var lignes = $('corps-reperes').children;
+    for (var i = 0; i < lignes.length; i++) {
+      lignes[i].classList.toggle('liee',
+        etat.origineCommune && lignes[i].dataset.repere === 'y1');
+    }
+  }
+
+  /*
+   * Détection du cadre : place les quatre repères d'un coup. Les VALEURS
+   * restent à saisir — rien ici ne lit les graduations — mais c'est le
+   * pointage, pas la frappe, qui coûte du temps et de la précision.
+   */
+  function detecterCadre() {
+    var el = $('etat-cadre');
+    if (!etat.imageData) { message('Chargez d’abord une image.', 'alerte'); return; }
+
+    var resultat = Cadre.detecter(etat.imageData, { zone: etat.zone });
+    if (!resultat) {
+      el.textContent = 'Aucun cadre reconnaissable : placez les repères à la main.';
+      el.className = 'stats souci';
+      return;
+    }
+
+    var reperes = Cadre.reperes(resultat.cadre);
+    Calibration.ORDRE.forEach(function (cle) {
+      etat.reperes[cle] = { px: reperes[cle].px, py: reperes[cle].py };
+    });
+    etat.repereActif = 'x1';
+
+    var c = resultat.cadre;
+    el.textContent = 'Cadre proposé : ' + (c.x1 - c.x0 + 1) + ' x ' + (c.y1 - c.y0 + 1)
+      + ' px, confiance ' + Math.round(resultat.confiance * 100) + ' %.'
+      + (resultat.confiance < 0.6
+        ? ' Vérifiez les repères avant de saisir les valeurs.' : '');
+    el.className = 'stats' + (resultat.confiance < 0.6 ? ' souci' : ' ok');
+
+    rafraichirCalibration();
+    redessiner();
+    message('Cadre détecté : saisissez les quatre valeurs.', 'succes');
   }
 
   /* ================== Zones ================== */
@@ -3850,11 +4829,25 @@ dialog form { margin-top: 18px; text-align: right; }
     var serie = {
       nom: nom || ('Série ' + (etat.series.length + 1)),
       couleurHex: couleur || COULEURS_SERIE[etat.series.length % COULEURS_SERIE.length],
+      /* Forme tournante comme la couleur : deux séries voisines se
+         distinguent alors même en niveaux de gris, ou pour un daltonien. */
+      marqueur: {
+        forme: Vue.FORMES[etat.series.length % Vue.FORMES.length],
+        taille: MARQUEUR_DEFAUT.taille
+      },
       points: [], masquee: false, detection: null
     };
     etat.series.push(serie);
     etat.serieActive = etat.series.length - 1;
     return serie;
+  }
+
+  /* Style de tracé d'une série, tolérant aux projets antérieurs au marqueur. */
+  function styleSerie(serie) {
+    var m = serie.marqueur || MARQUEUR_DEFAUT;
+    return Vue.normaliserStyle({
+      couleur: serie.couleurHex, forme: m.forme, taille: m.taille
+    });
   }
 
   function serieCourante() {
@@ -3922,7 +4915,67 @@ dialog form { margin-top: 18px; text-align: right; }
       liste.appendChild(li);
     });
 
+    majMarqueur();
     rafraichirExport();
+  }
+
+  /*
+   * Réglages du marqueur de la série active. Le champ « couleur » y fait
+   * double emploi avec la pastille de la liste, à dessein : c'est ici qu'on
+   * règle l'apparence, et devoir remonter d'un bloc pour la couleur casserait
+   * le geste.
+   */
+  function majMarqueur() {
+    var bloc = $('bloc-marqueur');
+    var serie = serieCourante();
+    bloc.disabled = !serie;
+    if (serie) {
+      var st = styleSerie(serie);
+      $('marqueur-couleur').value = serie.couleurHex;
+      $('marqueur-forme').value = st.forme;
+      $('marqueur-taille').value = st.taille;
+    }
+    dessinerApercuMarqueur();
+  }
+
+  /*
+   * Aperçu du marqueur posé SUR un trait, et non sur fond blanc : un disque
+   * plein de la couleur de la courbe y disparaît, ce qui est justement le
+   * défaut que ce réglage corrige.
+   */
+  function dessinerApercuMarqueur() {
+    var c = $('apercu-marqueur');
+    var ratio = window.devicePixelRatio || 1;
+    var l = c.clientWidth || 300, h = 40;
+    c.width = Math.round(l * ratio);
+    c.height = Math.round(h * ratio);
+    var g = c.getContext('2d');
+    g.setTransform(ratio, 0, 0, ratio, 0, 0);
+    g.clearRect(0, 0, l, h);
+
+    var serie = serieCourante();
+    if (!serie) { return; }
+    var st = styleSerie(serie);
+    var util = l - 16;
+    function ondule(x) {
+      return h / 2 + Math.sin((x - 8) / util * Math.PI * 2) * (h / 2 - 9);
+    }
+
+    g.strokeStyle = '#3d4450';
+    g.lineWidth = 2;
+    g.beginPath();
+    for (var x = 8; x <= l - 8; x++) {
+      if (x === 8) { g.moveTo(x, ondule(x)); } else { g.lineTo(x, ondule(x)); }
+    }
+    g.stroke();
+
+    g.fillStyle = st.couleur;
+    g.strokeStyle = st.couleur;
+    g.lineWidth = Math.max(1, st.taille * 0.6);
+    for (var k = 0; k <= 10; k++) {
+      var px = 8 + util * k / 10;
+      Vue.tracerMarque(g, px, ondule(px), st.forme, st.taille);
+    }
   }
 
   /* ================== Détection ================== */
@@ -4074,6 +5127,94 @@ dialog form { margin-top: 18px; text-align: right; }
     });
   }
 
+  /* ================== Vignettes ================== */
+
+  /*
+   * Chaque liste déroulante illustrée reçoit une rangée de vignettes cliquables.
+   * La liste reste la source de vérité — c'est elle qui porte le focus clavier
+   * et qui déclenche les gestionnaires existants ; la vignette ne fait que la
+   * régler puis émettre l'événement `change` que l'écriture de `.value`
+   * n'émet pas d'elle-même. Dupliquer la logique de chaque réglage dans les
+   * deux commandes aurait garanti qu'elles divergent.
+   */
+  function construireVignettes() {
+    var boites = document.querySelectorAll('.vignettes');
+    for (var i = 0; i < boites.length; i++) {
+      (function (boite) {
+        var liste = $(boite.dataset.pour);
+        var prefixe = boite.dataset.prefixe;
+        boite.textContent = '';
+
+        for (var k = 0; k < liste.options.length; k++) {
+          (function (option) {
+            var libelle = option.dataset.court || option.textContent.trim();
+            var svg = Vignettes.svg(prefixe + ':' + option.value, libelle);
+            if (!svg) { return; }
+
+            var bouton = document.createElement('button');
+            bouton.type = 'button';
+            bouton.className = 'vignette';
+            bouton.dataset.valeur = option.value;
+            bouton.title = option.textContent.trim();
+            bouton.innerHTML = svg;
+
+            var etiquette = document.createElement('span');
+            etiquette.className = 'etiquette';
+            etiquette.textContent = libelle;
+            bouton.appendChild(etiquette);
+
+            bouton.addEventListener('click', function () {
+              liste.value = option.value;
+              liste.dispatchEvent(new Event('change', { bubbles: true }));
+              rafraichirVignettes();
+            });
+            boite.appendChild(bouton);
+          })(liste.options[k]);
+        }
+      })(boites[i]);
+    }
+    rafraichirVignettes();
+  }
+
+  function rafraichirVignettes() {
+    var boites = document.querySelectorAll('.vignettes');
+    for (var i = 0; i < boites.length; i++) {
+      var valeur = $(boites[i].dataset.pour).value;
+      var enfants = boites[i].children;
+      for (var k = 0; k < enfants.length; k++) {
+        enfants[k].classList.toggle('actif', enfants[k].dataset.valeur === valeur);
+      }
+    }
+  }
+
+  /* Fiches illustrées des réglages chiffrés, qu'aucune liste ne peut porter. */
+  function construireGalerie() {
+    var boite = $('galerie-numerique');
+    boite.textContent = '';
+    Vignettes.NUMERIQUES.forEach(function (fiche) {
+      var svg = Vignettes.svg(fiche.cle, fiche.titre);
+      if (!svg) { return; }
+
+      var rangee = document.createElement('div');
+      rangee.className = 'fiche';
+
+      var image = document.createElement('div');
+      image.className = 'image';
+      image.innerHTML = svg;
+
+      var texte = document.createElement('p');
+      texte.className = 'texte';
+      var titre = document.createElement('b');
+      titre.textContent = fiche.titre + ' — ';
+      texte.appendChild(titre);
+      texte.appendChild(document.createTextNode(fiche.texte));
+
+      rangee.appendChild(image);
+      rangee.appendChild(texte);
+      boite.appendChild(rangee);
+    });
+  }
+
   /* ================== Export ================== */
 
   function seriesEnDonnees() {
@@ -4095,44 +5236,129 @@ dialog form { margin-top: 18px; text-align: right; }
   function texteExport() {
     var series = seriesEnDonnees();
     if (!series) { return null; }
-    return Export.rendre($('format').value, series, optionsExport());
+    return Export.rendre(etat.format, series, optionsExport());
+  }
+
+  /*
+   * Fiches de format. Le choix engage la suite du travail — tableur, script,
+   * fichier d'entrée de solveur — et se faisait jusqu'ici sur trois mots dans
+   * une liste déroulante. Chaque fiche porte son résumé, son usage et trois
+   * lignes du rendu réel, tous tirés du module d'export : c'est lui qui sait
+   * ce qu'il produit.
+   */
+  function construireFormats() {
+    var liste = $('liste-formats');
+    liste.textContent = '';
+    Export.FORMATS.forEach(function (format) {
+      var d = Export.description(format);
+      if (!d) { return; }
+
+      var li = document.createElement('li');
+      li.dataset.format = format;
+
+      var etiquette = document.createElement('label');
+      var radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'format-export';
+      radio.value = format;
+      radio.checked = (format === etat.format);
+      radio.addEventListener('change', function () {
+        if (!radio.checked) { return; }
+        etat.format = format;
+        rafraichirExport();
+      });
+
+      var titre = document.createElement('span');
+      titre.className = 'titre-format';
+      titre.textContent = d.titre;
+
+      var resume = document.createElement('span');
+      resume.className = 'resume';
+      resume.textContent = d.resume;
+
+      etiquette.appendChild(radio);
+      etiquette.appendChild(titre);
+      etiquette.appendChild(resume);
+      li.appendChild(etiquette);
+      liste.appendChild(li);
+    });
+  }
+
+  function formaterTaille(octets) {
+    if (octets < 1024) { return octets + " o"; }
+    if (octets < 1024 * 1024) { return (octets / 1024).toFixed(1) + " ko"; }
+    return (octets / (1024 * 1024)).toFixed(1) + " Mo";
   }
 
   function rafraichirExport() {
+    var format = etat.format;
+    var fiche = Export.description(format) || {};
+    var grille = (format === 'csv-grille');
     var zone = $('apercu-export');
-    var grille = ($('format').value === 'csv-grille');
+    var bilan = $('bilan-export');
+
+    var items = $('liste-formats').children;
+    for (var i = 0; i < items.length; i++) {
+      var choisi = (items[i].dataset.format === format);
+      items[i].classList.toggle('actif', choisi);
+      items[i].querySelector('input').checked = choisi;
+    }
+
+    $('usage-format').textContent = fiche.usage || '';
+    $('exemple-format').textContent = fiche.exemple || '';
+    /* Masquer un réglage sans effet vaut mieux que le laisser tourner à vide :
+       le séparateur ne veut rien dire pour du JSON ou du Python. */
+    $('champ-separateur').hidden = !fiche.separateur;
     $('reglages-grille').hidden = !grille;
+
+    var nom = nomDeBase() + '.' + Export.extension(format);
+    $('nom-fichier').textContent = nom;
+    $('btn-telecharger').title = 'Écrire ' + nom + ' dans vos téléchargements';
+
+    $('avertissements-grille').textContent = '';
+
+    if (!etat.calibration) {
+      zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
+      bilan.textContent = 'Rien à exporter pour l’instant.';
+      return;
+    }
+    var series = seriesEnDonnees();
+    if (!series || !series.length) {
+      zone.value = 'Aucune série visible.';
+      bilan.textContent = 'Rien à exporter pour l’instant.';
+      return;
+    }
 
     /*
      * Les séries écartées du ré-échantillonnage (courbe repliée, série trop
      * courte, domaines disjoints) doivent être dites : sans cela une colonne
      * manquerait au tableau sans que rien ne l'explique.
      */
-    var avertissements = $('avertissements-grille');
-    avertissements.textContent = '';
-    if (grille && etat.calibration) {
-      var series = seriesEnDonnees();
-      if (series && series.length) {
-        var resultat = Export.reechantillonner(series, optionsExport());
-        if (resultat.avertissements.length) {
-          avertissements.textContent = resultat.avertissements.join(' ');
-        }
+    if (grille) {
+      var resultat = Export.reechantillonner(series, optionsExport());
+      if (resultat.avertissements.length) {
+        $('avertissements-grille').textContent = resultat.avertissements.join(' ');
       }
     }
 
-    if (!etat.calibration) {
-      zone.value = 'Calibration incomplète : placez les quatre repères et saisissez leurs valeurs.';
-      return;
-    }
-    var series = seriesEnDonnees();
-    if (!series || !series.length) { zone.value = 'Aucune série visible.'; return; }
-
     var texte = texteExport();
+    var lignes = texte.split('\n');
+    var b = Export.bilan(series);
+    var resume = b.nbSeries + (b.nbSeries > 1 ? ' séries' : ' série')
+      + ' · ' + b.nbPoints + (b.nbPoints > 1 ? ' points' : ' point');
+    if (b.x) {
+      resume += ' · x de ' + Base.formaterNombre(b.x.min, 4)
+        + ' à ' + Base.formaterNombre(b.x.max, 4)
+        + ' · y de ' + Base.formaterNombre(b.y.min, 4)
+        + ' à ' + Base.formaterNombre(b.y.max, 4);
+    }
+    bilan.textContent = resume + ' — ' + nom + ', ' + lignes.length + ' lignes, '
+      + formaterTaille(new Blob([texte]).size) + '.';
+
     /*
      * Aperçu tronqué : afficher 50 000 lignes dans un <textarea> fige l'onglet
      * plusieurs secondes, sans rien apprendre de plus à l'utilisateur.
      */
-    var lignes = texte.split('\n');
     if (lignes.length > 200) {
       zone.value = lignes.slice(0, 200).join('\n')
         + '\n… (' + (lignes.length - 200) + ' lignes supplémentaires à l’export)';
@@ -4201,7 +5427,7 @@ dialog form { margin-top: 18px; text-align: right; }
     if (e.button !== 0) { return; }
 
     if (etat.outil === 'calibration') {
-      etat.reperes[etat.repereActif] = { px: p.px, py: p.py };
+      placerRepere(etat.repereActif, p.px, p.py);
       glissement = { genre: 'repere', cle: etat.repereActif };
       avancerRepere();
       rafraichirCalibration(); redessiner();
@@ -4223,15 +5449,10 @@ dialog form { margin-top: 18px; text-align: right; }
       rafraichirSeries(); redessiner();
 
     } else if (etat.outil === 'gomme') {
-      var courante = serieCourante();
-      if (courante) {
-        var index = pointLePlusProche(courante, p.px, p.py, 12);
-        if (index >= 0) {
-          memoriser();
-          courante.points.splice(index, 1);
-          rafraichirSeries(); redessiner();
-        }
-      }
+      /* Même geste que les rectangles de zone : le relâchement décidera s'il
+         s'agissait d'un clic (un point) ou d'un glisser (une sélection). */
+      glissement = { genre: 'rect', x0: p.px, y0: p.py };
+      etat.tirage = { x0: p.px, y0: p.py, x1: p.px, y1: p.py };
     }
   });
 
@@ -4248,7 +5469,7 @@ dialog form { margin-top: 18px; text-align: right; }
       redessiner();
 
     } else if (glissement && glissement.genre === 'repere') {
-      etat.reperes[glissement.cle] = { px: p.px, py: p.py };
+      placerRepere(glissement.cle, p.px, p.py);
       rafraichirCalibration(); redessiner();
 
     } else if (glissement && glissement.genre === 'rect') {
@@ -4260,12 +5481,45 @@ dialog form { margin-top: 18px; text-align: right; }
     majLoupe();
   });
 
+  /*
+   * Gomme. Un clic retire le point le plus proche ; un glisser retire tout le
+   * contenu du rectangle. Effacer point par point une centaine de pixels
+   * captés à tort — une grille prise pour une courbe, une légende oubliée —
+   * demandait autant de clics que de points.
+   */
+  function gommer(rect, enZone) {
+    var serie = serieCourante();
+    if (!serie || !serie.points.length) { return; }
+
+    if (enZone) {
+      var restant = Base.retirerDansRectangle(serie.points, rect);
+      if (!restant.retires) { message('Aucun point de la série dans ce rectangle.'); return; }
+      memoriser();
+      serie.points = restant.points;
+      rafraichirSeries(); redessiner();
+      message(restant.retires + (restant.retires > 1 ? ' points retirés.' : ' point retiré.'),
+        'succes');
+      return;
+    }
+
+    var index = pointLePlusProche(serie, rect.x0, rect.y0, 12);
+    if (index < 0) { return; }
+    memoriser();
+    serie.points.splice(index, 1);
+    rafraichirSeries(); redessiner();
+  }
+
   function terminerGlissement() {
     if (glissement && glissement.genre === 'rect' && etat.tirage) {
-      var zone = Detection.normaliserZone(etat.tirage,
-        etat.image.naturalWidth, etat.image.naturalHeight);
+      var t = etat.tirage;
       /* Un simple clic ne doit pas créer un rectangle de 1 px. */
-      if ((zone.x1 - zone.x0) > 4 && (zone.y1 - zone.y0) > 4) {
+      var etendu = Math.abs(t.x1 - t.x0) > 4 && Math.abs(t.y1 - t.y0) > 4;
+
+      if (etat.outil === 'gomme') {
+        gommer(t, etendu);
+      } else if (etendu) {
+        var zone = Detection.normaliserZone(t,
+          etat.image.naturalWidth, etat.image.naturalHeight);
         if (etat.outil === 'exclusion') { etat.exclusions.push(zone); }
         else { etat.zone = zone; }
         rafraichirZone();
@@ -4400,9 +5654,13 @@ dialog form { margin-top: 18px; text-align: right; }
         return;
       }
 
-      etat.series = lu.series.map(function (s) {
+      etat.series = lu.series.map(function (s, index) {
         return {
           nom: s.nom, couleurHex: s.couleurHex || COULEURS_SERIE[0],
+          marqueur: s.marqueur || {
+            forme: Vue.FORMES[index % Vue.FORMES.length],
+            taille: MARQUEUR_DEFAUT.taille
+          },
           points: s.points, masquee: false, detection: s.detection
         };
       });
@@ -4475,6 +5733,38 @@ dialog form { margin-top: 18px; text-align: right; }
     $('btn-zoom-moins').addEventListener('click', function () { zoomer(0.8); });
     $('btn-ajuster').addEventListener('click', ajusterVue);
 
+    $('btn-detecter-cadre').addEventListener('click', detecterCadre);
+    $('origine-commune').addEventListener('change', function () {
+      etat.origineCommune = $('origine-commune').checked;
+      /* En activant l'option, Y1 rejoint X1 : laisser deux repères à un pixel
+         l'un de l'autre alors que la case dit qu'ils sont confondus serait le
+         pire des deux mondes. */
+      if (etat.origineCommune && etat.reperes.x1) {
+        etat.reperes.y1 = { px: etat.reperes.x1.px, py: etat.reperes.x1.py };
+      }
+      if (etat.origineCommune && etat.repereActif === 'y1') { etat.repereActif = 'x1'; }
+      rafraichirCalibration(); redessiner();
+    });
+
+    $('marqueur-couleur').addEventListener('input', function () {
+      var serie = serieCourante();
+      if (!serie) { return; }
+      serie.couleurHex = $('marqueur-couleur').value;
+      rafraichirSeries(); redessiner();
+    });
+    ['marqueur-forme', 'marqueur-taille'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        var serie = serieCourante();
+        if (!serie) { return; }
+        serie.marqueur = {
+          forme: $('marqueur-forme').value,
+          taille: Number($('marqueur-taille').value) || MARQUEUR_DEFAUT.taille
+        };
+        dessinerApercuMarqueur();
+        redessiner();
+      });
+    });
+
     $('log-x').addEventListener('change', function () {
       etat.logX = $('log-x').checked; recalculerCalibration();
     });
@@ -4521,6 +5811,7 @@ dialog form { margin-top: 18px; text-align: right; }
     ['orientation', 'mode'].forEach(function (id) {
       $(id).addEventListener('change', function () {
         etat.detection[id] = $(id).value;
+        rafraichirVignettes();
         /* L'orientation change le tri des composantes : l'aperçu doit suivre. */
         if (id === 'orientation') { majApercuMasque(); }
       });
@@ -4528,6 +5819,7 @@ dialog form { margin-top: 18px; text-align: right; }
 
     $('filtre-trait').addEventListener('change', function () {
       etat.detection.filtreTrait = $('filtre-trait').value;
+      rafraichirVignettes();
       majApercuMasque();
     });
     $('combler').addEventListener('input', function () {
@@ -4536,6 +5828,7 @@ dialog form { margin-top: 18px; text-align: right; }
 
     $('apercu-mode').addEventListener('change', function () {
       etat.apercuMode = $('apercu-mode').value;
+      rafraichirVignettes();
       majApercuMasque();
     });
     $('apercu-opacite').addEventListener('input', function () {
@@ -4571,7 +5864,7 @@ dialog form { margin-top: 18px; text-align: right; }
     });
     $('btn-detecter').addEventListener('click', detecter);
 
-    ['format', 'separateur', 'decimales'].forEach(function (id) {
+    ['separateur', 'decimales'].forEach(function (id) {
       $(id).addEventListener('input', rafraichirExport);
       $(id).addEventListener('change', rafraichirExport);
     });
@@ -4579,8 +5872,7 @@ dialog form { margin-top: 18px; text-align: right; }
     $('btn-telecharger').addEventListener('click', function () {
       var texte = texteExport();
       if (!texte) { message('Calibration incomplète.', 'alerte'); return; }
-      var format = $('format').value;
-      telecharger(nomDeBase() + '.' + Export.extension(format), texte);
+      telecharger(nomDeBase() + '.' + Export.extension(etat.format), texte);
       message('Fichier écrit dans vos téléchargements.', 'succes');
     });
 
@@ -4654,12 +5946,21 @@ dialog form { margin-top: 18px; text-align: right; }
 
   function rafraichirTout() {
     rafraichirSeries(); rafraichirZone(); rafraichirCalibration();
-    majApercuMasque(); redessiner();
+    rafraichirVignettes(); majApercuMasque(); redessiner();
   }
 
   /* ================== Démarrage ================== */
 
   construireLignesReperes();
+  Vue.FORMES.forEach(function (forme) {
+    var option = document.createElement('option');
+    option.value = forme;
+    option.textContent = Vue.LIBELLES_FORME[forme] || forme;
+    $('marqueur-forme').appendChild(option);
+  });
+  construireVignettes();
+  construireGalerie();
+  construireFormats();
   relier();
   choisirOutil('navigation');
   rafraichirSeries();
@@ -4668,8 +5969,23 @@ dialog form { margin-top: 18px; text-align: right; }
   dimensionnerCanevas();
   redessiner();
 
-  /* Exposé pour les essais manuels depuis la console du navigateur. */
-  CFDD.app = { etat: etat, redessiner: redessiner, rafraichirTout: rafraichirTout };
+  /* Exposé pour les essais manuels depuis la console du navigateur, et pour
+     le pilotage de la page par outils/verifier_navigateur.sh. */
+  CFDD.app = {
+    etat: etat,
+    redessiner: redessiner,
+    rafraichirTout: rafraichirTout,
+    adopterImage: adopterImage,
+    choisirOutil: choisirOutil,
+    detecterCadre: detecterCadre,
+    detecter: detecter,
+    gommer: gommer,
+    nouvelleSerie: nouvelleSerie,
+    rafraichirSeries: rafraichirSeries,
+    rafraichirCalibration: rafraichirCalibration,
+    rafraichirExport: rafraichirExport,
+    majApercuMasque: majApercuMasque
+  };
 })();
 
 </script>
