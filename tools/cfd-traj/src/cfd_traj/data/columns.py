@@ -375,6 +375,11 @@ def build_specs(
             spec = declared[name]
             if spec.role is Role.MECANIQUE and spec.mechanical_range is None:
                 spec = replace(spec, mechanical_range=default_mechanical_range(values))
+            # Declaring a role must not drop the floor the quantity itself
+            # imposes: alpha_tot is a magnitude, so the outward margin may not
+            # push its lower bound below zero. An explicit min_physique wins.
+            if spec.physical_min is None and name in PHYSICAL_MINIMA:
+                spec = replace(spec, physical_min=PHYSICAL_MINIMA[name])
             specs.append(replace(spec, name=name, auto=False))
             continue
 

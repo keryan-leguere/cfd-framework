@@ -229,3 +229,26 @@ class TestBuildSpecs:
         specs, _ = build_specs(list(values), values, {})
 
         assert len({s.name for s in specs} & set(extra)) == n_extra
+
+
+def test_declaration_conserve_le_plancher_physique() -> None:
+    """Declaring a role must not drop the floor the quantity itself imposes.
+
+    ``alpha_tot`` is a magnitude: an outward envelope margin may never push its
+    lower bound below zero, and a study file that merely sets its number of
+    levels must not silently make that possible.
+    """
+    values = {"alpha_tot": np.linspace(0.0, 10.0, 50)}
+    declared = {"alpha_tot": ColumnSpec(name="alpha_tot", role=Role.PRINCIPAL, levels=3)}
+    specs, _ = build_specs(("alpha_tot",), values, declared)
+    assert specs[0].physical_min == 0.0
+
+
+def test_plancher_physique_declare_l_emporte() -> None:
+    """An explicit ``min_physique`` still wins over the built-in floor."""
+    values = {"alpha_tot": np.linspace(0.0, 10.0, 50)}
+    declared = {
+        "alpha_tot": ColumnSpec(name="alpha_tot", role=Role.PRINCIPAL, physical_min=1.5),
+    }
+    specs, _ = build_specs(("alpha_tot",), values, declared)
+    assert specs[0].physical_min == 1.5
