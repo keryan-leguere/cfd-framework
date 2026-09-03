@@ -303,10 +303,26 @@ not part of the Bash framework's runtime:
   Biais_ET, FE_Type, FE_M, FE_ET}}`. French API and docs, like cfd-perf/atm/nozzle. Layout:
   `00_DOC/` (FR docs 01–05 + `generer_figures.py`), `src/cfd_dispersion/{core,report,figures,cli}/`,
   `batch.py`, and `01_EXEMPLE/` shipped as package data (located via `paths.py`, with its own
-  README and four runnable scripts covering every feature). `00_DOC/05_BRANCHER_SON_MODELE.md` is
+  README and five runnable scripts covering every feature). `00_DOC/05_BRANCHER_SON_MODELE.md` is
   the practical one: the law dict, the model function skeleton, the output **column contract**
   (`<coeff>_Biais` / `<coeff>_FE` / `<coeff>`, or a `colonnes=` mapping), the `tirages` dict keyed
   by `(y_key, sweep_key)`, and `batch_plot`'s four dictionaries spelled out key by key.
+    - **Two model shapes are accepted** (`core/tableau.py`). Flat columns, or the shape a real
+      house model actually has: `plan_croise(Mach=L_MACH, alpha=L_ALPHA, …)` for the crossed call
+      plan, and one wide table back carrying flight point, coefficients, arbitrary metadata and the
+      **dicts themselves** — `DICT_TIRAGE`, `DICT_LAW_DISPERSION`. `lire_sortie_modele(df)` flattens
+      the draw, numbers *distinct* draws by content, and re-reads the laws from the table (refusing
+      a table whose rows disagree). Dict columns survive a CSV round-trip: they come back as JSON or
+      Python `repr` strings and both are parsed.
+    - **The crossing trap, guarded.** A crossed call applies the same draw at every sweep point, so
+      each drawn value appears once per alpha. Validating that as-is leaves *D* unchanged but
+      inflates n by the sweep length, tightening the threshold by √k: 500 conforming draws pass at
+      p = 0.61 and are rejected at p = 8e-7 once crossed over 13 points. Hence
+      `unique_par=("tirage",)` on `valider_lot` / `figures_par_pdv`, and
+      `validation.verifier_redondance`, which *refuses* a massively redundant group and names the
+      remedy — the symptom of the mistake is a rejection, i.e. exactly what the user came for and
+      has no reason to doubt. It tests the full component tuple, so a degenerate law (constant by
+      construction) never trips it.
     - **`ET` is a half-range, not a standard deviation** — `σ = ET/2` for the Gaussian families.
       This is the single most expensive mistake the model allows, it is invisible on a curve, and
       it is what `core/validation.py` exists to catch. The six families map onto `ot.Dirac`,

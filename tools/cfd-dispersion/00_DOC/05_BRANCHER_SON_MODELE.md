@@ -13,8 +13,13 @@ la table d'établissement      les lois            DICT_DISP_DRAWN       une lig
 ```
 
 Le seul que vous écrivez est le premier. Le dernier est le seul que **votre
-modèle** doit produire, et son contrat tient en un tableau de noms de colonnes
-(§5.4).
+modèle** doit produire, et il est accepté sous deux formes (§5.4) :
+
+* **à plat** — une colonne par composante tirée, `CN_Biais`, `CN_FE`, … ;
+* **large** — le tableau porte les *dictionnaires* eux-mêmes, `DICT_TIRAGE` et
+  `DICT_LAW_DISPERSION`, plus autant de métadonnées qu'on veut. C'est la forme
+  d'un vrai modèle d'établissement, et `lire_sortie_modele` la traduit en une
+  ligne.
 
 ---
 
@@ -130,72 +135,96 @@ lot = tirer_lot(lois, 1000, graine=42, methode="lhs")
 
 ## 5.3 Votre fonction modèle
 
-Elle n'a rien à importer de ce paquet. Le contrat est celui de ses **entrées et
-de sa sortie**, pas de sa signature — voici la forme habituelle :
+Elle n'a rien à importer de ce paquet. Le contrat porte sur ses **entrées et sa
+sortie**, pas sur sa signature.
+
+### Le cas courant : des listes d'axes, croisées
+
+C'est la forme d'un modèle d'établissement. Il reçoit des listes — `L_MACH`,
+`L_ALTITUDE`, `L_ALPHA` —, il les croise lui-même, il initialise une
+bibliothèque de calcul une fois pour toutes, il tire les dispersions, et il rend
+**un seul tableau**.
 
 ```python
-def mon_modele(points_de_vol, lois, coefficients, tirage):
-    """Un appel du modèle, sous un tirage donné.
+from cfd_dispersion import plan_croise, tirer
 
-    points_de_vol : liste de dicts, p. ex. [{"Mach": 0.8, "Altitude_m": 8000}, …]
-    lois          : la table (souvent inutile ici — le tirage est déjà fait)
-    coefficients  : {coeff: valeur nominale}
-    tirage        : {coeff: {"Biais": …, "FE": …}}   ← le Tirage, tel quel
-    """
-    ...
+
+def mon_modele(L_MACH, L_ALTITUDE, L_ALPHA, DICT_LAW_DISPERSION, *, n_tirages=1000):
+    """Un appel du modèle par tirage, sur tous les points croisés."""
+    lois = charger_lois(DICT_LAW_DISPERSION)
+    contexte = initialiser_bibliotheque_fortran()  # une fois, pas n fois
+    points = plan_croise(Mach=L_MACH, Altitude_m=L_ALTITUDE, alpha=L_ALPHA)
+
+    lignes = []
+    for indice in range(n_tirages):
+        tirage = tirer(lois, graine=1000 + indice)  # une graine par appel
+
+        for point in points:
+            coefficients = solveur(point, tirage, contexte)  # votre appel Fortran
+            lignes.append(
+                {
+                    **point,  # Mach, Altitude_m, alpha
+                    **coefficients,  # CN, CA, Cm_alpha, …
+                    "version_solveur": contexte["version"],  # autant de métadonnées
+                    "convergence": True,  #   que vous voulez
+                    "DICT_LAW_DISPERSION": DICT_LAW_DISPERSION,
+                    "DICT_TIRAGE": dict(tirage),
+                }
+            )
+
     return pd.DataFrame(lignes)
 ```
 
-Et la boucle qui la pilote — c'est le squelette complet, à copier :
+`plan_croise(**axes)` rend le produit cartésien sous forme de liste de
+dictionnaires, dans l'ordre des axes donnés, le dernier variant le plus vite. Il
+**refuse un axe vide** : le produit serait vide, et un plan vide ne se remarque
+qu'au moment de tracer.
+
+Trois choses valent d'être notées dans cette boucle.
+
+* **Une graine par appel, dérivée d'une graine d'étude.** `graine=None` tire au
+  fil de l'eau et l'étude n'est plus reproductible ; une graine *constante*
+  donne mille fois le même tirage, ce qui ne se voit qu'à la validation.
+* **Le tirage est partagé par tous les points croisés.** C'est le cas physique —
+  une erreur de recalage est la même sur toute la polaire — et c'est ce qui
+  impose de dédoublonner avant de valider (§5.5).
+* **Le tableau porte ses propres lois.** `DICT_LAW_DISPERSION` dans une colonne
+  n'est pas une redondance : c'est ce qui permet de relire le tableau dans six
+  mois sans retrouver le YAML de l'époque, et ce qui interdit de le valider
+  contre les lois d'une autre étude.
+
+### La variante minimale
+
+Si votre modèle ne croise rien et applique la convention lui-même, il peut
+rendre directement les colonnes à plat, sans dictionnaires :
 
 ```python
-import pandas as pd
-from cfd_dispersion import charger_lois_yaml, convention, tirer
-
-lois = charger_lois_yaml("LOIS.yaml")
-relation = convention("lineaire")  # biais + FE · c
-morceaux = []
-
-for i in range(1000):
-    tirage = tirer(lois, graine=1000 + i)  # une graine par appel
-
-    for point in POINTS_DE_VOL:
-        nominaux = mes_coefficients(point)  # {coeff: valeur}
-        ligne = dict(point)  # Mach, Altitude_m, …
-        ligne["tirage"] = i
-
-        for coefficient, valeur in nominaux.items():
-            biais = tirage[coefficient]["Biais"]
-            fe = tirage[coefficient]["FE"]
-            ligne[f"{coefficient}_Biais"] = biais  # ← §5.4
-            ligne[f"{coefficient}_FE"] = fe  # ← §5.4
-            ligne[coefficient] = relation(valeur, biais, fe)  # le dispersé
-
-        morceaux.append(ligne)
-
-resultats = pd.DataFrame(morceaux)
+for coefficient, valeur in nominaux.items():
+    biais = tirage[coefficient]["Biais"]
+    fe = tirage[coefficient]["FE"]
+    ligne[f"{coefficient}_Biais"] = biais  # ← §5.4
+    ligne[f"{coefficient}_FE"] = fe  # ← §5.4
+    ligne[coefficient] = relation(valeur, biais, fe)  # le dispersé
 ```
 
-Deux points valent d'être notés :
+`relation` vient de `convention("lineaire")` : la convention est un objet, pas
+une multiplication écrite à la main, pour que la figure et le calcul disent la
+même chose — c'est le même objet qui imprime sa formule dans la boîte de
+paramètres.
 
-* **une graine par appel, dérivée d'une graine d'étude.** `graine=None` tire
-  au fil de l'eau et l'étude n'est plus reproductible ; une graine *constante*
-  donne mille fois le même tirage, ce qui ne se voit qu'à la validation.
-* **la convention est un objet, pas une multiplication écrite à la main.**
-  `relation(valeur, biais, fe)` et la boîte de paramètres des figures diront la
-  même chose, parce que c'est le même objet.
-
-`modele.py`, dans [`01_EXEMPLE/`](../src/cfd_dispersion/01_EXEMPLE/modele.py), est
-exactement ce squelette en un peu plus étoffé — un modèle jouet à remplacer par
-le vôtre.
+`01_EXEMPLE/modele.py` porte les deux formes : `appeler_modele` pour la variante
+minimale, `appeler_modele_croise` pour la forme complète.
 
 ---
 
-## 5.4 Le contrat de sortie : les colonnes
+## 5.4 Le contrat de sortie
 
-C'est **le** point d'accroche du paquet. `valider_lot`, `figures_par_pdv` et la
-synthèse lisent tous le même tableau à plat, une ligne par (point de vol ×
-tirage), avec ces colonnes :
+Deux formes sont acceptées. Le reste du paquet — validation, figures, synthèse —
+ne lit que la première ; la seconde s'y ramène en une ligne.
+
+### Forme 1 — les colonnes à plat
+
+Un tableau, une ligne par appel :
 
 | colonne | obligatoire | contenu |
 |:--|:--:|:--|
@@ -203,57 +232,127 @@ tirage), avec ces colonnes :
 | `<coefficient>_FE` | **oui** | le facteur d'échelle tiré |
 | `<coefficient>` | pour le 3ᵉ panneau | le coefficient dispersé obtenu |
 | les clés de point de vol | si `par=` | `Mach`, `Altitude_m`, … |
-| `tirage` | pratique | le numéro d'appel |
+| `tirage` | pour dédoublonner (§5.5) | un identifiant de tirage |
 
-Les noms `"<coefficient>_Biais"` et `"<coefficient>_FE"` sont la convention par
-défaut — celle que `tirer_lot` produit déjà, donc rien à faire si vous partez de
-lui. `lois.colonnes` les énumère.
+C'est exactement ce que `tirer_lot` produit ; `lois.colonnes` énumère les noms
+attendus.
 
-Si votre modèle nomme ses colonnes autrement, ne renommez pas le tableau :
-donnez la correspondance.
+### Forme 2 — le tableau large, à colonnes dictionnaires
+
+Le tableau porte les dictionnaires eux-mêmes, et autant de métadonnées qu'on
+veut :
+
+| colonne | contenu |
+|:--|:--|
+| `Mach`, `Altitude_m`, `alpha`, … | le point croisé |
+| `CN`, `CA`, `Cm_alpha`, … | les coefficients rendus par le solveur |
+| `version_solveur`, `convergence`, `temps_calcul_s`, … | vos métadonnées, en nombre libre |
+| `DICT_LAW_DISPERSION` | la table de lois de l'étude |
+| `DICT_TIRAGE` | le tirage appliqué à cette ligne |
+
+Une seule ligne le traduit :
+
+```python
+from cfd_dispersion import lire_sortie_modele
+
+resultats, lois = lire_sortie_modele(df)
+```
+
+Ce que la fonction fait, et qui vaut d'être su :
+
+* elle **étale** `DICT_TIRAGE` en colonnes `<coeff>_Biais` / `<coeff>_FE` ;
+* elle **numérote** les tirages **distincts** dans une colonne `tirage` — par
+  contenu et non par ordre de ligne, donc le même tirage porte le même numéro à
+  tous les points croisés. C'est lui qui sert à `unique_par=` et à
+  `courbes_par_tirage` ;
+* elle **relit** la table de lois depuis le tableau, et refuse d'aller plus loin
+  si deux lignes ne décrivent pas la même — valider une étude contre deux tables
+  n'a pas de sens ;
+* elle **ne touche à rien d'autre** : les métadonnées voyagent intactes, le
+  paquet ne lisant que les colonnes qu'il nomme. Elle rend une copie ; le
+  tableau d'origine n'est jamais modifié.
+
+Les noms de colonnes sont réglables, et les composantes sont reconnues à la
+casse près (`Biais`, `biais`, `BIAIS`) :
+
+```python
+resultats, lois = lire_sortie_modele(df, tirage="draw", lois="laws", numero="n_tirage")
+```
+
+> **Un aller-retour par CSV ne casse rien.** Un `DataFrame` qui porte un
+> dictionnaire par ligne le perd dès qu'il passe par un fichier : il en revient
+> sous forme de chaîne, en JSON ou en `repr` Python selon l'écrivain. Les deux
+> sont relus. C'est le cas d'usage normal — le modèle tourne sur le calculateur,
+> l'analyse se fait ailleurs.
+
+### Quand les colonnes portent d'autres noms
+
+Ne renommez pas le tableau : donnez la correspondance.
 
 ```python
 verdicts = valider_lot(
     resultats,
     lois,
     par=("Mach", "Altitude_m"),
-    colonnes={
-        ("CN", "Biais"): "bias_CN",  # {(coefficient, composante): colonne}
-        ("CN", "FE"): "scale_CN",
-    },
+    colonnes={("CN", "Biais"): "bias_CN", ("CN", "FE"): "scale_CN"},
 )
 ```
 
-`figures_par_pdv` accepte le même argument `colonnes=`, avec le même sens.
-
-Une colonne manquante est refusée tout de suite, et le message donne les deux
-listes :
+`figures_par_pdv` accepte le même argument. Une colonne manquante est refusée
+tout de suite, avec les deux listes :
 
 ```
 ValueError: colonne(s) absente(s) du tableau : ['CN_FE'] ;
             il porte ['CN', 'CN_Biais', 'Mach', 'Altitude_m', 'tirage']
 ```
 
-À partir de là, tout s'enchaîne :
+---
+
+## 5.5 Le piège du croisement
+
+**Un modèle appelé en croisé applique le même tirage à tous les points du
+balayage.** Sur sept incidences, chaque valeur tirée apparaît sept fois dans le
+tableau. Valider celui-ci tel quel serait une erreur, et elle ne se voit pas.
+
+La fonction de répartition empirique est inchangée — donc la statistique *D* de
+Kolmogorov–Smirnov aussi. Mais l'effectif est sept fois trop grand, le seuil se
+resserre d'un facteur √7, et des tirages parfaitement corrects se font rejeter.
+Mesuré sur 500 tirages conformes, croisés sur treize incidences :
+
+| | n | D | p | verdict |
+|:--|--:|--:|--:|:--|
+| tel quel | 500 | 0.0336 | 0.61 | validé |
+| croisé ×13 | 6500 | 0.0336 | 8·10⁻⁷ | rejeté |
+
+Le remède tient en un argument :
 
 ```python
-from cfd_dispersion import valider_lot
-from cfd_dispersion.figures.monte_carlo import figures_par_pdv
-from cfd_dispersion.figures.synthese import figure_synthese, pdv_rejetes, table_rich
-
-verdicts = valider_lot(resultats, lois, par=("Mach", "Altitude_m"))
-print(table_rich(verdicts))  # le damier au terminal
-figure, _ = figure_synthese(verdicts)  # le même en figure
-
-for cles, coefficient, figure in figures_par_pdv(
-    resultats, lois, par=("Mach", "Altitude_m"), seulement=pdv_rejetes(verdicts)
-):
-    ...  # seulement les cas fautifs
+verdicts = valider_lot(resultats, lois, par=("Mach", "Altitude_m"), unique_par=("tirage",))
 ```
+
+`unique_par` nomme les colonnes qui identifient un tirage ; les lignes qui les
+répètent sont retirées **dans chaque groupe** avant validation. `figures_par_pdv`
+prend le même argument, pour la même raison : sans lui, l'histogramme a la bonne
+forme mais l'effectif affiché et le verdict sont faux.
+
+**L'oubli n'est pas silencieux.** `valider_lot` refuse un groupe dont les
+tirages sont massivement répétés, et le message nomme le remède :
+
+```
+ValueError: tirages massivement répétés en Mach=0.85 : 200 tirages distincts pour
+1400 lignes, soit chacun ×7. C'est la signature d'un modèle appelé en croisé […]
+    Dédoublonner : valider_lot(..., unique_par=("tirage",))
+```
+
+C'est un refus et non un avertissement, parce que le symptôme d'un oubli est un
+*rejet de validation* — c'est-à-dire exactement ce que l'utilisateur est venu
+chercher, et qu'il n'a aucune raison de mettre en doute. Le contrôle porte sur
+le n-uplet complet des composantes, si bien qu'une composante constante (loi de
+type 1 ou 2) ne le déclenche pas ; `redondance_max=1.0` le désactive.
 
 ---
 
-## 5.5 Le cas d'un balayage : une courbe par tirage
+## 5.6 Le cas d'un balayage : une courbe par tirage
 
 Pour une polaire, la sortie du modèle a une ligne de plus par point du
 balayage : **(tirage × point)**. C'est la forme naturelle d'un tableau à plat, et
@@ -273,9 +372,19 @@ x, courbes = courbes_par_tirage(resultats, x="alpha", y="CN", par=["tirage"])
 courbes.shape  # (n_tirages, n_points) — c'est ce qu'attend `tirages=`
 ```
 
-`par=` nomme les colonnes qui **identifient un tirage**. Un numéro d'appel suffit
-(`["tirage"]`) ; à défaut, les composantes tirées font l'affaire
-(`["CN_Biais", "CN_FE"]`), puisqu'elles sont constantes le long d'une courbe.
+`par=` nomme les colonnes qui **identifient un tirage**. Le numéro posé par
+`lire_sortie_modele` fait l'affaire (`["tirage"]`) ; à défaut, les composantes
+tirées aussi (`["CN_Biais", "CN_FE"]`), puisqu'elles sont constantes le long
+d'une courbe.
+
+**Sur un tableau croisé, figer d'abord le point de vol.** Une polaire se lit à
+Mach et altitude constants ; sans ce filtre, les points de plusieurs points de
+vol se retrouveraient sur la même abscisse.
+
+```python
+bloc = resultats.loc[(resultats["Mach"] == 0.85) & (resultats["Altitude_m"] == 8000.0)]
+x, courbes = courbes_par_tirage(bloc, x="alpha", y="CN", par=["tirage"])
+```
 
 La fonction **refuse** des tirages qui ne partagent pas la même abscisse : les
 empiler donnerait une matrice dont les colonnes ne correspondent pas au même
@@ -298,7 +407,7 @@ superposer_dispersion(
 
 ---
 
-## 5.6 La greffe sur `batch_plot`
+## 5.7 La greffe sur `batch_plot`
 
 `batch_plot` (paquet [cfd-plot](../../cfd-plot)) prend **quatre dictionnaires** et
 écrit tout un arbre de figures. La dispersion s'y ajoute par son unique point de
@@ -354,7 +463,7 @@ from cfd_dispersion.batch import hook_dispersion
 hook = hook_dispersion(
     lois,  # {coefficient: loi} — confronté à context.y_key
     serie="CFD",  # la courbe à disperser, par son libellé
-    tirages=tirages,  # facultatif : les courbes obtenues (§5.7)
+    tirages=tirages,  # facultatif : les courbes obtenues (§5.8)
     n=6000,  # effectif de la bande théorique
     graine=1,
     max_tirages=150,
@@ -391,7 +500,7 @@ disperser trois.
 
 ---
 
-## 5.7 Le dictionnaire `tirages` et sa clé
+## 5.8 Le dictionnaire `tirages` et sa clé
 
 `batch_plot` produit une figure par (grandeur × balayage × point de vol) ; le
 hook, lui, reçoit un seul dictionnaire. Il faut donc une **clé** pour retrouver
@@ -413,16 +522,28 @@ for coefficient in lois:
     tirages[(coefficient, "alpha")] = courbes  # (n_tirages, npts)
 ```
 
-Une dispersion qui **change d'un point de vol à l'autre** demande une clé plus
-fine — et donc votre propre fonction :
+Sur un tableau **croisé**, il y a une polaire par point de vol, donc un jeu de
+courbes par point de vol : la clé par défaut ne suffit plus, et il faut la
+vôtre.
 
 ```python
-def ma_cle(context):  # de niveau module : voir plus bas
+def cle_par_pdv(context):  # de niveau module : voir l'encadré ci-dessous
     return (context.y_key, context.sweep_key, context.flight_point["Mach"])
 
 
-hook_dispersion(lois, serie="CFD", tirages=tirages, cle=ma_cle)
+tirages = {}
+for coefficient in lois:
+    for mach in L_MACH:
+        bloc = resultats.loc[resultats["Mach"] == mach]
+        _, courbes = courbes_par_tirage(bloc, x="alpha", y=coefficient, par=["tirage"])
+        tirages[(coefficient, "alpha", mach)] = courbes
+
+
+hook_dispersion(lois, serie="CFD", tirages=tirages, cle=cle_par_pdv)
 ```
+
+C'est exactement ce que fait `01_EXEMPLE/05_modele_croise.py`, qui sort une
+polaire dispersée par Mach.
 
 `tirages` peut rester vide : la bande théorique suffit à décorer la figure. À
 l'inverse, une clé absente n'est pas une erreur — cette figure-là n'aura que la
@@ -437,13 +558,16 @@ bande.
 
 ---
 
-## 5.8 Récapitulatif des formats
+## 5.9 Récapitulatif des formats
 
 | ce que vous fournissez | forme exacte |
 |:--|:--|
+| le plan d'appels | `plan_croise(Mach=L_MACH, Altitude_m=L_ALTITUDE, alpha=L_ALPHA)` |
 | la table de lois | `{coeff: {"Biais_Type", "Biais_M", "Biais_ET", "FE_Type", "FE_M", "FE_ET"}}` |
 | ce que le modèle reçoit | `{coeff: {"Biais": float, "FE": float}}` — un `Tirage`, ou `dict(tirage)` |
-| la sortie du modèle (points de vol) | `DataFrame`, une ligne par (point de vol × tirage) ; colonnes `<coeff>_Biais`, `<coeff>_FE`, `<coeff>`, plus les clés de point de vol |
-| la sortie du modèle (balayage) | `DataFrame`, une ligne par (tirage × point) ; plus la colonne de balayage et un identifiant de tirage |
+| la sortie, forme à plat | `DataFrame`, une ligne par appel ; colonnes `<coeff>_Biais`, `<coeff>_FE`, `<coeff>`, les clés de point de vol, un identifiant de tirage |
+| la sortie, forme large | `DataFrame` + colonnes `DICT_TIRAGE` et `DICT_LAW_DISPERSION` (dict ou chaîne) + vos métadonnées → `lire_sortie_modele(df)` |
+| la validation d'un tableau croisé | `valider_lot(..., par=…, unique_par=("tirage",))` |
+| la sortie sur un balayage | une ligne par (tirage × point) ; plus la colonne de balayage et un identifiant de tirage |
 | `tirages=` du hook | `{(y_key, sweep_key): tableau (n_tirages, npts)}` |
-| les figures `batch_plot` | les quatre dictionnaires de §5.6 |
+| les figures `batch_plot` | les quatre dictionnaires de §5.7 |

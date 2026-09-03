@@ -21,6 +21,7 @@ FICHIERS = (
     "02_monte_carlo.py",
     "03_polaire_batch_plot.py",
     "04_bande_et_correlation.py",
+    "05_modele_croise.py",
     "RUN_EXEMPLE.sh",
 )
 
@@ -138,6 +139,16 @@ class TestExecution:
         # La voie directe, sans batch_plot, doit sortir elle aussi.
         assert (tmp_path / "polaire_directe_CN.png").is_file()
 
+    def test_05_modele_croise(self, tmp_path: Path) -> None:
+        pytest.importorskip("cfd_plot", reason="les polaires exigent cfd-plot")
+        resultat = self._lancer("05_modele_croise.py", tmp_path, "-n", "60")
+        assert resultat.returncode == 0, resultat.stderr
+        assert (tmp_path / "sortie_modele.csv").is_file()
+        assert (tmp_path / "verdicts.csv").is_file()
+        assert (tmp_path / "synthese.png").is_file()
+        # Une polaire par point de vol, et la cle par PDV du hook.
+        assert len(list(tmp_path.rglob("*_vs_alpha.png"))) == 6
+
     def test_04_bande_et_correlation(self, tmp_path: Path) -> None:
         resultat = self._lancer("04_bande_et_correlation.py", tmp_path, "-n", "400")
         assert resultat.returncode == 0, resultat.stderr
@@ -147,6 +158,64 @@ class TestExecution:
             "correlation_coefficients.png",
         ):
             assert (tmp_path / nom).is_file(), nom
+
+
+class TestModeleCroise:
+    """La forme d'un vrai modèle : listes croisées, colonnes dictionnaires."""
+
+    def test_le_tableau_porte_les_deux_dictionnaires(self) -> None:
+        modele = _modele()
+        df = modele.appeler_modele_croise(
+            _lois(), L_MACH=[0.7, 0.85], L_ALTITUDE=[8000.0], L_ALPHA=[0.0, 4.0], n=10
+        )
+        assert len(df) == 10 * 2 * 1 * 2
+        assert {"DICT_LAW_DISPERSION", "DICT_TIRAGE"} <= set(df.columns)
+        # Les métadonnées du solveur voyagent avec.
+        assert {"version_solveur", "table_aero", "convergence"} <= set(df.columns)
+
+    def test_le_meme_tirage_sert_a_tout_le_balayage(self) -> None:
+        """C'est le cas physique — et ce qui impose de dédoublonner."""
+        from cfd_dispersion import lire_sortie_modele
+
+        modele = _modele()
+        df = modele.appeler_modele_croise(
+            _lois(), L_MACH=[0.7], L_ALTITUDE=[8000.0], L_ALPHA=[0.0, 4.0, 8.0], n=12
+        )
+        resultats, _ = lire_sortie_modele(df)
+        assert len(resultats) == 12 * 3
+        assert resultats["tirage"].nunique() == 12
+
+    def test_les_lois_se_relisent_depuis_le_tableau(self) -> None:
+        from cfd_dispersion import lire_sortie_modele
+
+        modele = _modele()
+        df = modele.appeler_modele_croise(
+            _lois(), L_MACH=[0.7], L_ALTITUDE=[8000.0], L_ALPHA=[0.0, 4.0], n=5
+        )
+        _, relues = lire_sortie_modele(df)
+        assert list(relues) == list(_lois())
+        assert relues["CN"].biais.ET == pytest.approx(_lois()["CN"].biais.ET)
+
+    def test_le_defaut_volontaire_ressort_apres_dedoublonnage(self) -> None:
+        from cfd_dispersion import lire_sortie_modele, valider_lot
+
+        modele = _modele()
+        df = modele.appeler_modele_croise(
+            _lois(),
+            L_MACH=[0.70, 0.85],
+            L_ALTITUDE=[8000.0],
+            L_ALPHA=[0.0, 4.0, 8.0],
+            n=600,
+        )
+        resultats, lois = lire_sortie_modele(df)
+        verdicts = valider_lot(resultats, lois, par=("Mach", "Altitude_m"), unique_par=("tirage",))
+        assert set(verdicts["n"]) == {600}
+        rejets = verdicts.loc[~verdicts["valide"]]
+        assert len(rejets) == 1
+        coefficient, composante = modele.COMPOSANTE_FAUTIVE
+        assert rejets.iloc[0]["coefficient"] == coefficient
+        assert rejets.iloc[0]["composante"] == composante
+        assert rejets.iloc[0]["Mach"] == modele.PDV_FAUTIF
 
 
 def _modele() -> Any:

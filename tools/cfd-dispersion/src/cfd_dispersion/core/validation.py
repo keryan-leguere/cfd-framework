@@ -71,6 +71,7 @@ import pandas as pd
 
 from .loi import LoiDispersion
 from .lois import COMPOSANTES, JeuDeLois
+from .tableau import COLONNE_NUMERO
 
 __all__ = [
     "ALPHA_DEFAUT",
@@ -82,6 +83,7 @@ __all__ = [
     "alpha_corrige",
     "valider",
     "valider_lot",
+    "verifier_redondance",
 ]
 
 #: Risque de première espèce du test de Kolmogorov–Smirnov.
@@ -197,6 +199,11 @@ def alpha_corrige(alpha: float, m: int, correction: str | None = "sidak") -> flo
     return float(1.0 - (1.0 - alpha) ** (1.0 / m))
 
 
+#: Part maximale de valeurs répétées tolérée dans un échantillon continu.
+#: Au-delà, c'est un appel croisé non dédoublonné, pas un tirage.
+REDONDANCE_MAX = 0.20
+
+
 def valider(
     echantillon: object,
     loi: LoiDispersion,
@@ -296,6 +303,65 @@ def valider(
     )
 
 
+def verifier_redondance(
+    groupe: pd.DataFrame,
+    colonnes: Sequence[str],
+    *,
+    redondance_max: float = REDONDANCE_MAX,
+    cles: Mapping[str, Any] | None = None,
+) -> None:
+    """Refuse un groupe où les mêmes tirages sont répétés ligne après ligne.
+
+    Un modèle appelé **en croisé** applique le même tirage à tous les points du
+    balayage : sur treize incidences, chaque tirage donne treize lignes. Valider
+    ce groupe tel quel ne change pas la fonction de répartition empirique —
+    donc pas *D* — mais multiplie l'effectif par treize, resserre le seuil d'un
+    facteur √13, et rejette des tirages parfaitement corrects. Mesuré : 500
+    tirages conformes passent à p = 0.61, et sont rejetés à p = 8·10⁻⁷ une fois
+    croisés sur treize points.
+
+    Le contrôle porte sur le **n-uplet complet** des composantes, et non sur une
+    colonne isolée : deux tirages qui coïncideraient sur toutes leurs
+    composantes à la fois n'arrivent pas avec des lois continues, là où une
+    composante constante (loi de type 1 ou 2) n'a que des doublons par
+    construction. Un jeu de lois entièrement dégénéré échappe donc au contrôle,
+    faute de quoi il serait refusé à tort.
+
+    C'est un refus et non un avertissement, parce que le symptôme d'un oubli est
+    un *rejet* de validation — c'est-à-dire exactement ce que l'utilisateur est
+    venu chercher, et qu'il n'a aucune raison de mettre en doute.
+    """
+    if redondance_max >= 1.0 or not colonnes:
+        return
+
+    n = len(groupe)
+    if n == 0:
+        return
+    distinctes = len(groupe[list(colonnes)].drop_duplicates())
+    if distinctes >= (1.0 - redondance_max) * n:
+        return
+
+    facteur = n / max(distinctes, 1)
+    ou = ""
+    if cles:
+        ou = " en " + ", ".join(f"{cle}={valeur}" for cle, valeur in cles.items())
+    remede = (
+        '    Dédoublonner : valider_lot(..., unique_par=("tirage",))\n'
+        if COLONNE_NUMERO in groupe.columns
+        else "    Dédoublonner : passer unique_par=(colonne identifiant un tirage,)\n"
+        "    lire_sortie_modele / aplatir_tirage posent ce numéro.\n"
+    )
+    raise ValueError(
+        f"tirages massivement répétés{ou} : {distinctes} tirages distincts pour "
+        f"{n} lignes, soit chacun ×{facteur:.3g}. C'est la signature d'un modèle "
+        "appelé en croisé, dont chaque tirage revient une fois par point du "
+        "balayage. Valider tel quel garde la même statistique D mais multiplie "
+        f"l'effectif par {facteur:.3g}, donc resserre le seuil de √{facteur:.3g} "
+        "et rejette des tirages corrects.\n" + remede + "    Contrôle désactivable "
+        "par redondance_max=1.0."
+    )
+
+
 def _kolmogorov(valeurs: np.ndarray, loi: LoiDispersion) -> tuple[float, float]:
     """Statistique et p-valeur de Kolmogorov–Smirnov contre la loi exacte."""
     echantillon = ot.Sample(valeurs.reshape(-1, 1))
@@ -370,12 +436,14 @@ def valider_lot(
     lois: JeuDeLois,
     *,
     par: Sequence[str] = (),
+    unique_par: Sequence[str] = (),
     colonnes: Mapping[tuple[str, str], str] | None = None,
     alpha: float = ALPHA_DEFAUT,
     tol_M: float = TOL_M_DEFAUT,
     tol_ET: float = TOL_ET_DEFAUT,
     n_min: int = N_MIN_DEFAUT,
     correction: str | None = "sidak",
+    redondance_max: float = REDONDANCE_MAX,
 ) -> pd.DataFrame:
     """Valide toute une sortie de modèle, groupée par point de vol.
 
@@ -393,6 +461,14 @@ def valider_lot(
     par:
         Les colonnes définissant un point de vol (``("Mach", "Altitude_m")``).
         Vide : tout le tableau est validé d'un bloc.
+    unique_par:
+        Colonnes identifiant un tirage — typiquement ``("tirage",)``. Les
+        lignes qui les répètent sont retirées **dans chaque groupe** avant
+        validation. C'est indispensable sur un modèle appelé en croisé, où le
+        même tirage revient une fois par point du balayage : sans cela
+        l'effectif est multiplié par la longueur du balayage et le seuil se
+        resserre d'autant. Le numéro de tirage est posé par
+        :func:`cfd_dispersion.lire_sortie_modele`.
     colonnes:
         Correspondance ``{(coefficient, composante): nom de colonne}`` quand la
         convention de nommage par défaut ne s'applique pas.
@@ -428,7 +504,25 @@ def valider_lot(
     if absentes:
         raise ValueError(f"colonne(s) de groupement absente(s) : {absentes}")
 
+    unique_par = tuple(unique_par)
+    inconnues = [cle for cle in unique_par if cle not in df.columns]
+    if inconnues:
+        raise ValueError(
+            f"colonne(s) d'identifiant de tirage absente(s) : {inconnues} ; "
+            f"le tableau porte {sorted(df.columns)}"
+        )
+
     groupes = _grouper(df, par)
+    if unique_par:
+        groupes = [
+            (cles, groupe.drop_duplicates(subset=list(unique_par))) for cles, groupe in groupes
+        ]
+    elif any(not loi.est_degeneree for _, _, loi in lois.composantes()):
+        colonnes_lues = [correspondance[(c, p)] for c, p, _ in lois.composantes()]
+        for cles, groupe in groupes:
+            verifier_redondance(
+                groupe, colonnes_lues, redondance_max=redondance_max, cles=cles or None
+            )
     # Le seuil est corrigé du nombre total de tests du tableau : c'est la
     # seule information que `valider` seul ne peut pas avoir.
     n_tests = len(groupes) * len(lois.composantes())

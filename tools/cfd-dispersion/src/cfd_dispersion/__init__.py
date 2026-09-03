@@ -37,6 +37,18 @@ from .core.lois import (
     charger_lois_yaml,
 )
 
+# --- Le plan d'appels et le tableau du modèle --------------------------------
+from .core.tableau import (
+    COLONNE_LOIS,
+    COLONNE_NUMERO,
+    COLONNE_TIRAGE,
+    aplatir_tirage,
+    lire_dict,
+    lire_sortie_modele,
+    lois_depuis_tableau,
+    plan_croise,
+)
+
 # --- La reconstruction -------------------------------------------------------
 from .core.convention import (
     CONVENTION_PAR_DEFAUT,
@@ -107,6 +119,15 @@ __all__ = [
     "libelle_type",
     "charger_lois",
     "charger_lois_yaml",
+    # Le plan d'appels et le tableau du modèle
+    "plan_croise",
+    "lire_sortie_modele",
+    "aplatir_tirage",
+    "lois_depuis_tableau",
+    "lire_dict",
+    "COLONNE_TIRAGE",
+    "COLONNE_LOIS",
+    "COLONNE_NUMERO",
     # La reconstruction
     "Convention",
     "CONVENTIONS",

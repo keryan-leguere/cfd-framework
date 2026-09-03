@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exécute les quatre exemples de cfd-dispersion, dans l'ordre.
+# Exécute les cinq exemples de cfd-dispersion, dans l'ordre.
 #
 #     bash RUN_EXEMPLE.sh              # tout
 #     bash RUN_EXEMPLE.sh -n 200       # plus vite, moins de tirages
@@ -36,6 +36,10 @@ echo "== 3. Polaires dispersées via cfd_plot.batch_plot =============="
 echo
 echo "== 4. Bandes, corrélation, remplissages ========================"
 "$PY" 04_bande_et_correlation.py "$@"
+
+echo
+echo "== 5. Modele croise : listes d'axes et tableau large ==========="
+"$PY" 05_modele_croise.py "$@"
 
 echo
 echo "Terminé. Résultats dans $ICI/SORTIE/"

@@ -38,7 +38,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from cfd_dispersion import JeuDeLois, charger_lois, convention, tirer_lot
+from cfd_dispersion import JeuDeLois, charger_lois, convention, plan_croise, tirer, tirer_lot
 
 #: Les points de vol de l'étude.
 POINTS_DE_VOL: tuple[dict[str, float], ...] = (
@@ -173,4 +173,116 @@ def polaire_nominale(alpha: np.ndarray, *, mach: float = 0.80) -> dict[str, np.n
     nominaux = coefficients_nominaux(mach)
     return {
         coefficient: valeur * _forme(coefficient, alpha) for coefficient, valeur in nominaux.items()
+    }
+
+
+# ---------------------------------------------------------------------------
+# La forme d'un vrai modèle d'établissement : listes croisées, tableau large
+# ---------------------------------------------------------------------------
+
+
+def initialiser_bibliotheque() -> dict[str, Any]:
+    """Là où s'initialise la bibliothèque Fortran, une fois pour l'étude.
+
+    Ici, un simple dictionnaire de métadonnées. Dans le vrai modèle, c'est
+    l'appel d'initialisation du solveur : il coûte cher, il se fait une fois,
+    et ce qu'il rend (version, options, table de référence) a sa place dans le
+    tableau de sortie — c'est ce qui rend un résultat relisable dans six mois.
+    """
+    return {"version_solveur": "FORTRAN v3.1", "table_aero": "REF_2026A", "options": "std"}
+
+
+def appeler_modele_croise(
+    lois: JeuDeLois,
+    *,
+    L_MACH: Sequence[float],
+    L_ALTITUDE: Sequence[float],
+    L_ALPHA: Sequence[float],
+    n: int = 200,
+    convention_: str = "lineaire",
+    graine: int = 4242,
+    fausser: bool = True,
+) -> pd.DataFrame:
+    """Croise les axes, tire, appelle le solveur, et rend UN tableau large.
+
+    C'est la forme réelle d'un modèle d'établissement :
+
+    * il reçoit des **listes d'axes** et les croise lui-même ;
+    * il initialise sa bibliothèque une fois, puis boucle ;
+    * il rend **une ligne par (tirage × point croisé)**, portant le point de
+      vol, les coefficients, ses métadonnées, et les deux dictionnaires —
+      la table de lois employée et le tirage appliqué.
+
+    Le tirage est fait ici, une fois par appel du modèle, et **partagé par
+    tous les points croisés** : c'est le cas physique — une erreur de recalage
+    est la même sur toute la polaire. C'est aussi ce qui impose de dédoublonner
+    avant de valider (``unique_par=("tirage",)``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Colonnes : ``Mach``, ``Altitude_m``, ``alpha``, un par coefficient,
+        les métadonnées du solveur, ``DICT_LAW_DISPERSION`` et ``DICT_TIRAGE``.
+    """
+    relation = convention(convention_)
+    contexte = initialiser_bibliotheque()
+    table = _table_des_lois(lois)
+    points = plan_croise(Mach=list(L_MACH), Altitude_m=list(L_ALTITUDE), alpha=list(L_ALPHA))
+
+    lignes: list[dict[str, Any]] = []
+    for indice in range(n):
+        # Un tirage par appel du modèle, avec sa propre graine : une graine
+        # constante donnerait n fois le même tirage, ce qui ne se voit qu'à la
+        # validation.
+        lignes.extend(
+            _lignes_d_un_appel(lois, table, contexte, relation, points, indice, graine, fausser)
+        )
+    return pd.DataFrame(lignes)
+
+
+def _lignes_d_un_appel(
+    lois: JeuDeLois,
+    table: dict[str, dict[str, Any]],
+    contexte: Mapping[str, Any],
+    relation: Any,
+    points: Sequence[Mapping[str, float]],
+    indice: int,
+    graine: int,
+    fausser: bool,
+) -> list[dict[str, Any]]:
+    """Les lignes rendues par un appel du modèle, sous un tirage donné."""
+    lignes = []
+    for point in points:
+        mach = float(point["Mach"])
+        # Le défaut volontaire se joue au tirage, point de vol par point de vol.
+        tirage = tirer(_lois_du_point(lois, mach, fausser), graine=graine + indice)
+        nominaux = coefficients_nominaux(mach)
+        alpha = float(point["alpha"])
+
+        ligne: dict[str, Any] = {**point, **contexte}
+        for coefficient, valeur in nominaux.items():
+            courbe = valeur * _forme(coefficient, np.array([alpha]))[0]
+            ligne[coefficient] = float(
+                relation(courbe, tirage[coefficient]["Biais"], tirage[coefficient]["FE"])
+            )
+        ligne["temps_calcul_s"] = 0.017
+        ligne["convergence"] = True
+        ligne["DICT_LAW_DISPERSION"] = table
+        ligne["DICT_TIRAGE"] = dict(tirage)
+        lignes.append(ligne)
+    return lignes
+
+
+def _table_des_lois(lois: JeuDeLois) -> dict[str, dict[str, Any]]:
+    """Le ``DICT_LAW_DISPERSION`` tel qu'il voyage dans le tableau."""
+    return {
+        nom: {
+            "Biais_Type": loi.biais.type_loi,
+            "Biais_M": loi.biais.M,
+            "Biais_ET": loi.biais.ET,
+            "FE_Type": loi.fe.type_loi,
+            "FE_M": loi.fe.M,
+            "FE_ET": loi.fe.ET,
+        }
+        for nom, loi in lois.items()
     }

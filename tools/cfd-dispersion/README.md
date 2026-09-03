@@ -151,6 +151,19 @@ DICT_DISP_LAWS            ->  JeuDeLois        ->  Tirage            ->  DataFra
 ce que vous écrivez           les lois            {coeff: {Biais, FE}}  ce qu'il rend
 ```
 
+Et si votre modèle croise des listes d'axes puis rend un tableau large — points
+de vol, coefficients, métadonnées, plus les dictionnaires `DICT_LAW_DISPERSION`
+et `DICT_TIRAGE` —, le branchement tient en deux lignes :
+
+```python
+from cfd_dispersion import plan_croise, lire_sortie_modele
+
+pdv = plan_croise(Mach=L_MACH, Altitude_m=L_ALTITUDE, alpha=L_ALPHA)
+df = mon_modele(pdv, DICT_LAW_DISPERSION, ...)
+
+resultats, lois = lire_sortie_modele(df)  # aplatit, numérote, relit les lois
+```
+
 ### 1. La table de lois
 
 Un dictionnaire Python, ou le même en YAML. **Une entrée par coefficient, six
@@ -250,9 +263,43 @@ valider_lot(
 )
 ```
 
-Le squelette complet de la boucle d'appels est dans
-[00_DOC/05 §5.3](00_DOC/05_BRANCHER_SON_MODELE.md#53-votre-fonction-modèle), et
-`01_EXEMPLE/modele.py` en est la version exécutable.
+**Ou bien votre modèle rend un tableau large**, ce qui est la forme habituelle
+d'un modèle d'établissement : une ligne par (tirage × point croisé), portant le
+point de vol, les coefficients, autant de métadonnées qu'on veut, et les
+dictionnaires eux-mêmes.
+
+| colonne | contenu |
+|:--|:--|
+| `Mach`, `Altitude_m`, `alpha`, … | le point croisé |
+| `CN`, `CA`, `Cm_alpha`, … | les coefficients rendus par le solveur |
+| `version_solveur`, `convergence`, … | vos métadonnées, en nombre libre |
+| `DICT_LAW_DISPERSION` | la table de lois de l'étude |
+| `DICT_TIRAGE` | le tirage appliqué à cette ligne |
+
+```python
+resultats, lois = lire_sortie_modele(df)
+```
+
+Cette ligne étale `DICT_TIRAGE` en colonnes `<coeff>_Biais` / `<coeff>_FE`,
+**numérote les tirages distincts** dans une colonne `tirage`, et relit les lois
+depuis le tableau — personne n'a à redonner le YAML de l'époque. Les métadonnées
+voyagent intactes, le paquet ne lisant que les colonnes qu'il nomme, et un
+aller-retour par CSV ne casse rien : les dictionnaires en reviennent en chaînes,
+JSON ou `repr` Python, et les deux sont relus.
+
+> **Le piège du croisement.** Un appel croisé applique le **même tirage à tous
+> les points du balayage** : sur sept incidences, chaque valeur tirée apparaît
+> sept fois. La valider telle quelle ne change pas la statistique *D* mais
+> multiplie l'effectif par sept, resserre le seuil de √7 et rejette des tirages
+> corrects — 500 tirages conformes passent à p = 0.61 et sont rejetés à
+> p = 8·10⁻⁷ une fois croisés sur treize points. D'où `unique_par=("tirage",)`
+> sur `valider_lot` et `figures_par_pdv`. L'oubli n'est pas silencieux : la
+> validation refuse un groupe massivement redondant en nommant le remède.
+
+Le squelette complet de la boucle d'appels, dans les deux formes, est dans
+[00_DOC/05 §5.3](00_DOC/05_BRANCHER_SON_MODELE.md#53-votre-fonction-modèle) ;
+`01_EXEMPLE/modele.py` en est la version exécutable, et
+`01_EXEMPLE/05_modele_croise.py` la chaîne complète sur un modèle croisé.
 
 ---
 
@@ -549,7 +596,7 @@ Tout ce que le hook dessine se retrouve dans le fichier **et** dans la page du
 rapport PDF, `on_before_save` étant appelé juste avant l'enregistrement.
 
 Le détail clé par clé des quatre dictionnaires est dans
-[00_DOC/05 §5.6](00_DOC/05_BRANCHER_SON_MODELE.md#56-la-greffe-sur-batch_plot) ;
+[00_DOC/05 §5.7](00_DOC/05_BRANCHER_SON_MODELE.md#57-la-greffe-sur-batch_plot) ;
 `01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable.
 
 ### 8. Corréler deux coefficients
@@ -667,6 +714,8 @@ après huit heures de calcul.
 |:--|:--|
 | `LoiDispersion`, `LoiCoefficient`, `JeuDeLois` | les lois |
 | `charger_lois`, `charger_lois_yaml`, `libelle_type` | la table |
+| `plan_croise` | le plan d'appels croisé |
+| `lire_sortie_modele`, `aplatir_tirage`, `lois_depuis_tableau`, `lire_dict` | le tableau du modèle |
 | `LIBELLES_TYPE`, `TYPES_VALIDES`, `CLES_ATTENDUES`, `COMPOSANTES` | les constantes |
 | `Convention`, `CONVENTIONS`, `CONVENTION_PAR_DEFAUT`, `convention` | la reconstruction |
 | `Tirage`, `tirer`, `tirer_lot`, `graine_temporaire` | le tirage |
@@ -746,7 +795,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 464 tests
+pytest                                  # 509 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc
@@ -765,5 +814,7 @@ Quelques invariants que la suite tient :
 | le taux de faux rejet vaut α, et la correction nettoie le tableau | `test_validation.py::TestCalibration` |
 | toute figure passe par cfd-plot, primitive par primitive | `test_base.py::TestToutPasseParCfdPlot` |
 | un point dans un nom de figure ne fait pas disparaître le fichier | `test_base.py`, `test_exemple.py` |
+| un tableau croisé est refusé tant qu'il n'est pas dédoublonné, et le message dit comment | `test_tableau.py::TestPiegeDuCroisement` |
+| les dictionnaires du modèle survivent à un aller-retour par CSV | `test_tableau.py::TestLireSortieModele` |
 | le hook survit à `pickle`, donc à `n_jobs > 1` | `test_batch.py::TestSerialisation` |
 | l'exemple livré tourne, et son défaut volontaire est détecté | `test_exemple.py` |

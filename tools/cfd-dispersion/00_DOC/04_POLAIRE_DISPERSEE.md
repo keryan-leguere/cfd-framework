@@ -174,6 +174,6 @@ le construit et non au milieu d'un lot de deux cents figures.
 ### Les quatre dictionnaires de `batch_plot`
 
 Ils sont écrits au complet, clé par clé, dans
-[05 §5.6](05_BRANCHER_SON_MODELE.md#56-la-greffe-sur-batch_plot), avec la
+[05 §5.7](05_BRANCHER_SON_MODELE.md#57-la-greffe-sur-batch_plot), avec la
 construction du dictionnaire `tirages` et de sa clé. L'exemple livré
 (`01_EXEMPLE/03_polaire_batch_plot.py`) est le même code, exécutable.

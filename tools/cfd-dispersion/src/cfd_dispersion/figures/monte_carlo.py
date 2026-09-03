@@ -303,6 +303,7 @@ def figures_par_pdv(
     lois: JeuDeLois,
     *,
     par: Sequence[str] = (),
+    unique_par: Sequence[str] = (),
     coefficients: Sequence[str] | None = None,
     nominaux: Mapping[str, Any] | None = None,
     colonnes: Mapping[tuple[str, str], str] | None = None,
@@ -325,6 +326,11 @@ def figures_par_pdv(
         Les lois prescrites.
     par:
         Colonnes définissant un point de vol.
+    unique_par:
+        Colonnes identifiant un tirage — ``("tirage",)`` sur un modèle appelé
+        en croisé, où le même tirage revient une fois par point du balayage.
+        Les doublons sont retirés dans chaque groupe : sans cela l'histogramme
+        est juste, mais l'effectif affiché et le verdict ne le sont pas.
     coefficients:
         Les coefficients à traiter. Par défaut, tous.
     nominaux:
@@ -354,11 +360,21 @@ def figures_par_pdv(
     if absentes:
         raise ValueError(f"colonne(s) absente(s) du tableau : {absentes}")
 
+    unique_par = tuple(unique_par)
+    inconnues = [cle for cle in unique_par if cle not in df.columns]
+    if inconnues:
+        raise ValueError(
+            f"colonne(s) d'identifiant de tirage absente(s) : {inconnues} ; "
+            f"le tableau porte {sorted(df.columns)}"
+        )
+
     retenus = None if seulement is None else [dict(cle) for cle in seulement]
 
     for cles, groupe in _grouper(df, par):
         if retenus is not None and cles not in retenus:
             continue
+        if unique_par:
+            groupe = groupe.drop_duplicates(subset=list(unique_par))
         etiquette = ", ".join(
             f"{cle}={valeur:g}" if isinstance(valeur, (int, float)) else f"{cle}={valeur}"
             for cle, valeur in cles.items()

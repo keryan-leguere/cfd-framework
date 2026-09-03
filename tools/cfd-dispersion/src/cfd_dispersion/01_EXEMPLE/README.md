@@ -31,6 +31,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `02_monte_carlo.py` | cas d'usage 2.1 et 2.2 : valider mille appels, synthétiser, ne tracer que les rejets |
 | `03_polaire_batch_plot.py` | cas d'usage 2.3 : la dispersion greffée sur `cfd_plot.batch_plot` |
 | `04_bande_et_correlation.py` | corrélé/indépendant, les trois remplissages, deux coefficients liés |
+| `05_modele_croise.py` | **la forme d'un vrai modèle** : listes d'axes croisées, tableau large à colonnes dictionnaires |
 
 ---
 
@@ -80,6 +81,33 @@ remplissages côte à côte, et deux coefficients issus du même recalage.
 courbe lisse — une erreur de recalage. À droite, un bruit point à point. Les
 deux enveloppes se ressemblent ; **seule celle de gauche se lit « la vraie
 courbe est là-dedans »**, qui est pourtant l'affirmation qu'on croit faire.
+
+### `05_modele_croise.py` — la forme d'un vrai modèle
+
+Celui-ci est l'exemple à copier si votre modèle reçoit des **listes d'axes**
+(`L_MACH`, `L_ALTITUDE`, `L_ALPHA`), les croise lui-même, initialise une
+bibliothèque Fortran, et rend **un seul tableau large** portant le point de vol,
+les coefficients, ses métadonnées, et les deux dictionnaires
+(`DICT_LAW_DISPERSION`, `DICT_TIRAGE`).
+
+Tout le branchement tient alors en une ligne :
+
+```python
+resultats, lois = lire_sortie_modele(df)
+```
+
+À regarder : la sortie terminal, qui montre les colonnes ajoutées
+(`CN_Biais`, `CN_FE`, …, `tirage`) et les lois relues **depuis le tableau** —
+personne n'a redonné le YAML. Puis
+`POLAIRES/ALPHA_POLAR/M_0.85/Cm_alpha_vs_alpha.png` : la bande réellement
+obtenue y déborde des lignes ±3σ théoriques, parce que c'est le point de vol
+faussé.
+
+> **Le piège du croisement.** Un appel croisé applique le même tirage à tous les
+> points du balayage : sur sept incidences, chaque valeur tirée apparaît sept
+> fois. Valider tel quel multiplierait l'effectif par sept et rejetterait des
+> tirages corrects. D'où `unique_par=("tirage",)` dans ce script — et le refus
+> explicite de `valider_lot` si on l'oublie.
 
 ---
 
