@@ -162,10 +162,18 @@ son nom, ou définir sa relation comme une fonction de niveau module.
 
 ### Et cfd-plot dans tout ça
 
-Le module s'importe sans lui, et `HookDispersion` se construit et s'exécute sans
-lui : la superposition retombe sur Matplotlib nu comme le reste du paquet. Ce
-qui exige cfd-plot, c'est `batch_plot`, donc l'appelant.
+Il est exigé deux fois : par `batch_plot` lui-même, et par le tracé de la
+superposition — **toutes** les figures du paquet passent par cfd-plot, qui
+définit le format du framework. Seul le calcul (lois, tirage, validation,
+synthèse chiffrée) tourne sans lui.
 
-`hook_dispersion` le vérifie quand même et lève un `ImportError` nommant la
-commande d'installation — une politesse, pour que l'échec survienne à la ligne
-où l'on construit le hook et non au milieu d'un lot de deux cents figures.
+`hook_dispersion` le vérifie à la construction du hook et lève un `ImportError`
+nommant la commande d'installation, pour que l'échec survienne à la ligne où on
+le construit et non au milieu d'un lot de deux cents figures.
+
+### Les quatre dictionnaires de `batch_plot`
+
+Ils sont écrits au complet, clé par clé, dans
+[05 §5.6](05_BRANCHER_SON_MODELE.md#56-la-greffe-sur-batch_plot), avec la
+construction du dictionnaire `tirages` et de sa clé. L'exemple livré
+(`01_EXEMPLE/03_polaire_batch_plot.py`) est le même code, exécutable.

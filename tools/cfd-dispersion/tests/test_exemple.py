@@ -14,11 +14,13 @@ from cfd_dispersion.core.lois import JeuDeLois
 from cfd_dispersion.paths import EXEMPLE_DIR
 
 FICHIERS = (
+    "README.md",
     "LOIS.yaml",
     "modele.py",
     "01_tirage.py",
     "02_monte_carlo.py",
     "03_polaire_batch_plot.py",
+    "04_bande_et_correlation.py",
     "RUN_EXEMPLE.sh",
 )
 
@@ -100,7 +102,8 @@ class TestExecution:
         resultat = self._lancer("01_tirage.py", tmp_path, "-n", "50")
         assert resultat.returncode == 0, resultat.stderr
         assert (tmp_path / "lot.csv").is_file()
-        assert len(list(tmp_path.glob("tirage_*.png"))) == 3
+        # Trois coefficients, plus la matrice qui les empile.
+        assert len(list(tmp_path.glob("tirage_*.png"))) == 4
         assert len(pd.read_csv(tmp_path / "lot.csv")) == 50
 
     def test_02_monte_carlo(self, tmp_path: Path) -> None:
@@ -108,15 +111,42 @@ class TestExecution:
         assert resultat.returncode == 0, resultat.stderr
         assert (tmp_path / "synthese.png").is_file()
         assert (tmp_path / "verdicts.csv").is_file()
+        assert (tmp_path / "synthese.csv").is_file()
         # Le défaut volontaire doit ressortir, et déclencher des figures.
         assert "rejeté" in resultat.stdout
         assert list(tmp_path.glob("mc_*.png"))
+        assert list(tmp_path.glob("qq_*.png"))
+
+    def test_02_ne_perd_pas_de_figure_dans_un_nom_pointe(self, tmp_path: Path) -> None:
+        """Un point de vol s'appelle « Mach0.85 », et le point compte.
+
+        ``save_figure`` compose son fichier par ``with_suffix`` : sans
+        précaution, ``mc_Mach0.85_..._CN`` devient ``mc_Mach0.png`` et les
+        trois coefficients s'écrasent dans un seul fichier, sans rien dire.
+        """
+        resultat = self._lancer("02_monte_carlo.py", tmp_path, "-n", "300")
+        assert resultat.returncode == 0, resultat.stderr
+        figures = sorted(p.name for p in tmp_path.glob("mc_*.png"))
+        assert len(figures) == 3, figures
+        assert all("0.85" in nom for nom in figures), figures
 
     def test_03_polaire_batch_plot(self, tmp_path: Path) -> None:
         pytest.importorskip("cfd_plot", reason="cet exemple exige cfd-plot")
         resultat = self._lancer("03_polaire_batch_plot.py", tmp_path, "-n", "40")
         assert resultat.returncode == 0, resultat.stderr
         assert list(tmp_path.rglob("*_vs_alpha.png"))
+        # La voie directe, sans batch_plot, doit sortir elle aussi.
+        assert (tmp_path / "polaire_directe_CN.png").is_file()
+
+    def test_04_bande_et_correlation(self, tmp_path: Path) -> None:
+        resultat = self._lancer("04_bande_et_correlation.py", tmp_path, "-n", "400")
+        assert resultat.returncode == 0, resultat.stderr
+        for nom in (
+            "correle_vs_independant.png",
+            "remplissages.png",
+            "correlation_coefficients.png",
+        ):
+            assert (tmp_path / nom).is_file(), nom
 
 
 def _modele() -> Any:

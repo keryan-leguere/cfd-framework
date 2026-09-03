@@ -3,35 +3,70 @@
 Lois de dispersion, tirage Monte-Carlo, validation et polaires dispersées —
 bâti sur [OpenTURNS](https://openturns.github.io/).
 
-Vous décrivez vos coefficients par une table de lois. Le paquet en tire des
-réalisations, vérifie que votre modèle a bien tiré ce que vous lui demandiez, et
-superpose la dispersion sur les polaires que le framework produit déjà.
+Vous décrivez vos coefficients par une **table de lois**. Le paquet en tire des
+réalisations à passer à votre modèle, vérifie que le modèle a bien tiré ce que
+vous lui demandiez, et superpose la dispersion sur les polaires que le framework
+produit déjà.
 
-![polaire dispersée](00_DOC/FIGURES/07_polaire_dispersee.png)
+![polaire dispersée par batch_plot](00_DOC/FIGURES/11_batch_plot.png)
+
+*Cette figure n'est pas une illustration reconstituée : c'est une sortie de
+`cfd_plot.batch_plot` avec une seule ligne en plus,
+`on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages)`.*
 
 ---
 
 ## Sommaire
 
+- [Ce que fait le paquet](#ce-que-fait-le-paquet)
 - [Installation](#installation)
-- [Prise en main](#prise-en-main)
-- [Guide API](#guide-api)
-  - [Conventions](#conventions)
-  - [1. Les lois](#1-les-lois)
-  - [2. La reconstruction](#2-la-reconstruction)
-  - [3. Le tirage](#3-le-tirage)
-  - [4. La propagation le long d'un balayage](#4-la-propagation-le-long-dun-balayage)
-  - [5. La validation](#5-la-validation)
-  - [6. Les figures](#6-les-figures)
-  - [7. La polaire dispersée](#7-la-polaire-dispersée)
-  - [8. Greffe sur batch_plot](#8-greffe-sur-batch_plot)
+- [Prise en main en cinq minutes](#prise-en-main-en-cinq-minutes)
+- [Les données que vous fournissez](#les-données-que-vous-fournissez)
+  - [1. La table de lois](#1-la-table-de-lois)
+  - [2. Ce que reçoit votre modèle](#2-ce-que-reçoit-votre-modèle)
+  - [3. Ce que votre modèle doit rendre](#3-ce-que-votre-modèle-doit-rendre)
+- [Guide d'utilisation](#guide-dutilisation)
+  - [1. Charger et tirer](#1-charger-et-tirer)
+  - [2. Reconstruire : les conventions](#2-reconstruire--les-conventions)
+  - [3. Valider mille appels du modèle](#3-valider-mille-appels-du-modèle)
+  - [4. Synthétiser, et ne tracer que les rejets](#4-synthétiser-et-ne-tracer-que-les-rejets)
+  - [5. Propager le long d'un balayage](#5-propager-le-long-dun-balayage)
+  - [6. La polaire dispersée](#6-la-polaire-dispersée)
+  - [7. La greffe sur `batch_plot`](#7-la-greffe-sur-batch_plot)
+  - [8. Corréler deux coefficients](#8-corréler-deux-coefficients)
   - [9. La ligne de commande](#9-la-ligne-de-commande)
-  - [10. Gestion des erreurs](#10-gestion-des-erreurs)
-  - [Référence de l'API publique](#référence-de-lapi-publique)
+  - [10. Les figures, et leur format](#10-les-figures-et-leur-format)
+  - [11. Les erreurs](#11-les-erreurs)
+- [Recettes](#recettes)
+- [Référence de l'API publique](#référence-de-lapi-publique)
 - [Limites du modèle](#limites-du-modèle)
 - [Documentation](#documentation)
 - [Structure](#structure)
 - [Vérification](#vérification)
+
+---
+
+## Ce que fait le paquet
+
+Trois questions, dans l'ordre où elles se posent.
+
+| | la question | ce qu'on écrit |
+|:--|:--|:--|
+| **1** | Qu'est-ce qu'un tirage de mes lois, et que devient mon coefficient ? | `tirer(lois)` → `figure_tirage(...)` |
+| **2** | Après mille appels du modèle, le tirage réalisé suit-il la loi prescrite ? | `valider_lot(resultats, lois, par=…)` |
+| **3** | À quoi ressemble ma polaire une fois dispersée ? | `superposer_dispersion(...)`, ou le hook sur `batch_plot` |
+
+Et un fil rouge : **`ET` est une demi-étendue, pas un écart-type**. Pour les
+familles gaussiennes, `σ = ET/2`. Une table écrite en écarts-types et lue ici
+donne des dispersions deux fois trop larges, ce qui reste parfaitement crédible
+à l'œil. C'est l'erreur la plus coûteuse que le modèle permette, et la raison
+d'être de la validation.
+
+![la convention ET](00_DOC/FIGURES/02_convention_ET.png)
+
+À gauche, deux densités : rien ne dit laquelle est la bonne. À droite, le tirage
+fautif confronté à la loi demandée — 289 points sur 1000 tombent hors du support
+prescrit, et la validation le dit sans ambiguïté.
 
 ---
 
@@ -40,17 +75,20 @@ superpose la dispersion sur les polaires que le framework produit déjà.
 ```bash
 cd tools/cfd-dispersion
 pip install -e ".[dev]"
+pip install -e ../cfd-plot        # requis pour toutes les figures
 ```
 
 Python ≥ 3.9. Dépendances : `openturns`, `numpy`, `matplotlib`, `pandas`,
 `rich`, `pyyaml`. Pas de SciPy.
 
-Les figures gagnent le style maison quand [`cfd-plot`](../cfd-plot) est
-installé, et retombent sur Matplotlib nu sinon :
-
-```bash
-pip install -e ../cfd-plot     # facultatif, sauf pour cfd_dispersion.batch
-```
+**Le calcul tourne sans cfd-plot ; les figures, non.** Lois, tirage, validation
+et synthèse chiffrée n'ont besoin de rien d'autre. Tout ce qui se dessine passe
+en revanche par [`cfd-plot`](../cfd-plot), qui définit le format du framework —
+police, tailles, marges, palette, gabarit d'export. Une figure de dispersion
+tracée en Matplotlib nu serait juste, et détonnerait au milieu d'un dossier.
+`cfd-plot` étant un paquet frère de ce dépôt et non une publication PyPI, il ne
+peut pas figurer dans les dépendances : il s'installe à la main, et son absence
+donne un `ImportError` qui nomme la commande.
 
 > **Calculateur isolé.** La roue OpenTURNS est marquée `cp39-abi3` /
 > `manylinux_2_28` : elle s'installe donc sur RHEL 8 / Rocky 8 (glibc 2.28),
@@ -59,71 +97,81 @@ pip install -e ../cfd-plot     # facultatif, sauf pour cfd_dispersion.batch
 
 ---
 
-## Prise en main
+## Prise en main en cinq minutes
 
-```python
-from cfd_dispersion import charger_lois, tirer, tirer_lot, valider_lot
-
-DICT_DISP_LAWS = {
-    "Cm_alpha": {
-        "Biais_Type": 5,
-        "Biais_M": 0.0,
-        "Biais_ET": 0.015,
-        "FE_Type": 4,
-        "FE_M": 1.0,
-        "FE_ET": 0.10,
-    },
-}
-
-lois = charger_lois(DICT_DISP_LAWS)
-
-# 1. un tirage — c'est le DICT_DISP_DRAWN que votre modèle attend
-tirage = tirer(lois, graine=42)
-tirage["Cm_alpha"]["Biais"]
-tirage.appliquer({"Cm_alpha": -2.5})
-
-# 2. mille tirages, pour appeler le modèle en boucle
-lot = tirer_lot(lois, 1000, graine=42, methode="lhs")
-
-# 3. le modèle a-t-il tiré ce qu'on lui demandait ?
-verdicts = valider_lot(resultats, lois, par=("Mach", "Altitude_m"))
-```
-
-En ligne de commande :
+L'exemple livré fait tourner les quatre cas d'usage sur un modèle jouet :
 
 ```bash
-cfd-dispersion exemple /tmp/ex && bash /tmp/ex/RUN_EXEMPLE.sh
+cfd-dispersion exemple /tmp/ex && cd /tmp/ex && bash RUN_EXEMPLE.sh
 ```
 
----
+Il écrit dans `SORTIE/` les figures de tirage, le damier de validation, les
+polaires dispersées via `batch_plot`, et les CSV intermédiaires. Voir
+[`01_EXEMPLE/README.md`](src/cfd_dispersion/01_EXEMPLE/README.md) pour ce que
+chaque script montre et ce qu'il faut y regarder.
 
-## Guide API
-
-### Conventions
-
-**`ET` est une demi-étendue, pas un écart-type.** Pour les familles gaussiennes,
-`σ = ET/2`. Une table écrite en écarts-types et lue ici donne des dispersions
-deux fois trop larges — ce qui reste parfaitement crédible à l'œil.
-Voir [00_DOC/01](00_DOC/01_LOIS_DE_DISPERSION.md#11-et-nest-pas-un-écart-type).
-
-**La reproductibilité est globale.** OpenTURNS n'a pas de générateur par appel :
-il n'y a donc pas de `rng=` ici, mais un `graine=`. L'état antérieur du
-générateur est restauré après chaque tirage, si bien qu'un `graine=` ne coûte
-jamais la reproductibilité de l'appelant.
-
-**Toutes les erreurs sont des `ValueError` nommant le coupable** — le
-coefficient *et* la clé fautive, la série absente et celles qui sont présentes,
-la colonne manquante et celles du tableau.
-
----
-
-### 1. Les lois
+En Python, l'enchaînement complet tient en quinze lignes :
 
 ```python
-LoiDispersion(type_loi: int, M: float = 0.0, ET: float = 0.0)
-charger_lois(table, *, correlation=None) -> JeuDeLois
-charger_lois_yaml(chemin, *, correlation=None) -> JeuDeLois
+from cfd_dispersion import charger_lois, tirer, valider_lot, pdv_rejetes
+
+# 1. la table de lois — six clés par coefficient
+lois = charger_lois(
+    {
+        "Cm_alpha": {
+            "Biais_Type": 5,
+            "Biais_M": 0.0,
+            "Biais_ET": 0.015,
+            "FE_Type": 4,
+            "FE_M": 1.0,
+            "FE_ET": 0.10,
+        },
+    }
+)
+
+# 2. un tirage : c'est le DICT_DISP_DRAWN que votre modèle attend
+tirage = tirer(lois, graine=42)
+tirage["Cm_alpha"]["Biais"]  # -> un flottant
+tirage.appliquer({"Cm_alpha": -2.5})  # -> le coefficient dispersé
+
+# 3. mille appels du modèle plus tard, un verdict par (point de vol × composante)
+verdicts = valider_lot(resultats, lois, par=("Mach", "Altitude_m"))
+pdv_rejetes(verdicts)  # -> [{"Mach": 0.85, "Altitude_m": 10000.0}]
 ```
+
+---
+
+## Les données que vous fournissez
+
+Trois objets, et vous n'en écrivez que deux : la table de lois, et le modèle.
+
+```
+DICT_DISP_LAWS            ->  JeuDeLois        ->  Tirage            ->  DataFrame
+{coeff: {Biais_*, FE_*}}      charger_lois()       tirer()               votre modèle
+ce que vous écrivez           les lois            {coeff: {Biais, FE}}  ce qu'il rend
+```
+
+### 1. La table de lois
+
+Un dictionnaire Python, ou le même en YAML. **Une entrée par coefficient, six
+clés chacune** — les noms sont exacts :
+
+```python
+DICT_DISP_LAWS = {
+    "CN": {
+        "Biais_Type": 5,  # la famille du biais, entier 1..6
+        "Biais_M": 0.0,  # sa moyenne
+        "Biais_ET": 0.02,  # sa DEMI-ÉTENDUE (σ = ET/2), pas son écart-type
+        "FE_Type": 6,  # idem pour le facteur d'échelle
+        "FE_M": 1.0,  #   1 est le facteur neutre de la convention par défaut
+        "FE_ET": 0.08,
+    },
+}
+```
+
+Les six familles :
+
+![les six familles](00_DOC/FIGURES/01_types_de_lois.png)
 
 | type | libellé | OpenTURNS | support | écart-type réel |
 |:--:|:--|:--|:--|:--|
@@ -134,76 +182,150 @@ charger_lois_yaml(chemin, *, correlation=None) -> JeuDeLois
 | 5 | Gaussienne ±3σ | `TruncatedNormal(M, ET/2, M±1.5·ET)` | M ± 1.5·ET | 0.4933·ET |
 | 6 | Gaussienne ±2σ | `TruncatedNormal(M, ET/2, M±1.0·ET)` | M ± 1.0·ET | 0.4398·ET |
 
-![les six familles](00_DOC/FIGURES/01_types_de_lois.png)
+Noter la dernière colonne. Au type 6, l'écart-type **réel** vaut 88 % de `ET/2` :
+la troncature resserre la loi. C'est pourquoi la validation compare aux moments
+exacts d'OpenTURNS et non aux paramètres — sans quoi elle rejetterait des
+tirages parfaitement corrects.
+
+Le même en YAML, avec la corrélation en option :
+
+```yaml
+lois:
+  CN:
+    Biais_Type: 5
+    Biais_M: 0.0
+    Biais_ET: 0.02
+    FE_Type: 6
+    FE_M: 1.0
+    FE_ET: 0.08
+correlation:
+  "CN, Cm_alpha": 0.6
+```
+
+```python
+lois = charger_lois(DICT_DISP_LAWS)  # ou
+lois = charger_lois_yaml("LOIS.yaml")
+```
+
+### 2. Ce que reçoit votre modèle
+
+`Tirage` **est** un `Mapping` : c'est le `DICT_DISP_DRAWN` attendu, utilisable
+tel quel, sans conversion.
+
+```python
+tirage = tirer(lois, graine=42)
+
+tirage["CN"]["Biais"]  # -> float
+tirage["CN"]["FE"]  # -> float
+dict(tirage)  # -> {"CN": {"Biais": …, "FE": …}, …}, si vous préférez
+```
+
+Il porte en plus ce qu'un dictionnaire nu ne peut pas porter : `.appliquer`, la
+convention employée, la graine et le plan d'échantillonnage — qui finissent dans
+les boîtes de paramètres des figures, pour qu'aucune ne puisse cacher la
+dispersion qui l'a produite.
+
+### 3. Ce que votre modèle doit rendre
+
+**C'est le seul point d'accroche du paquet**, et il tient en un tableau de noms
+de colonnes. Un tableau à plat, une ligne par (point de vol × tirage) :
+
+| colonne | obligatoire | contenu |
+|:--|:--:|:--|
+| `<coefficient>_Biais` | **oui** | le biais tiré, tel qu'il a servi |
+| `<coefficient>_FE` | **oui** | le facteur d'échelle tiré |
+| `<coefficient>` | pour le panneau de reconstruction | le coefficient dispersé obtenu |
+| les clés de point de vol | si `par=` | `Mach`, `Altitude_m`, … |
+| `tirage` | pratique | le numéro d'appel |
+
+C'est exactement ce que `tirer_lot` produit déjà : en partant de lui, il n'y a
+rien à faire. `lois.colonnes` énumère les noms attendus.
+
+Si votre modèle nomme ses colonnes autrement, ne renommez pas le tableau —
+donnez la correspondance :
+
+```python
+valider_lot(
+    resultats, lois, par=("Mach",), colonnes={("CN", "Biais"): "bias_CN", ("CN", "FE"): "scale_CN"}
+)
+```
+
+Le squelette complet de la boucle d'appels est dans
+[00_DOC/05 §5.3](00_DOC/05_BRANCHER_SON_MODELE.md#53-votre-fonction-modèle), et
+`01_EXEMPLE/modele.py` en est la version exécutable.
+
+---
+
+## Guide d'utilisation
+
+### 1. Charger et tirer
+
+```python
+charger_lois(table, *, correlation=None) -> JeuDeLois
+charger_lois_yaml(chemin, *, correlation=None) -> JeuDeLois
+
+tirer(lois, *, graine=None, convention_=None, methode="mc") -> Tirage
+tirer_lot(lois, n, *, graine=None, methode="mc") -> pd.DataFrame
+```
+
+`methode` vaut `"mc"`, `"lhs"` ou `"sobol"`. Le tirage passe par la loi
+**jointe** de toutes les composantes : c'est la seule façon d'honorer une
+corrélation déclarée, et la seule où LHS et Sobol apportent quelque chose — ce
+qu'ils améliorent est le remplissage conjoint.
+
+**La reproductibilité est globale.** OpenTURNS n'a pas de générateur par appel :
+il n'y a donc pas de `rng=` ici, mais un `graine=`. L'état antérieur du
+générateur est restauré après chaque tirage, si bien qu'un `graine=` ne coûte
+jamais la reproductibilité de l'appelant.
 
 Une `LoiDispersion` porte `distribution`, `pdf`, `cdf`, `quantile`, `tirer`,
 `support`, `plage_utile`, `M_theorique`, `ET_theorique`, `sigma_nominal`,
 `est_degeneree`, `est_bornee`, `label`.
 
-Noter `ET_theorique` (l'écart-type réel, calculé par OpenTURNS) face à
-`sigma_nominal` (le paramètre `ET/2`). Pour les lois tronquées, les deux
-diffèrent : la troncature resserre la loi, de 12 % au type 6.
+La figure du tirage, trois panneaux par coefficient :
 
----
-
-### 2. La reconstruction
+![le tirage en trois panneaux](00_DOC/FIGURES/04_tirage_3_panneaux.png)
 
 ```python
-CONVENTIONS          # "lineaire" (défaut) · "pourcentage" · "relatif"
-convention(choix) -> Convention
-Convention(nom, formule, appliquer)
+figure, axes = figure_tirage("CN", lois["CN"], tirage, nominal=0.85)
+figure, grille = figure_tirage_matrice(lois, tirage, nominaux=NOMINAUX)
 ```
+
+Le troisième panneau est celui qui compte. Les deux premiers montrent que chaque
+composante est bien tombée dans sa loi ; seul le troisième montre ce que cela
+fait au coefficient, qui est la question posée.
+
+### 2. Reconstruire : les conventions
+
+Le tirage rend deux nombres par coefficient. Il ne dit pas comment les
+recombiner avec la valeur nominale — or la relation varie d'une équipe à
+l'autre, et deux d'entre elles diffèrent d'un facteur 100.
+
+![les trois conventions](00_DOC/FIGURES/03_conventions.png)
 
 | nom | relation | FE neutre |
 |:--|:--|:--:|
-| `lineaire` | `biais + FE · c` | 1 |
+| `lineaire` *(défaut)* | `biais + FE · c` | 1 |
 | `pourcentage` | `biais + (1 + FE/100) · c` | 0 |
 | `relatif` | `biais + (1 + FE) · c` | 0 |
 
-Chaque convention **porte sa formule en clair**, qui se retrouve imprimée dans
-les boîtes de paramètres : une figure ne peut pas cacher sous quelle relation
-elle a été produite.
-
----
-
-### 3. Le tirage
+Rien dans une figure ne trahit qu'on s'est trompé de convention : la courbe
+reste lisse et l'ordre de grandeur reste crédible. La relation est donc un objet
+à part entière, qui **porte sa formule en clair**, imprimée dans chaque boîte de
+paramètres.
 
 ```python
-tirer(lois, *, graine=None, convention_=None, methode="mc") -> Tirage
-tirer_lot(lois, n, *, graine=None, methode="mc") -> pd.DataFrame
+tirage.appliquer(NOMINAUX, convention_="pourcentage")
+
+
+def ma_relation(c, biais, fe):  # de niveau module : voir §7
+    return biais + fe * c * (1 + c**2)
+
+
+MAISON = Convention(nom="maison", formule="biais + FE · c · (1 + c²)", appliquer=ma_relation)
 ```
 
-`Tirage` est un `Mapping` : il se passe tel quel au modèle qui attend
-`{coeff: {"Biais": …, "FE": …}}`, tout en portant `.appliquer`, la convention,
-la graine et le plan employé.
-
-`methode` vaut `"mc"`, `"lhs"` ou `"sobol"`. Le tirage passe par la loi
-**jointe** de toutes les composantes : c'est la seule façon d'honorer une
-corrélation déclarée, et la seule où LHS et Sobol apportent quelque chose.
-
----
-
-### 4. La propagation le long d'un balayage
-
-```python
-bande_depuis_loi(x, nominal, *, loi, n=20000, intervalle="percentile",
-                 couverture=None, k=None, correle=True, graine=None) -> BandeDispersion
-bande_depuis_points(x, nominal, lois, ...) -> BandeDispersion
-```
-
-`BandeDispersion` porte `x`, `nominal`, `moyenne`, `bas`, `haut`,
-`echantillons` (le nuage complet), `ecart_type`, `demi_largeur`, `label`,
-`reduire()` et `enveloppe_sigma(k)`.
-
-`correle=True` partage un même tirage sur tout le balayage — le cas d'une erreur
-de recalage, et le cas physique usuel. Voir
-[00_DOC/04 §4.6](00_DOC/04_POLAIRE_DISPERSEE.md#46-corrélé-ou-indépendant) :
-l'enveloppe sort semblable dans les deux cas, mais seule l'enveloppe corrélée se
-lit « la vraie courbe est là-dedans ».
-
----
-
-### 5. La validation
+### 3. Valider mille appels du modèle
 
 ```python
 valider(echantillon, loi, *, alpha=0.05, tol_M=0.10, tol_ET=0.10, n_min=20) -> Verdict
@@ -219,44 +341,80 @@ différentes et que le `motif` doit dire laquelle :
 3. **Kolmogorov–Smirnov** — attrape ce que les moments laissent passer : une loi
    bimodale de mêmes moments et même support est rejetée à p ≈ 10⁻²³⁵.
 
-Motifs : `effectif`, `support`, `moyenne`, `écart-type`, `forme`.
+Motifs possibles : `effectif`, `support`, `moyenne`, `écart-type`, `forme`.
 
-**`valider_lot` corrige la multiplicité.** Sur 12 points de vol × 4 composantes,
-un tableau entièrement conforme sort intact 19 fois sur 20 avec la correction,
-contre 3 fois sur 20 sans. Voir
-[00_DOC/03 §3.3](00_DOC/03_VALIDATION_MONTE_CARLO.md#33-le-piège-de-la-multiplicité).
+Un cas conforme, puis le même coefficient avec un `ET` doublé :
 
----
-
-### 6. Les figures
-
-| | |
-|:--|:--|
-| `figure_tirage` | trois panneaux : biais, FE, reconstruction |
-| `figure_tirage_matrice` | une ligne de trois par coefficient |
-| `figure_comparaison` | loi prescrite contre loi réalisée, avec verdict |
-| `figures_par_pdv` | le générateur, une figure par (point de vol × coefficient) |
-| `synthese`, `tableau_par_pdv` | les tableaux |
-| `figure_synthese`, `table_rich` | le damier, en figure et au terminal |
-| `pdv_rejetes` | les points de vol fautifs, à repasser à `figures_par_pdv` |
+![comparaison validée](00_DOC/FIGURES/05_comparaison_valide.png)
 
 ![comparaison rejetée](00_DOC/FIGURES/05_comparaison_rejete.png)
 
+Chaque loi théorique porte la densité empirique du modèle (lissage à noyau
+`ot.KernelSmoothing`), plus la boîte de verdict. On *voit* le FE réalisé
+déborder de son support prescrit. `qq=True` remplace la densité par un diagramme
+quantile-quantile : un histogramme se lit bien au centre et mal dans les queues,
+or c'est dans les queues qu'une loi tronquée dérape.
+
+**`valider_lot` corrige la multiplicité.** Le test rejette à tort dans α des cas,
+par définition ; sur cinquante points de vol et quatre composantes, cela fait
+deux cents tests, donc une dizaine de cases rouges de pur bruit — dans un
+livrable dont tout l'intérêt est qu'on ne regarde *que* les cases rouges.
+
+| sur 20 études de 12 PDV × 4 composantes, toutes conformes | fausses alertes | études intactes |
+|:--|--:|--:|
+| sans correction | 58 / 960 | 3 / 20 |
+| avec Šidák *(défaut)* | 1 / 960 | 19 / 20 |
+
+### 4. Synthétiser, et ne tracer que les rejets
+
 ![la synthèse](00_DOC/FIGURES/06_synthese.png)
 
-Le raccord entre les deux est l'essentiel : sur cinquante points de vol et six
-composantes, on ne regarde pas trois cents figures.
+```python
+synthese(verdicts)  # taux de validation et motifs, par composante
+tableau_par_pdv(verdicts)  # le damier
+table_rich(verdicts)  # le même au terminal
+figure_synthese(verdicts)  # et en figure
+pdv_rejetes(verdicts)  # -> [{"Mach": 0.85, "Altitude_m": 10000.0}]
+```
+
+Le raccord entre les deux derniers est l'essentiel du cas d'usage : sur
+cinquante points de vol et six composantes, on ne regarde pas trois cents
+figures — on regarde les quatre qui ont échoué.
 
 ```python
 for cles, coefficient, figure in figures_par_pdv(
     resultats, lois, par=PAR, seulement=pdv_rejetes(verdicts)
 ):
-    figure.savefig(...)
+    enregistrer(figure, sortie / f"{coefficient}", formats=("png",))
 ```
 
----
+`figures_par_pdv` est un **générateur** : un millier de figures n'est jamais tout
+en mémoire à la fois.
 
-### 7. La polaire dispersée
+### 5. Propager le long d'un balayage
+
+```python
+bande_depuis_loi(x, nominal, *, loi, n=20000, intervalle="percentile",
+                 couverture=None, k=None, correle=True, graine=None)
+bande_depuis_points(x, nominal, lois, ...)
+```
+
+`BandeDispersion` porte `x`, `nominal`, `moyenne`, `bas`, `haut`,
+`echantillons` (le nuage complet), `ecart_type`, `demi_largeur`, `label`,
+`reduire()` et `enveloppe_sigma(k)`.
+
+Le réglage qui décide du sens de l'enveloppe est `correle` :
+
+![corrélé ou indépendant](00_DOC/FIGURES/09_correle_ou_independant.png)
+
+Une erreur de recalage est normalement *la même erreur* en tout point du
+balayage : une réalisation décale ou incline la courbe entière (`correle=True`,
+le défaut). Tirer une erreur indépendante par point modélise un bruit point à
+point — un résidu mal convergé, par exemple. Les deux enveloppes se ressemblent ;
+**seule celle de gauche se lit « la vraie courbe est là-dedans »**, qui est
+pourtant l'affirmation qu'on croit faire.
+
+### 6. La polaire dispersée
 
 ```python
 superposer_dispersion(ax, x, nominal, *, loi=None, tirages=None,
@@ -266,40 +424,156 @@ superposer_dispersion(ax, x, nominal, *, loi=None, tirages=None,
 courbes_par_tirage(df, *, x, y, par) -> (x, courbes)
 ```
 
+![polaire dispersée](00_DOC/FIGURES/07_polaire_dispersee.png)
+
+Cinq choses s'y superposent, et chacune s'enlève :
+
+* la **bande théorique**, calculée depuis `loi=` ;
+* les **courbes réellement obtenues**, `tirages=`, forme `(n_tirages, npts)` —
+  les donner toutes les deux est précisément l'intérêt : on les voit s'accorder ;
+* le **remplissage**, dans la teinte de la série ;
+* les **lignes ±kσ**, étiquetées *sur* la courbe ;
+* la **boîte de paramètres**, qui nomme la loi employée.
+
 `serie="CFD"` reprend la couleur de cette courbe-là : le remplissage en
-transparence, la moyenne dispersée en plus sombre. À défaut, `couleur=` trace un
-faisceau autonome.
+transparence, la moyenne dispersée en plus sombre. La dispersion se lit alors
+comme appartenant à cette série, sans légende supplémentaire — ce qui compte dès
+qu'il y en a trois sur la figure. À défaut, `couleur="C3"` trace un faisceau
+autonome.
 
 ![les trois remplissages](00_DOC/FIGURES/08_remplissages.png)
 
-Les lignes ±kσ sont **étiquetées sur la courbe**, avec l'inclinaison calculée en
-coordonnées d'affichage — donc juste sur un axe logarithmique comme sur des
-échelles sans rapport. Elles sont posées en dernier, après tout artiste
-susceptible de déplacer les limites.
+| `remplissage` | ce que la bande recouvre |
+|:--|:--|
+| `"minmax"` *(défaut)* | tout le nuage, sans hypothèse |
+| `"percentile"` | une fraction de couverture, queues écartées |
+| `"sigma"` | moyenne ± kσ — suppose une forme |
 
----
+Préférer les percentiles aux σ pour des composantes uniformes ou tronquées, dont
+les queues ne sont pas gaussiennes.
 
-### 8. Greffe sur `batch_plot`
+Les lignes ±kσ sont étiquetées avec l'inclinaison calculée en coordonnées
+**d'affichage** — donc juste sur un axe logarithmique comme sur des échelles sans
+rapport. Elles sont posées en dernier, après tout artiste susceptible de déplacer
+les limites.
+
+Mille appels du modèle donnent un tableau à plat, une ligne par (tirage × point
+du balayage) ; `courbes_par_tirage` le remet en matrice :
 
 ```python
-from cfd_dispersion.batch import hook_dispersion
-
-batch_plot(..., on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages))
+x, courbes = courbes_par_tirage(resultats, x="alpha", y="CN", par=["tirage"])
+courbes.shape  # (n_tirages, npts)
 ```
 
-La courbe nominale n'est pas à redonner : le hook la lit sur les axes.
+`par=` nomme les colonnes qui identifient un tirage. La fonction **refuse** des
+tirages qui ne partagent pas la même abscisse : les empiler donnerait une matrice
+dont les colonnes ne correspondent pas au même point du balayage — une figure
+fausse, et lisse.
 
-`HookDispersion` est une classe de niveau module, donc **sérialisable** :
-`batch_plot` retombe silencieusement sur `n_jobs=1` quand son hook ne l'est pas,
-et une fermeture capturant un `DataFrame` coûterait tous les cœurs de la machine
-pour un avertissement noyé dans la sortie.
+### 7. La greffe sur `batch_plot`
 
-Ce module s'importe et s'exécute sans `cfd-plot` — c'est `batch_plot`, donc
-l'appelant, qui l'exige. `hook_dispersion` le vérifie néanmoins et lève un
-`ImportError` explicite, pour que l'échec tombe à la construction du hook et non
-au milieu d'un lot de deux cents figures.
+C'est le livrable. `batch_plot` (paquet [cfd-plot](../cfd-plot)) prend quatre
+dictionnaires et écrit tout un arbre de figures ; la dispersion s'y ajoute par
+son unique point de greffe.
 
----
+```python
+from cfd_plot import batch_plot
+from cfd_dispersion.batch import hook_dispersion
+
+batch_plot(
+    configuration_dict={
+        "CFD": {"name": "CFD", "label": "CFD", "df": donnees, "color": "C0", "marker": "o"}
+    },
+    y_axis_dict={
+        "CN": {
+            "col_name": "CN",
+            "literal_name": "Coefficient normal",
+            "symbol": r"$C_N$",
+            "unit": "-",
+            "y_save_name": "CN",
+        }
+    },
+    sweep_dict={
+        "alpha": {
+            "col_name": "alpha",
+            "literal_name": "Incidence",
+            "symbol": r"$\alpha$",
+            "unit": "°",
+            "x_save_name": "alpha",
+            "polar_prefix": "ALPHA_POLAR",
+            "label": r"$\alpha$",
+            "save_name": "ALPHA",
+        }
+    },
+    flight_point_dict={
+        "Mach": {"values": [0.80], "label": "M", "save_name": "M", "unit": "-"},
+        "Altitude_m": {"values": [8000.0], "label": "Z", "save_name": "Z", "unit": "m"},
+    },
+    output_base="09_POST_TRAITEMENT/FIGURE",
+    formats=("png",),
+    on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages, n=6000),
+)
+```
+
+Quatre points, et ce sont eux qui font marcher la greffe du premier coup :
+
+* **la courbe nominale n'est pas à redonner.** Le hook va chercher sur les axes
+  la courbe intitulée `serie=`, en lit l'abscisse et l'ordonnée, et disperse
+  celles-là. Une divergence entre ce qui est tracé et ce qui est dispersé devient
+  impossible ;
+* **le nom de la grandeur doit valoir le nom du coefficient** — `context.y_key`
+  est confronté aux clés de `lois`. Sinon,
+  `coefficients={"CN_total": "CN"}`. Une grandeur sans loi n'est pas une erreur :
+  le hook passe son tour, ce qui permet de tracer vingt grandeurs et d'en
+  disperser trois ;
+* **le dictionnaire `tirages` est indexé par `(y_key, sweep_key)`**, ce que rend
+  `cle_par_defaut` :
+
+  ```python
+  tirages = {}
+  for coefficient in lois:
+      _, courbes = courbes_par_tirage(a_plat, x="alpha", y=coefficient, par=["tirage"])
+      tirages[(coefficient, "alpha")] = courbes
+  ```
+
+  Une dispersion qui change d'un point de vol à l'autre demande une clé plus
+  fine, donc votre propre fonction `cle=`, de niveau module ;
+* **tout ce que reçoit le hook doit être sérialisable.** `batch_plot` envoie son
+  hook aux processus de travail et retombe silencieusement sur `n_jobs=1`, avec
+  un simple `UserWarning`, quand il n'y parvient pas. D'où une classe de niveau
+  module (`HookDispersion`) et non une fermeture, une fonction de clé de niveau
+  module et non une `lambda`, et le *nom* d'une convention plutôt qu'une
+  `Convention` bâtie sur une `lambda`.
+
+Tout ce que le hook dessine se retrouve dans le fichier **et** dans la page du
+rapport PDF, `on_before_save` étant appelé juste avant l'enregistrement.
+
+Le détail clé par clé des quatre dictionnaires est dans
+[00_DOC/05 §5.6](00_DOC/05_BRANCHER_SON_MODELE.md#56-la-greffe-sur-batch_plot) ;
+`01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable.
+
+### 8. Corréler deux coefficients
+
+Sans argument, les composantes sont **indépendantes**. C'est presque toujours ce
+qu'on veut, et presque jamais ce qu'on a vérifié : deux coefficients issus du
+même recalage partagent une erreur.
+
+```python
+lois = charger_lois(DICT, correlation={("CN", "Cm_alpha"): 0.6})
+```
+
+![corrélation entre coefficients](00_DOC/FIGURES/10_correlation.png)
+
+Nommer deux **coefficients** corrèle leurs composantes de même nature : biais
+avec biais, FE avec FE. Ce n'est pas une commodité — appliquer un même ρ aux
+quatre croisements produit, dès deux coefficients, une matrice non définie
+positive qu'aucune loi jointe ne réalise. C'est aussi la lecture physique : le
+recalage lie les biais entre eux, pas le biais de l'un à l'échelle de l'autre.
+Pour cibler une paire croisée, nommer les deux composantes :
+`{("CN_Biais", "Cm_alpha_FE"): 0.4}`.
+
+L'hypothèse d'indépendance étant invisible sur une figure, elle est rendue
+explicite : `lois.independantes` est reportée dans chaque boîte de paramètres.
 
 ### 9. La ligne de commande
 
@@ -314,18 +588,41 @@ cfd-dispersion exemple /tmp/ex
 `--strict` sort en code 1 dès qu'un point de vol est rejeté, pour une chaîne
 d'intégration. `--correction aucune` retrouve le seuil test par test.
 
-Le script console de pip fige le chemin de l'interpréteur ; `python -m
-cfd_dispersion.cli.main` est l'équivalent qui marche partout.
+Le script console de pip fige le chemin de l'interpréteur ;
+`python -m cfd_dispersion.cli.main` est l'équivalent qui marche partout — venv
+déplacé, image Apptainer, chemin trop long pour un `#!`.
 
----
+### 10. Les figures, et leur format
 
-### 10. Gestion des erreurs
+Toutes les figures passent par cfd-plot. Quatre primitives sont exportées pour
+que les vôtres en fassent autant :
+
+```python
+from cfd_dispersion import style, nouvelle_figure, tracer_ligne, enregistrer
+
+with style("paper"):  # style local, pas de rcParams globaux
+    figure, ax = nouvelle_figure()
+    tracer_ligne(ax, x, y, label="CFD", color="C0")
+    superposer_dispersion(ax, x, y, loi=lois["CN"], serie="CFD")
+    (chemin,) = enregistrer(figure, sortie / "CN_M0.85", formats=("png", "svg"))
+```
+
+`enregistrer` écrit par `cfd_plot.save_figure` — c'est ce qui donne au fichier le
+DPI, les marges et le fond du profil. Le chemin se donne **sans extension**, mais
+un point dans le nom est admis : `save_figure` compose son fichier avec
+`Path.with_suffix`, qui remplace tout ce qui suit le dernier point, et un nom
+aussi banal que `CN_M0.85` y perdrait son `.85` — toute une série de points de
+vol s'écrasant alors dans un seul fichier, sans erreur. `enregistrer` s'en
+protège, et un test le vérifie.
+
+### 11. Les erreurs
 
 Toutes les erreurs sont des `ValueError` nommant le coupable :
 
 ```
-coefficient 'Cm_alpha' : clé(s) manquante(s) ['Biais_ET']
-corrélation portant sur 'inexistant', qui n'est ni un coefficient ni une composante…
+coefficient 'CN' : clé(s) manquante(s) ['Biais_ET', 'FE_Type', 'FE_M', 'FE_ET']
+coefficient 'CN', FE : ET est une demi-étendue et ne peut pas être négatif, reçu -0.1
+colonne(s) absente(s) du tableau : ['CN_FE'] ; il porte ['CN', 'CN_Biais', 'Mach']
 aucune courbe intitulée 'EXP' sur ces axes ; libellés présents : ['CFD', 'Essai']
 les tirages ne partagent pas la même abscisse ; les empiler donnerait un tableau…
 ```
@@ -336,7 +633,35 @@ développeur Python qui débogue cet outil.
 
 ---
 
-### Référence de l'API publique
+## Recettes
+
+**Rejouer exactement une étude.** Une graine par appel, dérivée d'une graine
+d'étude : `tirer(lois, graine=1000 + i)`. Une graine *constante* donne mille fois
+le même tirage, ce qui ne se voit qu'à la validation.
+
+**Ne valider qu'un bloc, sans points de vol.** `valider_lot(df, lois)` — `par=()`
+valide tout le tableau d'un coup.
+
+**Comparer ±1σ et ±3σ sans repayer le Monte-Carlo.**
+`bande.reduire(intervalle="sigma", niveau=3)` : rien n'est retiré, seule la
+réduction est refaite.
+
+**Alléger un fichier vectoriel.** `max_tirages=150` : mille courbes opaques ne
+montrent rien de plus que deux cents, et coûtent dix fois le poids.
+
+**Ne décorer que certains panneaux d'une figure de comparaison.**
+`hook_dispersion(..., panneaux=("M 0.80",))`.
+
+**Tracer les figures d'un point de vol précis.**
+`figures_par_pdv(..., seulement=[{"Mach": 0.85, "Altitude_m": 10000.0}])`.
+
+**Vérifier une table avant de lancer quoi que ce soit.**
+`cfd-dispersion check --lois LOIS.yaml` — les erreurs de table sortent là, pas
+après huit heures de calcul.
+
+---
+
+## Référence de l'API publique
 
 | symbole | rôle |
 |:--|:--|
@@ -351,6 +676,8 @@ développeur Python qui débogue cet outil.
 | `figure_comparaison`, `figures_par_pdv` | figures Monte-Carlo |
 | `synthese`, `tableau_par_pdv`, `pdv_rejetes`, `figure_synthese`, `table_rich` | la synthèse |
 | `superposer_dispersion`, `courbes_par_tirage` | la polaire dispersée |
+| `style`, `nouvelle_figure`, `tracer_ligne`, `enregistrer` | les primitives de tracé |
+| `cfd_dispersion.batch` : `hook_dispersion`, `HookDispersion`, `cle_par_defaut` | la greffe sur `batch_plot` |
 
 ---
 
@@ -367,9 +694,8 @@ développeur Python qui débogue cet outil.
 * **Rien sur la sensibilité.** « Quel coefficient pilote la dispersion ? » est
   une autre question ; OpenTURNS sait y répondre (`SobolIndicesAlgorithm`), ce
   paquet ne l'expose pas.
-* **La validation juge un tirage, pas un modèle.** Elle dit si les
-  *entrées* tirées suivent leurs lois, non si le modèle en fait quelque chose de
-  juste.
+* **La validation juge un tirage, pas un modèle.** Elle dit si les *entrées*
+  tirées suivent leurs lois, non si le modèle en fait quelque chose de juste.
 * **`valider_lot` suppose les tests indépendants** pour sa correction de Šidák.
   Avec des composantes corrélées, la correction est légèrement conservatrice.
 
@@ -383,6 +709,8 @@ développeur Python qui débogue cet outil.
 | [00_DOC/02](00_DOC/02_CONVENTIONS_ET_TIRAGE.md) | les trois relations, les plans MC/LHS/Sobol |
 | [00_DOC/03](00_DOC/03_VALIDATION_MONTE_CARLO.md) | les trois contrôles, la multiplicité, la synthèse |
 | [00_DOC/04](00_DOC/04_POLAIRE_DISPERSEE.md) | la superposition, corrélé/indépendant, `batch_plot` |
+| [00_DOC/05](00_DOC/05_BRANCHER_SON_MODELE.md) | **brancher son modèle** : les dictionnaires, les colonnes, les quatre dicts de `batch_plot` |
+| [01_EXEMPLE](src/cfd_dispersion/01_EXEMPLE/README.md) | l'exemple exécutable, script par script |
 
 Régénérer les figures : `python 00_DOC/generer_figures.py`.
 
@@ -418,19 +746,11 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 455 tests
+pytest                                  # 464 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
-python 00_DOC/generer_figures.py
+python 00_DOC/generer_figures.py        # les 12 figures de doc
 cfd-dispersion exemple /tmp/ex && bash /tmp/ex/RUN_EXEMPLE.sh
-```
-
-Le paquet doit aussi tenir debout **sans** cfd-plot :
-
-```bash
-python -m venv /tmp/seul && /tmp/seul/bin/pip install .
-/tmp/seul/bin/python -c \
-  "from cfd_dispersion.report._plotting_lib import HAS_PLOTTING; print(HAS_PLOTTING)"
 ```
 
 Quelques invariants que la suite tient :
@@ -443,5 +763,7 @@ Quelques invariants que la suite tient :
 | une erreur de facteur 2 sur `ET` est rejetée à n = 50 … 20 000, bornée ou non | `test_validation.py::TestErreurDeFacteurDeux` |
 | chacun des cinq motifs attrape ce que les autres laissent passer | `test_validation.py::TestLesQuatreMotifs` |
 | le taux de faux rejet vaut α, et la correction nettoie le tableau | `test_validation.py::TestCalibration` |
+| toute figure passe par cfd-plot, primitive par primitive | `test_base.py::TestToutPasseParCfdPlot` |
+| un point dans un nom de figure ne fait pas disparaître le fichier | `test_base.py`, `test_exemple.py` |
 | le hook survit à `pickle`, donc à `n_jobs > 1` | `test_batch.py::TestSerialisation` |
 | l'exemple livré tourne, et son défaut volontaire est détecté | `test_exemple.py` |

@@ -10,6 +10,7 @@ fonctions publiques que celles qu'elles illustrent.
 
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,12 +24,14 @@ import pandas as pd
 from cfd_dispersion import (
     CONVENTIONS,
     LoiDispersion,
+    bande_depuis_loi,
     charger_lois,
     tirer,
     tirer_lot,
     valider_lot,
 )
-from cfd_dispersion.figures._base import nouvelle_figure, style, tracer_ligne
+from cfd_dispersion.batch import hook_dispersion
+from cfd_dispersion.figures._base import enregistrer, nouvelle_figure, style, tracer_ligne
 from cfd_dispersion.figures.monte_carlo import figure_comparaison
 from cfd_dispersion.figures.polaire import superposer_dispersion
 from cfd_dispersion.figures.synthese import figure_synthese
@@ -67,9 +70,14 @@ TABLE = {
 
 
 def _ecrire(figure: plt.Figure, nom: str) -> None:
+    """Écrit une figure de doc, par le même chemin que les figures livrées.
+
+    `enregistrer` passe par ``cfd_plot.save_figure`` : les illustrations de la
+    documentation sortent donc au format du framework, comme celles que le
+    paquet produit.
+    """
     FIGURES.mkdir(parents=True, exist_ok=True)
-    chemin = FIGURES / f"{nom}.png"
-    figure.savefig(chemin, dpi=DPI, bbox_inches="tight")
+    (chemin,) = enregistrer(figure, FIGURES / nom, formats=("png",), dpi=DPI)
     plt.close(figure)
     print(f"[ok] {chemin}")
 
@@ -366,6 +374,137 @@ def figure_remplissages() -> None:
     _ecrire(figure, "08_remplissages")
 
 
+# ---------------------------------------------------------------------------
+# 09 — corrélé ou indépendant
+# ---------------------------------------------------------------------------
+
+
+def figure_correle_ou_independant() -> None:
+    """L'enveloppe est la même ; ce qu'il y a dedans, non."""
+    lois = charger_lois(TABLE)
+    alpha, CN = _polaire()
+
+    with style():
+        figure, grille = nouvelle_figure(1, 2, figsize=(11.0, 4.2))
+        for ax, correle in zip(np.ravel(grille), (True, False)):
+            bande = bande_depuis_loi(alpha, CN, loi=lois["CN"], n=4000, correle=correle, graine=3)
+            for realisation in bande.echantillons[:40]:
+                tracer_ligne(ax, alpha, realisation, color="C0", alpha=0.15, lw=0.6, marker="")
+            tracer_ligne(ax, alpha, bande.bas, color="C0", lw=1.0, ls="--", marker="")
+            tracer_ligne(ax, alpha, bande.haut, color="C0", lw=1.0, ls="--", marker="")
+            tracer_ligne(ax, alpha, CN, color="0.2", lw=1.4, marker="", label="nominal")
+            ax.set_xlabel("incidence α (°)")
+            ax.set_ylabel("$C_N$")
+            ax.set_title(
+                "corrélé — une erreur par courbe"
+                if correle
+                else "indépendant — un bruit par point",
+                fontsize=10,
+            )
+        figure.suptitle(
+            "Deux enveloppes semblables ; seule celle de gauche se lit "
+            "« la vraie courbe est là-dedans »",
+            fontsize=10,
+        )
+    _ecrire(figure, "09_correle_ou_independant")
+
+
+# ---------------------------------------------------------------------------
+# 10 — deux coefficients issus du même recalage
+# ---------------------------------------------------------------------------
+
+
+def figure_correlation() -> None:
+    """Nommer deux coefficients corrèle leurs composantes de même nature."""
+    independantes = charger_lois(TABLE)
+    liees = charger_lois(TABLE, correlation={("CN", "Cm_alpha"): 0.85})
+
+    with style():
+        figure, grille = nouvelle_figure(1, 2, figsize=(10.5, 4.4))
+        for ax, jeu, nom in zip(
+            np.ravel(grille), (independantes, liees), ("indépendants", "ρ = 0.85")
+        ):
+            lot = tirer_lot(jeu, 1500, graine=5, methode="lhs")
+            ax.scatter(lot["CN_Biais"], lot["Cm_alpha_Biais"], s=4, alpha=0.35, color="C0")
+            mesure = float(np.corrcoef(lot["CN_Biais"], lot["Cm_alpha_Biais"])[0, 1])
+            ax.set_xlabel("biais de CN")
+            ax.set_ylabel("biais de Cm_alpha")
+            ax.set_title(f"{nom} — corrélation mesurée {mesure:+.2f}", fontsize=10)
+    _ecrire(figure, "10_correlation")
+
+
+# ---------------------------------------------------------------------------
+# 11 — la greffe sur batch_plot, telle qu'elle sort
+# ---------------------------------------------------------------------------
+
+
+def figure_batch_plot() -> None:
+    """Une vraie sortie de ``batch_plot`` décorée par le hook.
+
+    La figure n'est pas une imitation : elle est produite par ``batch_plot``
+    avec ``on_before_save=hook_dispersion(...)``, puis renommée. Une
+    illustration reconstituée à la main finirait par diverger de ce que la
+    greffe produit vraiment.
+    """
+    from cfd_plot import batch_plot
+
+    lois = charger_lois(TABLE)
+    alpha, CN = _polaire()
+
+    lot = tirer_lot(lois, 300, graine=7)
+    nuage = np.array([b + f * CN for b, f in zip(lot["CN_Biais"], lot["CN_FE"])])
+
+    donnees = pd.DataFrame({"alpha": alpha, "Mach": 0.80, "Altitude_m": 8000.0, "CN": CN})
+    temporaire = FIGURES / "_batch"
+    ecrits = batch_plot(
+        configuration_dict={
+            "CFD": {"name": "CFD", "label": "CFD", "df": donnees, "color": "C0", "marker": "o"}
+        },
+        y_axis_dict={
+            "CN": {
+                "col_name": "CN",
+                "literal_name": "Coefficient normal",
+                "symbol": "$C_N$",
+                "unit": "-",
+                "y_save_name": "CN",
+            }
+        },
+        sweep_dict={
+            "alpha": {
+                "col_name": "alpha",
+                "literal_name": "Incidence",
+                "symbol": r"$\alpha$",
+                "unit": "°",
+                "x_save_name": "alpha",
+                "polar_prefix": "ALPHA_POLAR",
+                "label": r"$\alpha$",
+                "save_name": "ALPHA",
+            }
+        },
+        flight_point_dict={
+            "Mach": {"values": [0.80], "label": "M", "save_name": "M", "unit": "-"},
+            "Altitude_m": {"values": [8000.0], "label": "Z", "save_name": "Z", "unit": "m"},
+        },
+        output_base=temporaire,
+        style_profile="paper",
+        formats=("png",),
+        report=False,
+        on_before_save=hook_dispersion(
+            lois,
+            serie="CFD",
+            tirages={("CN", "alpha"): nuage},
+            n=6000,
+            graine=1,
+            max_tirages=150,
+        ),
+    )
+
+    cible = FIGURES / "11_batch_plot.png"
+    shutil.copyfile(ecrits[0], cible)
+    shutil.rmtree(temporaire, ignore_errors=True)
+    print(f"[ok] {cible}")
+
+
 def main() -> int:
     figure_types_de_lois()
     figure_convention_et()
@@ -375,6 +514,9 @@ def main() -> int:
     figure_synthese_etude()
     figure_polaire_dispersee()
     figure_remplissages()
+    figure_correle_ou_independant()
+    figure_correlation()
+    figure_batch_plot()
     return 0
 
 

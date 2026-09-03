@@ -44,7 +44,7 @@ cfd-dispersion = "cfd_dispersion.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cfd_dispersion = ["01_EXEMPLE/*.py", "01_EXEMPLE/*.yaml", "01_EXEMPLE/*.sh"]
+cfd_dispersion = ["01_EXEMPLE/*.py", "01_EXEMPLE/*.yaml", "01_EXEMPLE/*.sh", "01_EXEMPLE/*.md"]
 
 [tool.ruff]
 target-version = "py39"

@@ -291,17 +291,22 @@ not part of the Bash framework's runtime:
   condition and marker/linestyle the source; families larger than `max_panels` split into
   numbered sheets rather than shrinking).
   SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
-  `cfd-perf`, `cfd-atm`, `cfd-nozzle` and `cfd-dispersion` import it *optionally* via their
+  `cfd-perf`, `cfd-atm` and `cfd-nozzle` import it *optionally* via their
   `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they stay
-  deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).
+  deployable on their own; `cfd-dispersion` **requires** it for every figure (its calculation
+  still runs without it). Note: pandas is a hard dependency (`__init__` re-exports `batch`).
   mypy runs here at `check_untyped_defs` level, not `strict` like the other packages — see TODO.md.
   The former `cfd_plot.dispersion` submodule was extracted into `tools/cfd-dispersion` and rebuilt
   on OpenTURNS; it is gone from here, with no shim.
 - **`tools/cfd-dispersion/`** — dispersion laws, Monte-Carlo draws, validation and dispersed polars,
   built on **OpenTURNS** (no SciPy). Input is your law table, `{coeff: {Biais_Type, Biais_M,
   Biais_ET, FE_Type, FE_M, FE_ET}}`. French API and docs, like cfd-perf/atm/nozzle. Layout:
-  `00_DOC/` (FR docs 01–04 + `generer_figures.py`), `src/cfd_dispersion/{core,report,figures,cli}/`,
-  `batch.py`, and `01_EXEMPLE/` shipped as package data (located via `paths.py`).
+  `00_DOC/` (FR docs 01–05 + `generer_figures.py`), `src/cfd_dispersion/{core,report,figures,cli}/`,
+  `batch.py`, and `01_EXEMPLE/` shipped as package data (located via `paths.py`, with its own
+  README and four runnable scripts covering every feature). `00_DOC/05_BRANCHER_SON_MODELE.md` is
+  the practical one: the law dict, the model function skeleton, the output **column contract**
+  (`<coeff>_Biais` / `<coeff>_FE` / `<coeff>`, or a `colonnes=` mapping), the `tirages` dict keyed
+  by `(y_key, sweep_key)`, and `batch_plot`'s four dictionaries spelled out key by key.
     - **`ET` is a half-range, not a standard deviation** — `σ = ET/2` for the Gaussian families.
       This is the single most expensive mistake the model allows, it is invisible on a curve, and
       it is what `core/validation.py` exists to catch. The six families map onto `ot.Dirac`,
@@ -327,6 +332,12 @@ not part of the Bash framework's runtime:
       that can move the limits. `batch.py`'s `HookDispersion` plugs all of it into
       `cfd_plot.batch_plot`'s `on_before_save`; it is a module-level class, not a closure, because
       `batch_plot` silently drops to `n_jobs=1` when its hook is not picklable.
+    - **Every figure goes through cfd-plot**, primitive by primitive (`figures/_base.py`, asserted
+      by `test_base.py::TestToutPasseParCfdPlot`) — the format of a deliverable is defined there and
+      nowhere else. Hence the exported `style` / `nouvelle_figure` / `tracer_ligne` / `enregistrer`.
+      `enregistrer` exists because `cfd_plot.save_figure` composes filenames with
+      `Path.with_suffix`: a base name as ordinary as `CN_Mach0.85` loses its `.85`, and a whole
+      series of flight points silently overwrites one file. It appends a dummy suffix first.
 
 Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
 its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.9) with a `dev` extra

@@ -212,7 +212,11 @@ def _panneau_qq(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, couleur: 
     ax.plot([bas, haut], [bas, haut], color="0.4", ls="--", lw=1.0, label="accord parfait")
     ax.set_ylabel("quantiles réalisés")
     ax.set_xlabel("quantiles prescrits")
-    legende(ax, loc="upper left", fontsize=7)
+    # En bas à droite, et non « best » : un nuage quantile-quantile suit la
+    # diagonale, donc les deux coins hors-diagonale sont libres — et celui du
+    # haut à gauche est pris par la boîte de verdict, que Matplotlib ne voit
+    # pas puisqu'elle est posée après.
+    legende(ax, loc="lower right", fontsize=7)
 
 
 def _boite_verdict(ax: Axes, verdict: Verdict) -> None:

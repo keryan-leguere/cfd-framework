@@ -70,6 +70,9 @@ from .core.validation import (
 )
 
 # --- Les figures -------------------------------------------------------------
+# `enregistrer` écrit une figure par cfd_plot.save_figure : c'est ce qui donne
+# au fichier le DPI, les marges et le fond du profil de style.
+from .figures._base import enregistrer, nouvelle_figure, style, tracer_ligne
 from .figures.monte_carlo import (
     figure_comparaison,
     figures_par_pdv,
@@ -125,6 +128,10 @@ __all__ = [
     "valider_lot",
     "alpha_corrige",
     # Les figures
+    "enregistrer",
+    "nouvelle_figure",
+    "style",
+    "tracer_ligne",
     "tracer_loi",
     "figure_tirage",
     "figure_tirage_matrice",

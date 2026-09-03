@@ -1,11 +1,30 @@
-"""Un modèle jouet, à la place du vôtre.
+"""Un modèle jouet, à la place du vôtre — et le contrat qu'il honore.
 
 Le vrai modèle est une fonction Python qui reçoit les points de vol, la table
 de lois, les coefficients et un tirage, et rend un ``DataFrame``. Celui-ci en
 a la forme exacte, en beaucoup plus simple : il applique la convention aux
 coefficients nominaux et rend une ligne par (point de vol × tirage).
 
-Un défaut est glissé volontairement : au point de vol ``M = 0.85``, le facteur
+Le contrat de sortie
+--------------------
+C'est le seul point d'accroche du paquet, et il tient en quatre noms de
+colonnes :
+
+======================= ==================================================
+``<coefficient>_Biais``  le biais tiré, tel qu'il a servi
+``<coefficient>_FE``     le facteur d'échelle tiré
+``<coefficient>``        le coefficient dispersé obtenu
+``Mach``, ``Altitude_m`` les clés de point de vol, ce que ``par=`` nommera
+======================= ==================================================
+
+Les deux premières sont ce que ``valider_lot`` relit pour dire si le tirage
+suit sa loi ; la troisième alimente le panneau de reconstruction. Un modèle qui
+nomme ses colonnes autrement n'a pas à être renommé : voir l'argument
+``colonnes=`` et ``00_DOC/05_BRANCHER_SON_MODELE.md`` §5.4.
+
+Le défaut volontaire
+--------------------
+Un défaut est glissé exprès : au point de vol ``M = 0.85``, le facteur
 d'échelle de ``Cm_alpha`` est tiré avec une demi-étendue **doublée** — la
 confusion classique entre demi-étendue et écart-type. Rien ne le montre à
 l'œil sur une courbe ; c'est exactement ce que la validation doit rattraper.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Exécute les trois exemples de cfd-dispersion, dans l'ordre.
+# Exécute les quatre exemples de cfd-dispersion, dans l'ordre.
 #
-#     bash RUN_EXEMPLE.sh
+#     bash RUN_EXEMPLE.sh              # tout
+#     bash RUN_EXEMPLE.sh -n 200       # plus vite, moins de tirages
 #
 # Les sorties vont dans SORTIE/ (figures PNG et CSV).
 set -euo pipefail
@@ -14,6 +15,13 @@ cd "$ICI"
 # toujours ; on s'en sert aussi pour lancer les exemples.
 PY="${CFD_DISPERSION_PYTHON:-python3}"
 
+if ! "$PY" -c "import cfd_plot" 2>/dev/null; then
+    echo "cfd-plot n'est pas installé : les figures exigent ce paquet."
+    echo "    pip install -e tools/cfd-plot"
+    echo "Le calcul (lois, tirage, validation) tournerait, mais pas les exemples."
+    exit 1
+fi
+
 echo "== 1. Tirage des lois =========================================="
 "$PY" 01_tirage.py "$@"
 
@@ -23,12 +31,11 @@ echo "== 2. Monte-Carlo : validation et synthèse ====================="
 
 echo
 echo "== 3. Polaires dispersées via cfd_plot.batch_plot =============="
-if "$PY" -c "import cfd_plot" 2>/dev/null; then
-    "$PY" 03_polaire_batch_plot.py "$@"
-else
-    echo "cfd-plot n'est pas installé — étape ignorée."
-    echo "    pip install -e tools/cfd-plot"
-fi
+"$PY" 03_polaire_batch_plot.py "$@"
+
+echo
+echo "== 4. Bandes, corrélation, remplissages ========================"
+"$PY" 04_bande_et_correlation.py "$@"
 
 echo
 echo "Terminé. Résultats dans $ICI/SORTIE/"

@@ -34,15 +34,16 @@ de niveau module.
 
 Et cfd-plot dans tout ça
 ------------------------
-Le module s'importe sans lui, et :class:`HookDispersion` se construit et
-s'exécute sans lui : la superposition elle-même retombe sur Matplotlib nu comme
-le reste du paquet. Ce qui exige cfd-plot, c'est ``batch_plot`` — c'est-à-dire
-l'appelant.
+Il est exigé deux fois : par ``batch_plot`` lui-même, et par le tracé de la
+superposition — toutes les figures de cfd-dispersion passent par cfd-plot, qui
+définit le format du framework.
 
-:func:`hook_dispersion` le vérifie quand même, et lève un ``ImportError``
-nommant la commande d'installation. C'est une politesse, pas une nécessité : sans
-elle, l'échec surviendrait au milieu d'un lot de deux cents figures plutôt qu'à
-la ligne où l'on construit le hook.
+:func:`hook_dispersion` le vérifie donc à la construction du hook, et lève un
+``ImportError`` nommant la commande d'installation, plutôt que de laisser
+l'échec survenir au milieu d'un lot de deux cents figures.
+
+Seul le **calcul** — lois, tirage, validation, synthèse chiffrée — tourne sans
+cfd-plot.
 """
 
 from __future__ import annotations
@@ -68,7 +69,8 @@ def _exiger_cfd_plot() -> Any:
             "cfd_dispersion.batch a besoin de cfd-plot, qui n'est pas installé. "
             "cfd-plot est un paquet frère de ce dépôt, pas une publication PyPI :\n"
             "    pip install -e tools/cfd-plot\n"
-            "Les autres modules de cfd_dispersion fonctionnent sans lui."
+            "Le calcul de cfd_dispersion (lois, tirage, validation) tourne sans lui ; "
+            "les figures, non."
         ) from erreur
     return cfd_plot
 

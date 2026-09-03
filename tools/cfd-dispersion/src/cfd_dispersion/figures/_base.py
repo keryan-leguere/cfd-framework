@@ -1,12 +1,13 @@
-"""Plomberie commune aux figures : cfd-plot si présent, Matplotlib sinon.
+"""Plomberie commune aux figures : tout passe par cfd-plot.
 
-Toutes les figures du paquet passent par ici, pour deux raisons.
+Toutes les figures du paquet se tracent avec ``cfd_plot``, et par ces
+primitives-ci. Deux raisons.
 
-D'abord parce que ``cfd_plot`` est **optionnel** : le paquet doit rester
-utilisable déployé seul (voir
-:mod:`cfd_dispersion.report._plotting_lib`). Chaque primitive a donc une
-version cfd-plot, qui donne le style maison, et une version Matplotlib nue qui
-trace la même chose sans lui.
+D'abord le **format**. Police, tailles, marges, épaisseurs de trait, palette,
+gabarit d'export : tout cela est défini dans cfd-plot, pour l'ensemble du
+framework. Une figure de dispersion tracée en Matplotlib nu serait juste, et
+détonnerait au milieu d'un dossier. Le tracé exige donc cfd-plot — voir
+:mod:`cfd_dispersion.report._plotting_lib` — là où le calcul, lui, s'en passe.
 
 Ensuite parce que deux outils de tracé n'existent nulle part ailleurs et
 servent partout ici : :func:`assombrir`, qui donne à une courbe dérivée la
@@ -16,12 +17,12 @@ teinte de la courbe dont elle dérive, et :func:`etiqueter_ligne`, qui pose une
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -34,11 +35,13 @@ __all__ = [
     "assombrir",
     "boite_texte",
     "couleur_de_serie",
+    "enregistrer",
     "etiqueter_ligne",
     "legende",
     "nouvelle_figure",
     "remplir_entre",
     "style",
+    "surtitre",
     "titre",
     "tracer_bande",
     "tracer_ligne",
@@ -49,7 +52,7 @@ PROFIL_DEFAUT = "notebook"
 
 
 # ---------------------------------------------------------------------------
-# Primitives : cfd-plot quand il est là, Matplotlib sinon
+# Primitives : cfd-plot, et rien d'autre
 # ---------------------------------------------------------------------------
 
 
@@ -60,11 +63,7 @@ def style(profil: str = PROFIL_DEFAUT) -> Iterator[None]:
     ``style_context`` et non ``use_style`` : ce dernier modifie les rcParams
     globaux et laisserait l'appelant avec un style qu'il n'a pas demandé.
     """
-    module = get_plotting()
-    if module is None:
-        yield
-        return
-    with module.style_context(profil):
+    with get_plotting().style_context(profil):
         yield
 
 
@@ -75,21 +74,13 @@ def nouvelle_figure(
     figsize: tuple[float, float] | None = None,
     **kwargs: Any,
 ) -> tuple[Figure, Any]:
-    """Crée une figure et sa grille d'axes."""
-    module = get_plotting()
-    if module is not None:
-        return module.new_figure(nrows, ncols, figsize=figsize, **kwargs)  # type: ignore[no-any-return]
-    return plt.subplots(nrows, ncols, figsize=figsize, **kwargs)
+    """Crée une figure et sa grille d'axes (``cfd_plot.new_figure``)."""
+    return get_plotting().new_figure(nrows, ncols, figsize=figsize, **kwargs)  # type: ignore[no-any-return]
 
 
 def tracer_ligne(ax: Axes, x: Any, y: Any, **kwargs: Any) -> Any:
-    """Trace une courbe, avec le traitement de marqueur maison si disponible."""
-    module = get_plotting()
-    if module is not None:
-        return module.plot_line(ax, x, y, **kwargs)
-    kwargs.setdefault("marker", "")
-    (ligne,) = ax.plot(x, y, **kwargs)
-    return ligne
+    """Trace une courbe (``cfd_plot.plot_line``)."""
+    return get_plotting().plot_line(ax, x, y, **kwargs)
 
 
 def tracer_bande(
@@ -104,32 +95,18 @@ def tracer_bande(
     label_bande: str | None = None,
     **kwargs: Any,
 ) -> tuple[Any, Any]:
-    """Trace une courbe centrale et son enveloppe."""
-    module = get_plotting()
-    if module is not None:
-        return module.plot_with_band(  # type: ignore[no-any-return]
-            ax,
-            x,
-            y,
-            y_low=y_bas,
-            y_high=y_haut,
-            band_alpha=alpha,
-            band_color=couleur_bande,
-            band_label=label_bande,
-            **kwargs,
-        )
-    kwargs.setdefault("marker", "")
-    (ligne,) = ax.plot(x, y, **kwargs)
-    polygone = ax.fill_between(
+    """Trace une courbe centrale et son enveloppe (``cfd_plot.plot_with_band``)."""
+    return get_plotting().plot_with_band(  # type: ignore[no-any-return]
+        ax,
         x,
-        y_bas,
-        y_haut,
-        alpha=alpha,
-        color=couleur_bande if couleur_bande is not None else ligne.get_color(),
-        label=label_bande,
-        linewidth=0.0,
+        y,
+        y_low=y_bas,
+        y_high=y_haut,
+        band_alpha=alpha,
+        band_color=couleur_bande,
+        band_label=label_bande,
+        **kwargs,
     )
-    return ligne, polygone
 
 
 def remplir_entre(
@@ -144,39 +121,16 @@ def remplir_entre(
     lignes: bool = False,
     **kwargs: Any,
 ) -> Any:
-    """Remplit la zone entre deux courbes."""
-    module = get_plotting()
-    if module is not None:
-        _, polygones = module.fill_between_curves(
-            ax, x, y1, y2, color=couleur, alpha=alpha, label=label, lines=lignes, **kwargs
-        )
-        return polygones[0] if polygones else None
-    return ax.fill_between(
-        x, y1, y2, color=couleur, alpha=alpha, label=label, linewidth=0.0, **kwargs
+    """Remplit la zone entre deux courbes (``cfd_plot.fill_between_curves``)."""
+    _, polygones = get_plotting().fill_between_curves(
+        ax, x, y1, y2, color=couleur, alpha=alpha, label=label, lines=lignes, **kwargs
     )
+    return polygones[0] if polygones else None
 
 
 def boite_texte(ax: Axes, texte: str, *, loc: str = "upper right", **kwargs: Any) -> Text:
-    """Pose une boîte de texte ancrée dans un coin des axes."""
-    module = get_plotting()
-    if module is not None:
-        return module.add_textbox(ax, texte, loc=loc, **kwargs)  # type: ignore[no-any-return]
-
-    ancres = {
-        "upper left": (0.02, 0.98, "left", "top"),
-        "upper right": (0.98, 0.98, "right", "top"),
-        "lower left": (0.02, 0.02, "left", "bottom"),
-        "lower right": (0.98, 0.02, "right", "bottom"),
-        "upper center": (0.5, 0.98, "center", "top"),
-        "lower center": (0.5, 0.02, "center", "bottom"),
-    }
-    if loc not in ancres:
-        raise ValueError(f"position inconnue : {loc!r} ; attendu l'une de {sorted(ancres)}")
-    x, y, ha, va = ancres[loc]
-    kwargs.setdefault(
-        "bbox", {"boxstyle": "round", "facecolor": "white", "alpha": 0.85, "edgecolor": "0.7"}
-    )
-    return ax.text(x, y, texte, transform=ax.transAxes, ha=ha, va=va, **kwargs)
+    """Pose une boîte de texte ancrée dans un coin (``cfd_plot.add_textbox``)."""
+    return get_plotting().add_textbox(ax, texte, loc=loc, **kwargs)  # type: ignore[no-any-return]
 
 
 def legende(ax: Axes, **kwargs: Any) -> Any:
@@ -189,26 +143,50 @@ def legende(ax: Axes, **kwargs: Any) -> Any:
     """
     if not ax.get_legend_handles_labels()[0]:
         return None
-    module = get_plotting()
-    if module is not None:
-        return module.make_legend(ax, **kwargs)
-    return ax.legend(**kwargs)
+    return get_plotting().make_legend(ax, **kwargs)
 
 
 def titre(ax: Axes, texte: str, **kwargs: Any) -> Any:
-    """Pose le titre d'un panneau."""
-    module = get_plotting()
-    if module is not None:
-        return module.set_title(ax, texte, **kwargs)
-    return ax.set_title(texte, **kwargs)
+    """Pose le titre d'un panneau (``cfd_plot.set_title``)."""
+    return get_plotting().set_title(ax, texte, **kwargs)
 
 
 def surtitre(fig: Figure, texte: str, **kwargs: Any) -> Any:
-    """Pose le titre général d'une figure."""
-    module = get_plotting()
-    if module is not None:
-        return module.set_suptitle(fig, texte, **kwargs)
-    return fig.suptitle(texte, **kwargs)
+    """Pose le titre général d'une figure (``cfd_plot.set_suptitle``)."""
+    return get_plotting().set_suptitle(fig, texte, **kwargs)
+
+
+#: Extensions de figure reconnues, pour tolérer un chemin déjà suffixé.
+EXTENSIONS_FIGURE: frozenset[str] = frozenset({"png", "svg", "pdf", "eps", "jpg", "jpeg", "emf"})
+
+
+def enregistrer(
+    fig: Figure,
+    chemin: Any,
+    *,
+    formats: Sequence[str] = ("png",),
+    **kwargs: Any,
+) -> list[Path]:
+    """Écrit une figure (``cfd_plot.save_figure``), et rend les fichiers écrits.
+
+    *chemin* est donné **sans extension** : un fichier est écrit par format
+    demandé. Passer par ici plutôt que par ``Figure.savefig`` n'est pas une
+    coquetterie — c'est ce qui donne au fichier le DPI, les marges et le fond
+    du profil de style, donc ce qui fait qu'il s'imprime comme les autres
+    figures du dossier.
+
+    Un point dans le nom est admis, et c'est la raison d'être de cette
+    fonction. ``save_figure`` compose son fichier avec ``Path.with_suffix``,
+    qui remplace tout ce qui suit le **dernier** point : un nom aussi banal que
+    ``CN_Mach0.85`` y perd son ``.85``, et toute une série de points de vol
+    s'écrase silencieusement dans un seul fichier. Un suffixe factice est donc
+    ajouté avant l'appel, pour que ce soit lui que ``with_suffix`` remplace.
+    """
+    base = Path(chemin)
+    if base.suffix.lstrip(".").lower() in EXTENSIONS_FIGURE:
+        base = base.with_suffix("")
+    base = base.with_name(base.name + ".figure")
+    return get_plotting().save_figure(fig, base, formats=tuple(formats), **kwargs)  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------

@@ -155,7 +155,14 @@ def cmd_exemple(args: argparse.Namespace) -> int:
             f"le répertoire {destination} existe et n'est pas vide",
             indice="choisir une destination vide, ou la supprimer",
         )
-    shutil.copytree(EXEMPLE_DIR, destination, dirs_exist_ok=True)
+    # Sans filtre, une exécution antérieure de l'exemple voyage avec lui : on
+    # livrerait des figures déjà faites dans un répertoire censé être vierge.
+    shutil.copytree(
+        EXEMPLE_DIR,
+        destination,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "SORTIE", "*.pyc"),
+    )
     console.print(f"[{theme.OK}]Exemple copié dans[/] {destination}")
     console.print(f"[{theme.DISCRET}]bash {destination}/RUN_EXEMPLE.sh[/]")
     return 0

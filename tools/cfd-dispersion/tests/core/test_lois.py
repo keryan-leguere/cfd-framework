@@ -102,6 +102,24 @@ class TestErreursDeTable:
         with pytest.raises(ValueError, match="type de loi inconnu"):
             charger_lois(table)
 
+    def test_un_triplet_invalide_nomme_le_coefficient_et_la_composante(
+        self, table: dict[str, dict[str, float]]
+    ) -> None:
+        """`LoiDispersion` valide, mais ne sait pas d'où vient le triplet.
+
+        Sans rattrapage, une table de trente coefficients rendrait « type de
+        loi inconnu : 9 » sans dire lequel — le message le plus inutile
+        possible sur la seule entrée que l'utilisateur écrit à la main.
+        """
+        table["Cn_beta"]["FE_Type"] = 9
+        with pytest.raises(ValueError, match=r"coefficient 'Cn_beta', FE"):
+            charger_lois(table)
+
+        table["Cn_beta"]["FE_Type"] = 4
+        table["Cn_beta"]["FE_ET"] = -1.0
+        with pytest.raises(ValueError, match=r"coefficient 'Cn_beta', FE"):
+            charger_lois(table)
+
     def test_une_specification_non_dictionnaire_est_refusee(self) -> None:
         with pytest.raises(ValueError, match="dictionnaire"):
             charger_lois({"CN": [4, 0.0, 0.1]})  # type: ignore[dict-item]

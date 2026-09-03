@@ -1,8 +1,9 @@
-"""Plomberie des figures : couleurs, étiquetage sur courbe, repli Matplotlib."""
+"""Plomberie des figures : délégation à cfd-plot, couleurs, étiquetage sur courbe."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -14,13 +15,18 @@ from cfd_dispersion.figures._base import (
     assombrir,
     boite_texte,
     couleur_de_serie,
+    enregistrer,
     etiqueter_ligne,
     legende,
     nouvelle_figure,
     remplir_entre,
+    style,
+    surtitre,
+    titre,
     tracer_bande,
     tracer_ligne,
 )
+from cfd_dispersion.report._plotting_lib import get_plotting
 
 
 @pytest.fixture
@@ -164,40 +170,123 @@ class TestPrimitives:
         legende(axes)
 
 
-class TestSansCfdPlot:
-    """Le paquet doit tracer la même chose sans cfd-plot installé."""
+class TestToutPasseParCfdPlot:
+    """Le format des figures vient de cfd-plot, pas de Matplotlib nu.
+
+    Ces primitives sont le seul chemin de tracé du paquet. Si l'une d'elles
+    cessait de déléguer, ses figures sortiraient hors gabarit sans qu'aucune
+    autre assertion ne bronche : c'est un défaut de *format*, et aucune
+    vérification de contenu ne l'attrape.
+    """
 
     @pytest.fixture
-    def sans_plotting(self, monkeypatch: pytest.MonkeyPatch) -> Any:
+    def espion(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        """Un faux cfd_plot qui note les fonctions demandées."""
         import cfd_dispersion.figures._base as base
 
-        monkeypatch.setattr(base, "get_plotting", lambda: None)
-        return base
+        appels: list[str] = []
+        vrai = get_plotting()
 
-    def test_nouvelle_figure_fonctionne(self, sans_plotting: Any) -> None:
+        class Espion:
+            def __getattr__(self, nom: str) -> Any:
+                appels.append(nom)
+                return getattr(vrai, nom)
+
+        monkeypatch.setattr(base, "get_plotting", Espion)
+        return appels
+
+    def test_les_primitives_deleguent_toutes(self, espion: list[str]) -> None:
         import matplotlib.pyplot as plt
 
-        figure, ax = sans_plotting.nouvelle_figure(1, 2)
-        assert len(np.ravel(ax)) == 2
+        figure, ax = nouvelle_figure()
+        tracer_ligne(ax, [0, 1], [0, 1], label="a", color="C0")
+        tracer_bande(ax, [0, 1], [0, 1], y_bas=[-1, 0], y_haut=[1, 2])
+        remplir_entre(ax, [0, 1], [0, 0], [1, 1])
+        boite_texte(ax, "x", loc="upper left")
+        legende(ax)
+        titre(ax, "titre")
+        surtitre(figure, "surtitre")
         plt.close(figure)
 
-    def test_les_primitives_fonctionnent(self, sans_plotting: Any) -> None:
+        assert espion == [
+            "new_figure",
+            "plot_line",
+            "plot_with_band",
+            "fill_between_curves",
+            "add_textbox",
+            "make_legend",
+            "set_title",
+            "set_suptitle",
+        ]
+
+    def test_le_style_passe_par_style_context(self, espion: list[str]) -> None:
+        with style("paper"):
+            pass
+        # ``use_style`` modifierait les rcParams globaux de l'appelant.
+        assert espion == ["style_context"]
+
+    def test_enregistrer_ecrit_par_save_figure(self, espion: list[str], tmp_path: Path) -> None:
         import matplotlib.pyplot as plt
 
-        figure, ax = sans_plotting.nouvelle_figure()
-        sans_plotting.tracer_ligne(ax, [0, 1], [0, 1], label="a", color="C0")
-        sans_plotting.tracer_bande(ax, [0, 1], [0, 1], y_bas=[-1, 0], y_haut=[1, 2])
-        sans_plotting.remplir_entre(ax, [0, 1], [0, 0], [1, 1])
-        sans_plotting.boite_texte(ax, "x", loc="upper left")
-        sans_plotting.legende(ax)
-        sans_plotting.titre(ax, "titre")
-        assert ax.get_title() == "titre"
+        figure, ax = nouvelle_figure()
+        tracer_ligne(ax, [0, 1], [0, 1])
+        ecrits = enregistrer(figure, tmp_path / "essai", formats=("png",))
         plt.close(figure)
 
-    def test_une_position_de_boite_inconnue_est_refusee(self, sans_plotting: Any) -> None:
+        assert "save_figure" in espion
+        assert ecrits and ecrits[0].is_file()
+        assert ecrits[0].suffix == ".png"
+
+    def test_un_point_dans_le_nom_ne_tronque_pas_le_fichier(self, tmp_path: Path) -> None:
+        """« CN_Mach0.85 » doit rester « CN_Mach0.85.png ».
+
+        ``save_figure`` compose son fichier par ``Path.with_suffix``, qui
+        remplace tout ce qui suit le dernier point. Sans garde-fou, une série
+        de points de vol s'écrase entière dans un seul fichier, sans erreur —
+        et c'est le nom de figure le plus courant du framework.
+        """
         import matplotlib.pyplot as plt
 
-        figure, ax = sans_plotting.nouvelle_figure()
-        with pytest.raises(ValueError, match="position inconnue"):
-            sans_plotting.boite_texte(ax, "x", loc="nowhere")
+        ecrits = []
+        for mach in (0.70, 0.85):
+            figure, ax = nouvelle_figure()
+            tracer_ligne(ax, [0, 1], [0, 1])
+            ecrits += enregistrer(figure, tmp_path / f"CN_Mach{mach:g}", formats=("png", "svg"))
+            plt.close(figure)
+
+        noms = sorted(chemin.name for chemin in ecrits)
+        assert noms == [
+            "CN_Mach0.7.png",
+            "CN_Mach0.7.svg",
+            "CN_Mach0.85.png",
+            "CN_Mach0.85.svg",
+        ]
+        assert all(chemin.is_file() for chemin in ecrits)
+
+    def test_une_extension_deja_presente_n_est_pas_doublee(self, tmp_path: Path) -> None:
+        import matplotlib.pyplot as plt
+
+        figure, ax = nouvelle_figure()
+        tracer_ligne(ax, [0, 1], [0, 1])
+        (chemin,) = enregistrer(figure, tmp_path / "essai.png", formats=("png",))
         plt.close(figure)
+        assert chemin.name == "essai.png"
+
+
+class TestCfdPlotManquant:
+    """Sans cfd-plot, l'échec doit nommer la commande à taper."""
+
+    def test_get_plotting_leve_un_import_error_explicite(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cfd_dispersion.report import _plotting_lib
+
+        monkeypatch.setattr(_plotting_lib, "_importer", lambda: None)
+        with pytest.raises(ImportError, match="pip install -e tools/cfd-plot"):
+            _plotting_lib.get_plotting()
+
+    def test_cfd_plot_disponible_ne_leve_pas(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cfd_dispersion.report import _plotting_lib
+
+        monkeypatch.setattr(_plotting_lib, "_importer", lambda: None)
+        assert _plotting_lib.cfd_plot_disponible() is False

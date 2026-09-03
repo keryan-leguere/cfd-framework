@@ -261,7 +261,11 @@ def _reconstruction_scalaire(ax: Axes, coefficient: str, nominal: float, dispers
     # barres négatives, au-dessus des positives — et le haut en garde toujours
     # pour la boîte de paramètres.
     marge_bas = 0.28 if bas < 0.0 else 0.08
-    marge_haut = 0.40 if haut > 0.0 else 0.20
+    # 0.62 et non 0.40 : la boîte de paramètres fait quatre lignes et descend
+    # jusqu'au tiers supérieur des axes, juste au-dessus de la barre nominale.
+    # Une marge trop courte lui fait recouvrir l'étiquette de cette barre —
+    # c'est-à-dire le chiffre que le panneau existe pour donner.
+    marge_haut = 0.62 if haut > 0.0 else 0.20
     ax.set_ylim(bas - marge_bas * etendue, haut + marge_haut * etendue)
 
 

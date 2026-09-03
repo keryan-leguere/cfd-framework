@@ -348,11 +348,20 @@ def _lire_coefficient(coeff: str, specification: Mapping[str, Any]) -> LoiCoeffi
 
     composantes = {}
     for prefixe in COMPOSANTES:
-        composantes[prefixe] = LoiDispersion(
-            type_loi=_entier(coeff, f"{prefixe}_Type", specification[f"{prefixe}_Type"]),
-            M=_reel(coeff, f"{prefixe}_M", specification[f"{prefixe}_M"]),
-            ET=_reel(coeff, f"{prefixe}_ET", specification[f"{prefixe}_ET"]),
-        )
+        # `LoiDispersion` valide le triplet mais ne sait pas de quel
+        # coefficient il vient : sans ce rattrapage, une table de trente
+        # coefficients rendrait « type de loi inconnu : 9 » et rien de plus.
+        try:
+            composantes[prefixe] = LoiDispersion(
+                type_loi=_entier(coeff, f"{prefixe}_Type", specification[f"{prefixe}_Type"]),
+                M=_reel(coeff, f"{prefixe}_M", specification[f"{prefixe}_M"]),
+                ET=_reel(coeff, f"{prefixe}_ET", specification[f"{prefixe}_ET"]),
+            )
+        except ValueError as erreur:
+            message = str(erreur)
+            if message.startswith("coefficient "):
+                raise
+            raise ValueError(f"coefficient {coeff!r}, {prefixe} : {message}") from None
     return LoiCoefficient(nom=coeff, biais=composantes["Biais"], fe=composantes["FE"])
 
 
