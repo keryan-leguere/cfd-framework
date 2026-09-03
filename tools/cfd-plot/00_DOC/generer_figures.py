@@ -13,6 +13,8 @@ rebuild them when the library changes.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib
 
 from cfd_plot._compat import zip_strict
@@ -24,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from cfd_plot import (
+    PALETTES,
     add_reference_lines,
     add_shared_colorbar,
     add_textbox,
@@ -33,6 +36,7 @@ from cfd_plot import (
     batch_compare_flight_points,
     batch_plot,
     compute_speed,
+    contact_sheet,
     dataframe_to_grid,
     discover_flight_point_values,
     dual_axis,
@@ -43,6 +47,9 @@ from cfd_plot import (
     make_legend,
     mask_field,
     new_figure,
+    palette_colors,
+    panel_labels,
+    pdf_report,
     plot_bar,
     plot_contour,
     plot_contour_quiver,
@@ -63,19 +70,8 @@ from cfd_plot import (
     sync_axes_limits,
     use_style,
 )
-from cfd_plot.dispersion import (
-    DispersionSpec,
-    QuantityDispersion,
-    band_from_dispersion,
-    plot_dispersion_band,
-    plot_dispersion_cdf,
-    plot_dispersion_dashboard,
-    plot_dispersion_matrix,
-    plot_dispersion_pdf,
-    plot_dispersion_type,
-)
 
-ICI = __import__("pathlib").Path(__file__).resolve().parent
+ICI = Path(__file__).resolve().parent
 FIGURES = ICI / "FIGURES"
 DPI = 110
 
@@ -563,93 +559,9 @@ def fig_declassify() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 14 — dispersion submodule
-# ---------------------------------------------------------------------------
-
-def fig_dispersion() -> None:
-    use_style("notebook")
-    rng = np.random.default_rng(7)
-
-    specs = [DispersionSpec(disp_type=t, moy=0.0 if t != 2 else 0.5, var=0.0 if t in (1, 2) else 1.0)
-             for t in range(1, 7)]
-    with style_context("notebook"):
-        fig, axes = plt.subplots(2, 3, figsize=(13, 6))
-        for ax, spec in zip_strict(axes.ravel(), specs):
-            plot_dispersion_type(spec, ax=ax)
-        set_suptitle(fig, "plot_dispersion_type — the six distribution shapes")
-    _write(fig, "14_dispersion_types")
-
-    # NB: the model is (1 + scale) * nominal + bias, so a *centred* scale
-    # error has moy=0.0 (not 1.0), and var is a half-range (sigma = var/2).
-    qty = QuantityDispersion(
-        name=r"$C_{m\alpha}$",
-        nominal=-0.42,
-        bias=DispersionSpec(disp_type=4, moy=0.0, var=0.02),
-        scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),
-    )
-
-    fig, _ = plot_dispersion_pdf(qty, n=20000, rng=rng)
-    _write(fig, "15_dispersion_pdf")
-
-    fig, _ = plot_dispersion_cdf(qty, n=20000, rng=rng)
-    _write(fig, "16_dispersion_cdf")
-
-    fig, _ = plot_dispersion_dashboard(qty, n=20000, rng=rng)
-    _write(fig, "17_dispersion_dashboard")
-
-    qty2 = QuantityDispersion(
-        name=r"$C_{N\alpha}$",
-        nominal=0.11,
-        bias=DispersionSpec(disp_type=3, moy=0.0, var=0.004),
-        scale=DispersionSpec(disp_type=5, moy=0.0, var=0.08),
-    )
-    qty3 = QuantityDispersion(
-        name=r"$X_{cp}$",
-        nominal=0.31,
-        bias=DispersionSpec(disp_type=4, moy=0.0, var=0.01),
-        scale=DispersionSpec(disp_type=4, moy=0.0, var=0.06),
-    )
-    fig, _ = plot_dispersion_matrix([qty, qty2, qty3], n=20000, rng=rng, ncols=3)
-    _write(fig, "18_dispersion_matrix")
-
-
-# ---------------------------------------------------------------------------
-# 18b — a dispersion propagated along a sweep, correlated vs independent
-# ---------------------------------------------------------------------------
-
-def fig_dispersion_band() -> None:
-    """The distinction the module docstring insists on, drawn side by side.
-
-    Both panels use the *same* dispersion and produce near-identical
-    envelopes; only what lies inside them differs. That is exactly why the
-    realisations are worth drawing.
-    """
-    alpha, cn_sa, _, _ = _polar()
-    bias = DispersionSpec(disp_type=5, moy=0.0, var=0.02)
-    scale = DispersionSpec(disp_type=6, moy=0.0, var=0.10)
-
-    with style_context("notebook"):
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
-        for ax, correlated, titre in (
-            (axes[0], True, "correlated=True — one error tilts the whole curve"),
-            (axes[1], False, "correlated=False — an independent error per point"),
-        ):
-            band = band_from_dispersion(
-                alpha, cn_sa, bias=bias, scale=scale,
-                n=20000, correlated=correlated, rng=np.random.default_rng(3),
-            )
-            plot_dispersion_band(ax, band, label=r"$C_N$ (mean)", realisations=15)
-            ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
-            set_title(ax, titre, loc="left", fontsize=10)
-            make_legend(ax, loc="upper left")
-        sync_axes_limits(axes, which="y")
-        set_suptitle(fig, "band_from_dispersion — same envelope, different realisations")
-    _write(fig, "18b_dispersion_band")
-
-
-# ---------------------------------------------------------------------------
 # 19/20 — batch plotting, driven from the E2E CSV fixtures
 # ---------------------------------------------------------------------------
+
 
 def _batch_config():
     """Build the four dictionaries batch_plot consumes, from the test CSVs."""
@@ -760,6 +672,132 @@ def fig_batch() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 22 — panel labels
+# ---------------------------------------------------------------------------
+
+def fig_panel_labels() -> None:
+    use_style("paper")
+    alpha, cn, _, _ = _polar()
+
+    fig, axes = new_figure(2, 2, figsize=(10, 7))
+    flat = axes.ravel()
+    for index, ax in enumerate(flat):
+        plot_line(ax, alpha, cn * (1.0 + 0.15 * index), label=f"config {index + 1}")
+        ax.set_xlabel(r"$\alpha$ [deg]")
+        ax.set_ylabel(r"$C_N$ [-]")
+        make_legend(ax)
+
+    panel_labels(axes)
+    set_suptitle(fig, "panel_labels — (a) (b) (c) for the caption to point at")
+    _write(fig, "22_panel_labels")
+
+
+# ---------------------------------------------------------------------------
+# 23 — palettes
+# ---------------------------------------------------------------------------
+
+def fig_palettes() -> None:
+    use_style("paper")
+    alpha, cn, _, _ = _polar()
+
+    names = ["okabe_ito", "tol_bright", "tol_muted", "grayscale"]
+    fig, axes = new_figure(2, 2, figsize=(10, 7))
+    for ax, name in zip(axes.ravel(), names):
+        colors = palette_colors(name, 5)
+        for index, color in enumerate(colors):
+            plot_line(ax, alpha, cn * (1.0 + 0.12 * index), color=color, label=f"s{index + 1}")
+        ax.set_xlabel(r"$\alpha$ [deg]")
+        ax.set_ylabel(r"$C_N$ [-]")
+        set_title(ax, f"{name} ({len(PALETTES[name])} colours)")
+
+    set_suptitle(fig, "Named colour cycles — colourblind-safe, and one for print")
+    _write(fig, "23_palettes")
+
+
+# ---------------------------------------------------------------------------
+# 24 — contact sheet and PDF report
+# ---------------------------------------------------------------------------
+
+def fig_pdf_report() -> None:
+    """Render a small study, then show the two ways of collecting it."""
+    import shutil
+    import tempfile
+
+    use_style("paper")
+    alpha, cn, _, _ = _polar()
+    tmp = Path(tempfile.mkdtemp(prefix="cfd_plot_report_"))
+
+    # A handful of figures standing in for a parametric study.
+    pngs: list[Path] = []
+    figures = []
+    for index, mach in enumerate([0.60, 0.70, 0.80, 0.85, 0.90, 0.95]):
+        fig, ax = new_figure()
+        plot_line(ax, alpha, cn * (1.0 + 0.25 * index), label=r"$k\!-\!\omega$")
+        plot_line(ax, alpha, cn * (1.0 + 0.25 * index) * 1.04, label="SA")
+        ax.set_xlabel(r"$\alpha$ [deg]")
+        ax.set_ylabel(r"$C_N$ [-]")
+        make_legend(ax)
+        set_title(ax, f"M = {mach:.2f}")
+        fig.set_label(f"CN_vs_alpha, M={mach:.2f}")
+        pngs.extend(save_figure(fig, tmp / f"CN_M{mach:.2f}", formats=("png",)))
+        figures.append(fig)
+
+    # (a) contact sheet — triage, everything at once.
+    sheets = contact_sheet(pngs, tmp / "sheet.png", rows=2, cols=3, title="Study — contact sheet")
+    shutil.copy(sheets[0], FIGURES / "24_contact_sheet.png")
+    print("  24_contact_sheet.png")
+
+    # (b) the report — cover, contents, one page per figure.
+    report = pdf_report(
+        figures,
+        tmp / "ETUDE.pdf",
+        title="Mach sweep",
+        subtitle="k-omega vs Spalart-Allmaras",
+        summary=[("Figures", str(len(figures))), ("Mach", "0.60 - 0.95")],
+    )
+    for fig in figures:
+        plt.close(fig)
+
+    # Show the first pages of the report side by side, if a rasteriser is around.
+    _report_preview(report, FIGURES / "25_pdf_report.png")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _report_preview(pdf_path: Path, out_path: Path) -> None:
+    """Paste the first three pages of *pdf_path* side by side, via pdftoppm.
+
+    Skipped when Poppler is not installed: the README picture is a convenience,
+    not something worth adding a dependency for.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if shutil.which("pdftoppm") is None:
+        print("  (25_pdf_report.png skipped — pdftoppm not found)")
+        return
+
+    with tempfile.TemporaryDirectory() as raw:
+        subprocess.run(
+            ["pdftoppm", "-png", "-r", "80", "-f", "1", "-l", "3", str(pdf_path), f"{raw}/pg"],
+            check=True,
+        )
+        pages = sorted(Path(raw).glob("pg-*.png"))
+        if not pages:
+            return
+        images = [plt.imread(str(page)) for page in pages]
+
+        fig, axes = new_figure(1, len(images), figsize=(4.0 * len(images), 5.2))
+        for ax, image, name in zip(axes.ravel(), images, ["cover", "contents", "figure"]):
+            ax.imshow(image)
+            ax.set_axis_off()
+            set_title(ax, name)
+        set_suptitle(fig, "pdf_report — one document out of a whole study")
+        _write(fig, out_path.stem)
+
+
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
@@ -779,10 +817,11 @@ def main() -> None:
     fig_shared_colorbar()
     fig_prep()
     fig_declassify()
-    fig_dispersion()
-    fig_dispersion_band()
     fig_batch()
     fig_animation()
+    fig_panel_labels()
+    fig_palettes()
+    fig_pdf_report()
     print("Done.")
 
 

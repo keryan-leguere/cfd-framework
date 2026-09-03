@@ -17,9 +17,10 @@ import warnings
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from contextlib import ExitStack
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -28,14 +29,18 @@ import pandas as pd
 
 from cfd_plot._compat import zip_strict
 
+from .cleanup import CleanReport, clean_figure_dir
 from .mpl_template import (
     make_legend,
     plot_line,
     save_figure,
     set_suptitle,
     set_title,
+    sync_axes_limits,
     use_style,
 )
+from .pdf import PdfReportSpec
+from .pdf.assemble import ReportBuilder
 
 # NOTE: do *not* call matplotlib.use("Agg") in this module. It is re-exported by
 # cfd_plot/__init__.py, so an import-time backend switch applies to anyone who
@@ -98,6 +103,9 @@ class BatchPlotContext:
     output_path: Path
     compare_name: str | None = None
     panel_index: int | None = None
+    fold_kind: str | None = None
+    fold_layout: str | None = None
+    fold_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -718,6 +726,759 @@ def _enumerate_jobs(
     return jobs
 
 
+
+# ---------------------------------------------------------------------------
+# Folded figures
+# ---------------------------------------------------------------------------
+#
+# A batch run answers "one figure per (polar, flight point, fixed sweep, Y)",
+# which is the right unit to *produce* and the wrong unit to *read*: comparing
+# CN and CA at one condition means opening two files, and comparing one Y
+# across five altitudes means opening five files in five directories.
+#
+# Folding adds bonus figures that gather those siblings onto one sheet. It
+# never replaces the individual figures — they stay exactly where they were,
+# and the fold is an extra file next to them (kind="y") or in its own
+# sub-directory (kind="context").
+#
+# Two axes of variation are worth folding, and they are folded differently:
+#
+# kind="y"        every Y of one condition, as subplots. Never overlaid: the
+#                 quantities have different units, so a shared Y axis would be
+#                 meaningless, and for the same reason the panels are never
+#                 axis-synchronised by default.
+# kind="context"  one Y across the conditions that only differ by a directory
+#                 level (altitudes, Mach numbers, a fixed sweep). Same
+#                 quantity, same unit, so both layouts make sense: subplots
+#                 (one panel per condition) or overlay (one axes, all
+#                 conditions).
+
+#: Filename stem of a ``kind="y"`` fold, written beside the figures it gathers.
+FOLD_Y_STEM = "FOLD_Y"
+
+_FOLD_KINDS = ("y", "context")
+_FOLD_LAYOUTS = ("subplot", "overlay")
+_FOLD_SYNC_VALUES = ("x", "y", "both")
+_FOLD_OVERLAY_COLOR = ("fold", "source")
+
+# Line styles cycled per folded condition when overlay_color="source", so the
+# source keeps its colour and the condition is read off the dash pattern.
+_OVERLAY_LINESTYLES = ("-", "--", ":", "-.", (0, (3, 1, 1, 1)), (0, (5, 1)))
+
+# An overlay legend can carry n_conditions x n_sources entries; past this many
+# it goes to two columns rather than off the bottom of the axes.
+_OVERLAY_LEGEND_NCOL_THRESHOLD = 8
+
+_FOLD_PANEL_HEIGHT_FACTOR = 1.15
+_FOLD_OVERLAY_SIZE_FACTOR = (1.25, 1.1)
+
+
+@dataclass(frozen=True)
+class FoldSpec:
+    """How to fold a family of batch figures onto one sheet.
+
+    Parameters
+    ----------
+    kind :
+        ``"y"`` gathers every Y of one condition (one panel per Y);
+        ``"context"`` gathers one Y across several conditions.
+    layout :
+        ``"subplot"`` (one panel each) or ``"overlay"`` (one axes, every
+        condition drawn together). ``"overlay"`` is rejected for ``kind="y"``:
+        stacking quantities with different units on one axis is not a figure,
+        it is a coincidence.
+    over :
+        For ``kind="context"``, the flight-point / sweep keys to fold over —
+        e.g. ``("Altitude_m",)`` to put every altitude on one sheet and keep a
+        separate sheet per Mach. Defaults to *every* key that varies inside the
+        polar, i.e. one sheet per Y covering the whole study.
+    max_panels :
+        Panels (or overlaid conditions) per figure. A family larger than this
+        is split into several numbered figures rather than shrunk to
+        illegibility.
+    max_cols :
+        Columns in the subplot grid, 1–3.
+    folder :
+        Sub-directory of the polar holding ``kind="context"`` folds. Defaults
+        to ``FOLD`` for subplots and ``FOLD_OVERLAY`` for overlays, so
+        requesting both layouts does not make them collide. Ignored by
+        ``kind="y"``, which writes beside the figures it folds.
+    sync_axes :
+        ``"x"``, ``"y"``, ``"both"`` or ``None``. The default ``"auto"`` means
+        ``"both"`` for ``kind="context"`` subplots — same quantity, same units,
+        so a shared scale is what makes the panels comparable — and ``None``
+        everywhere else. Synchronisation happens *before* ``on_before_save``,
+        so a hook that sets its own limits still wins.
+    overlay_color :
+        ``"fold"`` (default) gives each condition its own colour and leaves the
+        marker/linestyle from ``configuration_dict`` to identify the source —
+        the readable choice when there is one source, or few. ``"source"``
+        keeps each source's own colour and cycles the linestyle per condition.
+    """
+
+    kind: str = "y"
+    layout: str = "subplot"
+    over: tuple[str, ...] | None = None
+    max_panels: int = 6
+    max_cols: int = 3
+    folder: str | None = None
+    sync_axes: str | None = "auto"
+    overlay_color: str = "fold"
+
+    def __post_init__(self) -> None:
+        if self.kind not in _FOLD_KINDS:
+            raise ValueError(f"FoldSpec.kind must be one of {_FOLD_KINDS}, got {self.kind!r}.")
+        if self.layout not in _FOLD_LAYOUTS:
+            raise ValueError(f"FoldSpec.layout must be one of {_FOLD_LAYOUTS}, got {self.layout!r}.")
+        if self.kind == "y" and self.layout == "overlay":
+            raise ValueError(
+                "FoldSpec(kind='y', layout='overlay') is not supported: the Y quantities "
+                "have different units, so a single shared axis would be meaningless. "
+                "Use layout='subplot' for kind='y'."
+            )
+        if self.max_panels < 2:
+            raise ValueError(f"FoldSpec.max_panels must be >= 2, got {self.max_panels}.")
+        if not 1 <= self.max_cols <= 3:
+            raise ValueError(f"FoldSpec.max_cols must be between 1 and 3, got {self.max_cols}.")
+        if self.sync_axes not in (None, "auto", *_FOLD_SYNC_VALUES):
+            raise ValueError(
+                f"FoldSpec.sync_axes must be None, 'auto' or one of {_FOLD_SYNC_VALUES}, "
+                f"got {self.sync_axes!r}."
+            )
+        if self.overlay_color not in _FOLD_OVERLAY_COLOR:
+            raise ValueError(
+                f"FoldSpec.overlay_color must be one of {_FOLD_OVERLAY_COLOR}, "
+                f"got {self.overlay_color!r}."
+            )
+        if self.over is not None and not isinstance(self.over, tuple):
+            object.__setattr__(self, "over", tuple(self.over))
+
+    @property
+    def resolved_folder(self) -> str:
+        if self.folder is not None:
+            return self.folder
+        return "FOLD_OVERLAY" if self.layout == "overlay" else "FOLD"
+
+    @property
+    def resolved_sync(self) -> str | None:
+        if self.sync_axes != "auto":
+            return self.sync_axes
+        if self.kind == "context" and self.layout == "subplot":
+            return "both"
+        return None
+
+
+# What batch_plot(fold=...) accepts. ``True`` means "the two obvious folds".
+FoldArg = Union[bool, str, FoldSpec, Sequence[Union[str, "FoldSpec"]], None]
+
+_FOLD_ALIASES: dict[str, FoldSpec] = {
+    "y": FoldSpec(kind="y"),
+    "context": FoldSpec(kind="context", layout="subplot"),
+    "context-overlay": FoldSpec(kind="context", layout="overlay"),
+    "overlay": FoldSpec(kind="context", layout="overlay"),
+}
+
+
+def _resolve_fold_specs(fold: FoldArg) -> tuple[FoldSpec, ...]:
+    """Normalise the ``fold=`` argument to a tuple of specs."""
+    if fold is None or fold is False:
+        return ()
+    if fold is True:
+        return (_FOLD_ALIASES["y"], _FOLD_ALIASES["context"])
+    if isinstance(fold, FoldSpec):
+        return (fold,)
+    if isinstance(fold, str):
+        return (_fold_from_alias(fold),)
+    specs: list[FoldSpec] = []
+    for item in fold:
+        if isinstance(item, FoldSpec):
+            specs.append(item)
+        elif isinstance(item, str):
+            specs.append(_fold_from_alias(item))
+        else:
+            raise TypeError(f"fold entries must be FoldSpec or str, got {type(item).__name__}.")
+    return tuple(specs)
+
+
+def _fold_from_alias(name: str) -> FoldSpec:
+    try:
+        return _FOLD_ALIASES[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown fold shorthand {name!r}. Use one of "
+            f"{sorted(_FOLD_ALIASES)}, or a FoldSpec."
+        ) from None
+
+
+@dataclass(frozen=True)
+class _FoldPanel:
+    """One panel (or one overlaid condition) of a folded figure."""
+
+    title: str
+    curves: tuple[_SourceCurve, ...]
+    y_key: str
+    y_spec: dict[str, Any]
+    flight_point: dict[str, float]
+    fixed_sweeps: dict[str, float]
+
+
+@dataclass(frozen=True)
+class _FoldJob:
+    """A bonus figure gathering several batch figures onto one sheet."""
+
+    kind: str
+    layout: str
+    polar_prefix: str
+    sweep_key: str
+    x_spec: dict[str, Any]
+    flight_point_keys: tuple[str, ...]
+    output_path: Path
+    suptitle: str
+    subtitle: str
+    panels: tuple[_FoldPanel, ...]
+    max_cols: int
+    sync_axes: str | None
+    overlay_color: str
+    y_key: str | None
+    context_label: str
+    part: tuple[int, int]
+
+    @property
+    def label(self) -> str:
+        """Short description used by the CLI report and the PDF outline."""
+        target = self.y_key if self.y_key is not None else "all Y"
+        return f"{target} vs {self.sweep_key} [{self.kind}/{self.layout}]"
+
+
+def _job_context(job: _BatchPlotJob) -> dict[str, float]:
+    """Every value that places a job in the directory tree, flight point first."""
+    return {**job.flight_point, **job.fixed_sweeps}
+
+
+def _chunk(items: Sequence[Any], size: int) -> list[list[Any]]:
+    return [list(items[i : i + size]) for i in range(0, len(items), size)]
+
+
+def _part_suffix(index: int, total: int) -> str:
+    """``""`` for a single-part fold, ``_p2of3`` otherwise (1-based)."""
+    return "" if total <= 1 else f"_p{index}of{total}"
+
+
+def _fold_context_label(job: _BatchPlotJob) -> str:
+    """Flight point and fixed sweeps of *job*, as one title fragment."""
+    return ", ".join(part for part in (job.flight_point_label, job.case_label) if part)
+
+
+def _join_subtitle(parts: Sequence[str]) -> str:
+    return " — ".join(part for part in parts if part)
+
+
+def _enumerate_fold_jobs(
+    jobs: Sequence[_BatchPlotJob],
+    specs: Sequence[FoldSpec],
+    *,
+    y_axis_dict: dict[str, dict[str, Any]],
+    completed_sweeps: dict[str, dict[str, Any]],
+    completed_flight_points: dict[str, dict[str, Any]],
+    output_base: str | Path,
+) -> list[_FoldJob]:
+    """Build every folded figure requested by *specs* from the rendered *jobs*."""
+    if not jobs or not specs:
+        return []
+
+    known_keys = set(completed_flight_points) | set(completed_sweeps)
+    for spec in specs:
+        if spec.over:
+            unknown = [key for key in spec.over if key not in known_keys]
+            if unknown:
+                raise ValueError(
+                    f"FoldSpec.over refers to unknown keys {unknown}. "
+                    f"Available: {sorted(known_keys)}."
+                )
+
+    fold_jobs: list[_FoldJob] = []
+    for spec in specs:
+        if spec.kind == "y":
+            fold_jobs.extend(
+                _enumerate_y_folds(jobs, spec, y_axis_dict=y_axis_dict)
+            )
+        else:
+            fold_jobs.extend(
+                _enumerate_context_folds(
+                    jobs,
+                    spec,
+                    completed_sweeps=completed_sweeps,
+                    completed_flight_points=completed_flight_points,
+                    output_base=output_base,
+                )
+            )
+    return fold_jobs
+
+
+def _enumerate_y_folds(
+    jobs: Sequence[_BatchPlotJob],
+    spec: FoldSpec,
+    *,
+    y_axis_dict: dict[str, dict[str, Any]],
+) -> list[_FoldJob]:
+    """One sheet per condition, gathering that condition's Y figures."""
+    y_order = {key: index for index, key in enumerate(y_axis_dict)}
+    groups: dict[tuple[Any, ...], list[_BatchPlotJob]] = {}
+    for job in jobs:
+        key = (
+            job.polar_prefix,
+            job.sweep_key,
+            tuple(sorted(job.flight_point.items())),
+            tuple(sorted(job.fixed_sweeps.items())),
+        )
+        groups.setdefault(key, []).append(job)
+
+    fold_jobs: list[_FoldJob] = []
+    for group in groups.values():
+        if len(group) < 2:
+            # A one-panel fold is a copy of the figure it folds.
+            continue
+        group = sorted(group, key=lambda job: y_order.get(job.y_key, len(y_order)))
+        head = group[0]
+        x_save_name = head.x_spec.get("x_save_name", head.sweep_key)
+        x_label = format_axis_title_label(head.x_spec, head.sweep_key)
+        context_label = _fold_context_label(head)
+        chunks = _chunk(group, spec.max_panels)
+
+        for index, chunk in enumerate(chunks, start=1):
+            panels = tuple(
+                _FoldPanel(
+                    title=format_axis_title_label(job.y_spec, job.y_key),
+                    curves=job.curves,
+                    y_key=job.y_key,
+                    y_spec=job.y_spec,
+                    flight_point=job.flight_point,
+                    fixed_sweeps=job.fixed_sweeps,
+                )
+                for job in chunk
+            )
+            stem = f"{FOLD_Y_STEM}_vs_{x_save_name}{_part_suffix(index, len(chunks))}"
+            fold_jobs.append(
+                _FoldJob(
+                    kind="y",
+                    layout="subplot",
+                    polar_prefix=head.polar_prefix,
+                    sweep_key=head.sweep_key,
+                    x_spec=head.x_spec,
+                    flight_point_keys=head.flight_point_keys,
+                    output_path=head.output_path.parent / stem,
+                    suptitle=_fold_y_suptitle(panels, x_label),
+                    subtitle=_join_subtitle(
+                        [context_label, _part_text(index, len(chunks))]
+                    ),
+                    panels=panels,
+                    max_cols=spec.max_cols,
+                    sync_axes=spec.resolved_sync,
+                    overlay_color=spec.overlay_color,
+                    y_key=None,
+                    context_label=context_label,
+                    part=(index, len(chunks)),
+                )
+            )
+    return fold_jobs
+
+
+def _fold_y_suptitle(panels: Sequence[_FoldPanel], x_label: str) -> str:
+    """List the quantities when short enough, else count them."""
+    names = [panel.title for panel in panels]
+    joined = ", ".join(names)
+    if len(names) <= 4 and len(joined) <= 60:
+        return f"{joined} vs. {x_label}"
+    return f"{len(names)} quantities vs. {x_label}"
+
+
+def _part_text(index: int, total: int) -> str:
+    return "" if total <= 1 else f"part {index}/{total}"
+
+
+def _enumerate_context_folds(
+    jobs: Sequence[_BatchPlotJob],
+    spec: FoldSpec,
+    *,
+    completed_sweeps: dict[str, dict[str, Any]],
+    completed_flight_points: dict[str, dict[str, Any]],
+    output_base: str | Path,
+) -> list[_FoldJob]:
+    """One sheet per Y, gathering the conditions that only differ by a folded key."""
+    all_specs: dict[str, dict[str, Any]] = {**completed_flight_points, **completed_sweeps}
+    fold_jobs: list[_FoldJob] = []
+
+    by_polar: dict[str, list[_BatchPlotJob]] = {}
+    for job in jobs:
+        by_polar.setdefault(job.polar_prefix, []).append(job)
+
+    for polar_jobs in by_polar.values():
+        head = polar_jobs[0]
+        # Candidate keys, in the order they appear in the directory tree.
+        candidates = [key for key in completed_flight_points if key in _job_context(head)]
+        candidates += [
+            key
+            for key in completed_sweeps
+            if key != head.sweep_key and key in _job_context(head)
+        ]
+        varying = [
+            key
+            for key in candidates
+            if len({_job_context(job)[key] for job in polar_jobs}) > 1
+        ]
+        fold_keys = [key for key in candidates if key in spec.over] if spec.over else list(varying)
+        fold_keys = [key for key in fold_keys if key in varying]
+        if not fold_keys:
+            # Nothing varies over the requested keys inside this polar: folding
+            # would produce one-panel sheets that duplicate existing figures.
+            continue
+        remaining = [key for key in varying if key not in fold_keys]
+
+        groups: dict[tuple[Any, ...], list[_BatchPlotJob]] = {}
+        for job in polar_jobs:
+            context = _job_context(job)
+            key = (job.y_key, tuple((name, context[name]) for name in remaining))
+            groups.setdefault(key, []).append(job)
+
+        for (y_key, remaining_values), group in groups.items():
+            if len(group) < 2:
+                continue
+            group = sorted(
+                group, key=lambda job: tuple(_job_context(job)[name] for name in fold_keys)
+            )
+            first = group[0]
+            x_save_name = first.x_spec.get("x_save_name", first.sweep_key)
+            y_save_name = first.y_spec.get("y_save_name", y_key)
+            y_label = format_axis_title_label(first.y_spec, y_key)
+            x_label = format_axis_title_label(first.x_spec, first.sweep_key)
+
+            fold_names = "_".join(
+                str(all_specs.get(name, {}).get("save_name", name.upper())) for name in fold_keys
+            )
+            fold_labels = ", ".join(
+                str(all_specs.get(name, {}).get("label", name)) for name in fold_keys
+            )
+            remaining_label = format_flight_point_title_suffix(
+                dict(remaining_values), [name for name, _ in remaining_values], all_specs
+            )
+
+            directory = Path(output_base) / first.polar_prefix / spec.resolved_folder
+            for name, value in remaining_values:
+                save_name = str(all_specs.get(name, {}).get("save_name", name.upper()))
+                directory = directory / f"{save_name}_{_format_path_value(value)}"
+
+            chunks = _chunk(group, spec.max_panels)
+            for index, chunk in enumerate(chunks, start=1):
+                panels = tuple(
+                    _FoldPanel(
+                        title=format_flight_point_title_suffix(
+                            _job_context(job), fold_keys, all_specs
+                        ),
+                        curves=job.curves,
+                        y_key=job.y_key,
+                        y_spec=job.y_spec,
+                        flight_point=job.flight_point,
+                        fixed_sweeps=job.fixed_sweeps,
+                    )
+                    for job in chunk
+                )
+                stem = (
+                    f"{y_save_name}_vs_{x_save_name}_by_{fold_names}"
+                    f"{_part_suffix(index, len(chunks))}"
+                )
+                fold_jobs.append(
+                    _FoldJob(
+                        kind="context",
+                        layout=spec.layout,
+                        polar_prefix=first.polar_prefix,
+                        sweep_key=first.sweep_key,
+                        x_spec=first.x_spec,
+                        flight_point_keys=first.flight_point_keys,
+                        output_path=directory / stem,
+                        suptitle=f"{y_label} vs. {x_label}",
+                        subtitle=_join_subtitle(
+                            [
+                                remaining_label,
+                                f"{fold_labels} folded",
+                                _part_text(index, len(chunks)),
+                            ]
+                        ),
+                        panels=panels,
+                        max_cols=spec.max_cols,
+                        sync_axes=spec.resolved_sync,
+                        overlay_color=spec.overlay_color,
+                        y_key=y_key,
+                        context_label=remaining_label,
+                        part=(index, len(chunks)),
+                    )
+                )
+    return fold_jobs
+
+
+def _merge_render_order(
+    jobs: Sequence[_BatchPlotJob], fold_jobs: Sequence[_FoldJob]
+) -> list[Any]:
+    """Interleave folds after the jobs of the polar they belong to.
+
+    Keeps the PDF outline and the terminal report telling one story per polar
+    instead of appending an orphan "folds" chapter at the very end.
+    """
+    pending: dict[str, list[_FoldJob]] = {}
+    for fold_job in fold_jobs:
+        pending.setdefault(fold_job.polar_prefix, []).append(fold_job)
+
+    order: list[Any] = []
+    current: str | None = None
+    for job in jobs:
+        if current is not None and job.polar_prefix != current:
+            order.extend(pending.pop(current, []))
+        current = job.polar_prefix
+        order.append(job)
+    if current is not None:
+        order.extend(pending.pop(current, []))
+    for leftover in pending.values():
+        order.extend(leftover)
+    return order
+
+
+def _fold_panel_style(
+    job: _FoldJob, style_kwargs: dict[str, Any], panel_index: int
+) -> dict[str, Any]:
+    """Style for one overlaid condition: colour by condition, or by source."""
+    resolved = dict(style_kwargs)
+    if job.overlay_color == "source":
+        resolved["linestyle"] = _OVERLAY_LINESTYLES[panel_index % len(_OVERLAY_LINESTYLES)]
+        return resolved
+    colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    if colors:
+        resolved["color"] = colors[panel_index % len(colors)]
+    return resolved
+
+
+def _fold_curve_label(curve: _SourceCurve, panel: _FoldPanel, *, single_source: bool) -> str:
+    """Overlay legend entry: the condition alone when there is one source."""
+    if single_source:
+        return panel.title
+    return f"{curve.label} · {panel.title}"
+
+
+def _render_fold_subplot(job: _FoldJob) -> tuple[plt.Figure, list[plt.Axes]]:
+    n_panels = len(job.panels)
+    nrows, ncols = _subplot_grid_shape(n_panels, job.max_cols)
+    base_w, base_h = plt.rcParams["figure.figsize"]
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(base_w * ncols, base_h * _FOLD_PANEL_HEIGHT_FACTOR * nrows),
+        squeeze=False,
+    )
+    axes_flat = list(axes.ravel())
+    used = axes_flat[:n_panels]
+
+    label_sets = {tuple(curve.label for curve in panel.curves) for panel in job.panels}
+    one_legend = len(label_sets) == 1
+
+    for index, (ax, panel) in enumerate(zip_strict(used, job.panels)):
+        for curve in panel.curves:
+            plot_line(ax, curve.x, curve.y, label=curve.label, **curve.style_kwargs)
+        ax.set_xlabel(format_axis_label(job.x_spec, job.sweep_key))
+        ax.set_ylabel(format_axis_label(panel.y_spec, panel.y_key))
+        set_title(ax, panel.title)
+        if not one_legend or index == 0:
+            make_legend(ax)
+
+    for ax in axes_flat[n_panels:]:
+        ax.set_visible(False)
+    return fig, used
+
+
+def _render_fold_overlay(job: _FoldJob) -> tuple[plt.Figure, list[plt.Axes]]:
+    base_w, base_h = plt.rcParams["figure.figsize"]
+    width_factor, height_factor = _FOLD_OVERLAY_SIZE_FACTOR
+    fig, ax = plt.subplots(figsize=(base_w * width_factor, base_h * height_factor))
+
+    sources = {curve.label for panel in job.panels for curve in panel.curves}
+    single_source = len(sources) == 1
+
+    n_entries = 0
+    for index, panel in enumerate(job.panels):
+        for curve in panel.curves:
+            plot_line(
+                ax,
+                curve.x,
+                curve.y,
+                label=_fold_curve_label(curve, panel, single_source=single_source),
+                **_fold_panel_style(job, curve.style_kwargs, index),
+            )
+            n_entries += 1
+
+    head = job.panels[0]
+    ax.set_xlabel(format_axis_label(job.x_spec, job.sweep_key))
+    ax.set_ylabel(format_axis_label(head.y_spec, head.y_key))
+    ncol = 2 if n_entries > _OVERLAY_LEGEND_NCOL_THRESHOLD else 1
+    make_legend(ax, ncol=ncol)
+    return fig, [ax]
+
+
+def _render_one_fold_job(
+    job: _FoldJob,
+    style_profile: str,
+    formats: tuple[str, ...],
+    on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
+    builder: ReportBuilder | None = None,
+) -> list[Path]:
+    """Render and export one folded figure (safe for process workers)."""
+    use_style(style_profile)
+
+    if job.layout == "overlay":
+        fig, axes = _render_fold_overlay(job)
+    else:
+        fig, axes = _render_fold_subplot(job)
+
+    panel_titlesize = plt.rcParams["axes.titlesize"]
+    heading = job.suptitle if not job.subtitle else f"{job.suptitle}\n{job.subtitle}"
+    set_suptitle(fig, heading, fontsize=panel_titlesize * 1.25, fontweight="bold")
+
+    # Before the hooks, never after: on_before_save is the caller's last word,
+    # and a hook that pins its own limits must not be undone by the sync.
+    if job.sync_axes is not None and len(axes) > 1:
+        sync_axes_limits(axes, which=job.sync_axes)
+
+    if on_before_save is not None:
+        # One call per axes. An overlay has a single axes carrying every
+        # condition, so its one call reports them all rather than pretending
+        # the figure only shows the first.
+        overlay_label = " / ".join(panel.title for panel in job.panels)
+        for index, (ax, panel) in enumerate(zip_strict(axes, job.panels[: len(axes)])):
+            on_before_save(
+                fig,
+                ax,
+                BatchPlotContext(
+                    flight_point=panel.flight_point,
+                    fixed_sweeps=panel.fixed_sweeps,
+                    sweep_key=job.sweep_key,
+                    y_key=panel.y_key,
+                    x_spec=job.x_spec,
+                    y_spec=panel.y_spec,
+                    polar_prefix=job.polar_prefix,
+                    output_path=job.output_path,
+                    panel_index=index,
+                    fold_kind=job.kind,
+                    fold_layout=job.layout,
+                    fold_label=overlay_label if job.layout == "overlay" else panel.title,
+                ),
+            )
+
+    layout_engine = fig.get_layout_engine()
+    if layout_engine is not None:
+        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)  # type: ignore[call-arg]
+
+    written = save_figure(fig, job.output_path, formats=formats)
+    if builder is not None:
+        builder.add(fig)
+    plt.close(fig)
+    return written
+
+
+# ---------------------------------------------------------------------------
+# PDF report
+# ---------------------------------------------------------------------------
+
+# What batch_plot(pdf_report=...) accepts: a path for the common case, a spec
+# when the defaults are not enough.
+PdfReportArg = Union[str, Path, PdfReportSpec, None]
+
+
+def _resolve_pdf_spec(pdf_report: PdfReportArg, *, style_profile: str, title: str) -> PdfReportSpec | None:
+    """Normalise the ``pdf_report`` argument to a spec, or None."""
+    if pdf_report is None:
+        return None
+    if isinstance(pdf_report, PdfReportSpec):
+        return pdf_report
+    return PdfReportSpec(path=pdf_report, title=title, profile=style_profile)
+
+
+def _report_entries(jobs: Sequence[Any]) -> list[tuple[tuple[str, ...], str]]:
+    """Section trail and label for every job, in render order.
+
+    Grouped polar -> flight point, the same two levels ``_print_batch_file_report``
+    already uses, so the PDF, the terminal report and the directory tree all tell
+    the same story. Labels go through ``_cli_text``: the table of contents is
+    plain text, and a literal ``$\\alpha$`` there would look broken.
+    """
+    entries: list[tuple[tuple[str, ...], str]] = []
+    for job in jobs:
+        if isinstance(job, _FoldJob):
+            entries.append(
+                (
+                    (job.polar_prefix, "Folded"),
+                    f"{job.output_path.stem} - {_cli_text(job.subtitle)}"
+                    if job.subtitle
+                    else job.output_path.stem,
+                )
+            )
+            continue
+        trail: tuple[str, ...] = (job.polar_prefix,)
+        if job.flight_point_label:
+            trail += (_cli_text(job.flight_point_label),)
+        label = job.output_path.stem
+        if job.case_label:
+            label = f"{label} - {_cli_text(job.case_label)}"
+        entries.append((trail, label))
+    return entries
+
+
+def _compare_report_entries(jobs: Sequence[_ComparePlotJob]) -> list[tuple[tuple[str, ...], str]]:
+    """As :func:`_report_entries`, for compare jobs (grouped polar -> fixed sweep)."""
+    entries: list[tuple[tuple[str, ...], str]] = []
+    for job in jobs:
+        trail: tuple[str, ...] = (job.polar_prefix,)
+        if job.case_label:
+            trail += (_cli_text(job.case_label),)
+        entries.append((trail, job.output_path.stem))
+    return entries
+
+
+def _study_title(jobs: Sequence[object]) -> str:
+    """Fallback cover title: the polars covered, or a plain word.
+
+    Deliberately dull. A wrong-looking guessed title on a cover page is worse
+    than an obviously generic one, and the caller can always pass a spec.
+    """
+    prefixes = sorted({getattr(job, "polar_prefix", "") for job in jobs} - {""})
+    if not prefixes:
+        return "Figures"
+    if len(prefixes) <= 3:
+        return ", ".join(prefixes)
+    return f"{len(prefixes)} polars"
+
+
+def _report_summary(
+    jobs: Sequence[_BatchPlotJob],
+    formats: Sequence[str],
+    fold_jobs: Sequence[_FoldJob] = (),
+) -> list[tuple[str, str]]:
+    """Cover-page facts for a batch run."""
+    polars = {job.polar_prefix for job in jobs}
+    points = {job.flight_point_label for job in jobs if job.flight_point_label}
+    sources: set[str] = set()
+    for job in jobs:
+        sources.update(curve.label for curve in job.curves)
+    rows = [
+        ("Figures", str(len(jobs))),
+        ("Polars", str(len(polars))),
+    ]
+    if fold_jobs:
+        rows.append(("Folded sheets", str(len(fold_jobs))))
+    if points:
+        rows.append(("Flight points", str(len(points))))
+    if sources:
+        rows.append(("Sources", ", ".join(sorted(sources))))
+    if formats:
+        rows.append(("Also exported", ", ".join(formats)))
+    return rows
+
+
 def _paths_for_formats(output_path: Path, formats: Sequence[str]) -> list[Path]:
     """Mirror ``save_figure`` path naming (stem + ``.{fmt}``)."""
     return [output_path.with_suffix(f".{fmt}") for fmt in formats]
@@ -777,6 +1538,9 @@ def _print_batch_plan(
     include_curve: Callable[..., bool] | None,
     on_before_save: Callable[..., Any] | None,
     excluded_from_flight_point: Sequence[str] = (),
+    fold_jobs: Sequence[_FoldJob] = (),
+    fold_specs: Sequence[FoldSpec] = (),
+    clean: bool | str = False,
 ) -> None:
     """Pretty-print the batch execution plan (Rich when available)."""
     workers = _resolve_n_jobs(n_jobs)
@@ -789,8 +1553,10 @@ def _print_batch_plan(
     else:
         parallel_note = "sequential (n_jobs=1)"
 
-    n_files = len(jobs) * len(formats)
+    n_figures = len(jobs) + len(fold_jobs)
+    n_files = n_figures * len(formats)
     jobs_by_polar = Counter(job.polar_prefix for job in jobs)
+    folds_by_polar = Counter(job.polar_prefix for job in fold_jobs)
     sources = list(configuration_dict.keys())
     y_keys = list(y_axis_dict.keys())
 
@@ -814,7 +1580,9 @@ def _print_batch_plan(
             f"Hooks        : include_curve={'yes' if include_curve else 'no'}, "
             f"on_before_save={'yes' if on_before_save else 'no'}",
             f"Parallel     : {parallel_note}",
-            f"Figures      : {len(jobs)}  →  {n_files} file(s)",
+            f"Clean        : {_clean_note(clean)}",
+            f"Fold         : {_fold_note(fold_specs, fold_jobs)}",
+            f"Figures      : {len(jobs)} + {len(fold_jobs)} folded  →  {n_files} file(s)",
         ]
     )
 
@@ -854,9 +1622,13 @@ def _print_batch_plan(
             polar_table = Table(title="Figures per polar", show_header=True, header_style="bold")
             polar_table.add_column("Polar", style="cyan")
             polar_table.add_column("Figures", justify="right", style="green")
+            polar_table.add_column("Folded", justify="right", style="yellow")
             for polar, count in sorted(jobs_by_polar.items()):
-                polar_table.add_row(polar, str(count))
+                polar_table.add_row(polar, str(count), str(folds_by_polar.get(polar, 0)))
             _console.print(polar_table)
+
+        if fold_jobs:
+            _console.print(_fold_plan_table(fold_specs, fold_jobs))
         return
 
     # Plain-text fallback
@@ -877,7 +1649,55 @@ def _print_batch_plan(
     if jobs_by_polar:
         print("\nFigures per polar:")
         for polar, count in sorted(jobs_by_polar.items()):
-            print(f"  {polar}: {count}")
+            print(f"  {polar}: {count} (+{folds_by_polar.get(polar, 0)} folded)")
+    for fold_label, fold_count in _fold_plan_rows(fold_specs, fold_jobs):
+        print(f"  fold {fold_label}: {fold_count} sheet(s)")
+
+
+def _clean_note(clean: bool | str) -> str:
+    if not clean:
+        return "no"
+    mode = "figures" if clean is True else str(clean)
+    return f"yes ({mode})"
+
+
+def _fold_note(fold_specs: Sequence[FoldSpec], fold_jobs: Sequence[_FoldJob]) -> str:
+    if not fold_specs:
+        return "no"
+    kinds = ", ".join(f"{spec.kind}/{spec.layout}" for spec in fold_specs)
+    return f"{kinds}  →  {len(fold_jobs)} sheet(s)"
+
+
+def _fold_spec_label(spec: FoldSpec) -> str:
+    over = ", ".join(spec.over) if spec.over else "every varying key"
+    if spec.kind == "y":
+        over = "every Y"
+    return f"{spec.kind}/{spec.layout} over {over} (max {spec.max_panels}/sheet)"
+
+
+def _fold_plan_rows(
+    fold_specs: Sequence[FoldSpec], fold_jobs: Sequence[_FoldJob]
+) -> list[tuple[str, int]]:
+    """Sheets produced per requested fold, matched on (kind, layout).
+
+    A spec that produced nothing still gets a row with a zero: silently
+    dropping it is how a typo in ``over=`` looks exactly like a study where
+    nothing varies.
+    """
+    counts = Counter((job.kind, job.layout) for job in fold_jobs)
+    return [
+        (_fold_spec_label(spec), counts.get((spec.kind, spec.layout), 0))
+        for spec in fold_specs
+    ]
+
+
+def _fold_plan_table(fold_specs: Sequence[FoldSpec], fold_jobs: Sequence[_FoldJob]) -> Any:
+    table = Table(title="Folded sheets", show_header=True, header_style="bold")
+    table.add_column("Fold", style="cyan")
+    table.add_column("Sheets", justify="right", style="green")
+    for label, count in _fold_plan_rows(fold_specs, fold_jobs):
+        table.add_row(label, str(count))
+    return table
 
 
 def _progress_columns() -> list[Any]:
@@ -915,8 +1735,15 @@ def _render_one_job(
     style_profile: str,
     formats: tuple[str, ...],
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
+    builder: ReportBuilder | None = None,
 ) -> list[Path]:
-    """Render and export a single batch plot job (safe for process workers)."""
+    """Render and export a single batch plot job (safe for process workers).
+
+    *builder*, when given, receives the figure before it is closed, so the PDF
+    report gets the real vector figure rather than a re-read raster. It is
+    keyword-only in effect: the process pool submits the first four arguments
+    positionally and never a builder, which could not be pickled anyway.
+    """
     use_style(style_profile)
 
     fig, ax = plt.subplots()
@@ -948,22 +1775,73 @@ def _render_one_job(
         on_before_save(fig, ax, context)
 
     written = save_figure(fig, job.output_path, formats=formats)
+    if builder is not None:
+        builder.add(fig)
     plt.close(fig)
     return written
 
 
+def _render_any(
+    job: Any,
+    style_profile: str,
+    formats: tuple[str, ...],
+    on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
+    builder: ReportBuilder | None = None,
+) -> list[Path]:
+    """Render whichever kind of job this is.
+
+    A single entry point is what lets folded sheets travel the same pipeline as
+    ordinary figures — the same process pool, the same progress bar, the same
+    PDF builder — instead of needing a second pass with its own copy of all of
+    it. It is also what the pool submits, so it must stay picklable-by-name
+    (module level) and take its arguments positionally.
+    """
+    if isinstance(job, _FoldJob):
+        return _render_one_fold_job(job, style_profile, formats, on_before_save, builder)
+    return _render_one_job(job, style_profile, formats, on_before_save, builder)
+
+
+def _any_job_label(job: Any) -> str:
+    """Progress-bar description for either kind of job."""
+    if isinstance(job, _FoldJob):
+        context = _cli_text(job.context_label) or "all conditions"
+        return f"{job.polar_prefix} · fold · {context} · {_cli_text(job.label)}"
+    point = _cli_text(job.flight_point_label)
+    if job.case_label:
+        point = f"{point}, {_cli_text(job.case_label)}"
+    return f"{job.polar_prefix} · {point} · {job.y_key} vs {job.sweep_key}"
+
+
 def _run_jobs(
-    jobs: list[_BatchPlotJob],
+    jobs: Sequence[Any],
     *,
     style_profile: str,
     formats: tuple[str, ...],
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
     n_jobs: int,
     verbose: bool,
+    pdf_spec: PdfReportSpec | None = None,
+    pdf_summary: Sequence[tuple[str, str]] = (),
 ) -> list[Path]:
-    """Execute plot jobs sequentially or via a process pool."""
+    """Execute plot jobs sequentially or via a process pool.
+
+    A PDF report forces sequential rendering: the pages must be written in order
+    and ``PdfPages`` cannot cross a process boundary. That is the same trade the
+    picklability fallback below already makes, and it is warned about the same way.
+    """
     workers = _resolve_n_jobs(n_jobs)
     use_parallel = workers > 1
+
+    if use_parallel and pdf_spec is not None:
+        warnings.warn(
+            "pdf_report requires sequential rendering; falling back to n_jobs=1. "
+            "Run without pdf_report for parallel rendering, then assemble the "
+            "report from the PNGs with cfd_plot.pdf.pdf_report().",
+            UserWarning,
+            stacklevel=3,
+        )
+        use_parallel = False
+        workers = 1
 
     if use_parallel and not _is_picklable(on_before_save):
         warnings.warn(
@@ -980,36 +1858,38 @@ def _run_jobs(
     show_progress = verbose and total > 0
     task_desc = f"batch ({workers} worker{'s' if workers != 1 else ''})"
 
-    def _job_label(job: _BatchPlotJob) -> str:
-        point = _cli_text(job.flight_point_label)
-        if job.case_label:
-            point = f"{point}, {_cli_text(job.case_label)}"
-        return f"{job.polar_prefix} · {point} · {job.y_key} vs {job.sweep_key}"
+    _job_label = _any_job_label
 
     if not use_parallel:
         use_style(style_profile)
-        if show_progress and _RICH and Progress is not None and _console is not None:
-            with Progress(*_progress_columns(), console=_console, transient=False) as progress:
-                task_id = progress.add_task(task_desc, total=total)
-                for job in jobs:
-                    progress.update(task_id, description=_job_label(job))
-                    written_paths.extend(
-                        _render_one_job(job, style_profile, formats, on_before_save)
-                    )
-                    progress.advance(task_id)
-            return written_paths
+        with ExitStack() as stack:
+            builder: ReportBuilder | None = None
+            if pdf_spec is not None and jobs:
+                spec = replace(pdf_spec, summary=pdf_spec.summary or tuple(pdf_summary))
+                builder = stack.enter_context(ReportBuilder(spec, _report_entries(jobs)))
 
-        for index, job in enumerate(jobs, start=1):
-            if verbose:
-                print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
-            written_paths.extend(
-                _render_one_job(job, style_profile, formats, on_before_save)
-            )
+            if show_progress and _RICH and Progress is not None and _console is not None:
+                with Progress(*_progress_columns(), console=_console, transient=False) as progress:
+                    task_id = progress.add_task(task_desc, total=total)
+                    for job in jobs:
+                        progress.update(task_id, description=_job_label(job))
+                        written_paths.extend(
+                            _render_any(job, style_profile, formats, on_before_save, builder)
+                        )
+                        progress.advance(task_id)
+                return written_paths
+
+            for index, job in enumerate(jobs, start=1):
+                if verbose:
+                    print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
+                written_paths.extend(
+                    _render_any(job, style_profile, formats, on_before_save, builder)
+                )
         return written_paths
 
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
         futures = [
-            executor.submit(_render_one_job, job, style_profile, formats, on_before_save)
+            executor.submit(_render_any, job, style_profile, formats, on_before_save)
             for job in jobs
         ]
         if show_progress and _RICH and Progress is not None and _console is not None:
@@ -1086,6 +1966,72 @@ def _print_batch_file_report(jobs: Sequence[_BatchPlotJob], formats: Sequence[st
                     )
 
 
+def _print_fold_file_report(jobs: Sequence[_FoldJob], formats: Sequence[str]) -> None:
+    """Pretty-print the folded sheets, grouped by polar.
+
+    Kept separate from :func:`_print_batch_file_report` because the two answer
+    different questions: that one is "what exists for this flight point", this
+    one is "what did folding collapse, and into how many sheets". Merging them
+    would bury a handful of bonus figures inside hundreds of ordinary rows.
+    """
+    if not jobs:
+        return
+
+    groups: dict[str, list[_FoldJob]] = {}
+    for job in jobs:
+        groups.setdefault(job.polar_prefix, []).append(job)
+
+    if _RICH and _console is not None:
+        for polar, polar_jobs in groups.items():
+            n_files = len(polar_jobs) * len(formats)
+            table = Table(
+                title=f"{polar}  —  folded  —  {n_files} file(s)",
+                show_header=True,
+                header_style="bold",
+            )
+            table.add_column("Fold", style="cyan")
+            table.add_column("Sheet")
+            table.add_column("Panels", justify="right")
+            table.add_column("Format", style="magenta")
+            table.add_column("Size", justify="right", style="green")
+            for job in polar_jobs:
+                kind = f"{job.kind}/{job.layout}"
+                for path in _paths_for_formats(job.output_path, formats):
+                    size_kb = path.stat().st_size / 1024
+                    table.add_row(
+                        kind,
+                        path.stem,
+                        str(len(job.panels)),
+                        path.suffix.lstrip(".").upper(),
+                        f"{size_kb:.1f} kB",
+                    )
+            _console.print(table)
+        return
+
+    # Plain-text fallback
+    print("=== Folded sheets ===")
+    for polar, polar_jobs in groups.items():
+        print(f"\n{polar}:")
+        for job in polar_jobs:
+            for path in _paths_for_formats(job.output_path, formats):
+                size_kb = path.stat().st_size / 1024
+                print(
+                    f"  [{job.kind}/{job.layout}] {path.stem} "
+                    f"({len(job.panels)} panels) "
+                    f"{path.suffix.lstrip('.').upper():>4s}  {size_kb:>7.1f} kB"
+                )
+
+
+def _print_clean_report(clean_report: CleanReport) -> None:
+    """Say what the pre-run clean removed — silence here is indistinguishable
+    from a clean that never ran, and this one deletes files."""
+    line = clean_report.summary()
+    if _RICH and _console is not None:
+        _console.print(f"[yellow]{line}[/yellow]")
+    else:
+        print(line)
+
+
 def batch_plot(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -1102,6 +2048,9 @@ def batch_plot(
     verbose: bool = False,
     dry_run: bool = False,
     n_jobs: int = 1,
+    pdf_report: PdfReportArg = None,
+    clean: bool | str = False,
+    fold: FoldArg = None,
 ) -> list[Path]:
     """Generate polar figures for every flight point and sweep combination.
 
@@ -1130,6 +2079,55 @@ def batch_plot(
         Parallel workers (``1`` = sequential, ``-1`` = all CPUs). Parallel mode
         requires a picklable ``on_before_save`` (top-level function); otherwise
         rendering falls back to sequential.
+    pdf_report :
+        Also assemble every figure into one navigable PDF — cover page, table of
+        contents, a divider per polar, and a clickable outline where ``pypdf`` is
+        installed. Pass a path, or a
+        :class:`~cfd_plot.pdf.PdfReportSpec` to control the layout.
+
+        The figures go in as **vector**, because they are written while they are
+        still open; a report assembled afterwards from the files on disk can only
+        be raster. The cost is that rendering becomes sequential (``n_jobs`` is
+        forced to 1, with a warning).
+
+        ``formats=()`` is legal alongside it, and means "the report is the
+        deliverable" — no loose figure files at all.
+    clean :
+        Wipe ``output_base`` before rendering. ``True`` (or ``"figures"``)
+        deletes only files with a figure extension and prunes the directories
+        left empty; ``"all"`` removes the whole tree. Renaming a Y variable or
+        dropping a flight point otherwise leaves the previous run's figures in
+        place, and nothing in the new run overwrites them — you end up reading
+        a directory that mixes two studies. Honours ``dry_run``: it then
+        reports what it would delete and deletes nothing. See
+        :func:`cfd_plot.clean_figure_dir` for the safety guards.
+    fold :
+        Also write *bonus sheets* that gather sibling figures, so a comparison
+        does not mean opening one file per directory. Accepts a
+        :class:`FoldSpec`, a shorthand string, or a sequence of either:
+
+        ``"y"``
+            One sheet per condition, with every Y of ``y_axis_dict`` as a
+            panel, written **beside** the figures it folds
+            (``FOLD_Y_vs_alpha.svg``). Panels keep independent axes — the
+            quantities have different units.
+        ``"context"``
+            One sheet per Y, with one panel per condition that differs only by
+            a directory level (every altitude, say), written under
+            ``<POLAR>/FOLD/``. Panels share their scales by default.
+        ``"context-overlay"`` (alias ``"overlay"``)
+            The same family drawn on a *single* axes instead of panels, under
+            ``<POLAR>/FOLD_OVERLAY/``. The readable choice for one source over
+            a handful of conditions.
+        ``True``
+            Shorthand for ``("y", "context")``.
+
+        Use a :class:`FoldSpec` to choose which keys to fold over
+        (``over=("Altitude_m",)``), how many panels per sheet (``max_panels``,
+        default 6 — a larger family is split into numbered sheets rather than
+        shrunk), the grid width, or the axis synchronisation. Folded sheets go
+        through the same hooks, PDF report and parallel pipeline as ordinary
+        figures.
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
@@ -1153,6 +2151,16 @@ def batch_plot(
         output_base=output_base,
         include_curve=include_curve,
     )
+    fold_specs = _resolve_fold_specs(fold)
+    fold_jobs = _enumerate_fold_jobs(
+        jobs,
+        fold_specs,
+        y_axis_dict=y_axis_dict,
+        completed_sweeps=completed_sweeps,
+        completed_flight_points=completed_flight_points,
+        output_base=output_base,
+    )
+    render_order = _merge_render_order(jobs, fold_jobs)
 
     if verbose:
         requested_fp_keys = list(flight_point_dict.keys()) if flight_point_dict else []
@@ -1173,15 +2181,26 @@ def batch_plot(
             include_curve=include_curve,
             on_before_save=on_before_save,
             excluded_from_flight_point=excluded_from_flight_point,
+            fold_jobs=fold_jobs,
+            fold_specs=fold_specs,
+            clean=clean,
         )
+
+    # Cleaning runs after the plan is printed and before anything is written,
+    # so a dry run still shows both what would go and what would arrive.
+    if clean:
+        clean_report = clean_figure_dir(output_base, mode=clean, dry_run=dry_run)
+        if verbose or report:
+            _print_clean_report(clean_report)
 
     if dry_run:
         planned: list[Path] = []
-        for job in jobs:
+        for job in render_order:
             planned.extend(_paths_for_formats(job.output_path, formats))
         if verbose:
+            fold_note = f" (incl. {len(fold_jobs)} folded)" if fold_jobs else ""
             msg = (
-                f"Dry run complete: {len(jobs)} figure(s) → "
+                f"Dry run complete: {len(render_order)} figure(s){fold_note} → "
                 f"{len(planned)} file(s) (nothing written)."
             )
             if _RICH and _console is not None:
@@ -1190,17 +2209,24 @@ def batch_plot(
                 print(msg)
         return planned
 
+    spec = _resolve_pdf_spec(pdf_report, style_profile=style_profile, title=_study_title(jobs))
     written_paths = _run_jobs(
-        jobs,
+        render_order,
         style_profile=style_profile,
         formats=formats,
         on_before_save=on_before_save,
         n_jobs=n_jobs,
         verbose=verbose,
+        pdf_spec=spec,
+        pdf_summary=_report_summary(jobs, formats, fold_jobs),
     )
+
+    if spec is not None and render_order:
+        written_paths.append(Path(spec.path))
 
     if report and written_paths:
         _print_batch_file_report(jobs, formats)
+        _print_fold_file_report(fold_jobs, formats)
 
     return written_paths
 
@@ -1318,8 +2344,12 @@ def _render_one_compare_job(
     style_profile: str,
     formats: tuple[str, ...],
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
+    builder: ReportBuilder | None = None,
 ) -> list[Path]:
-    """Render a multi-panel compare figure (safe for process workers)."""
+    """Render a multi-panel compare figure (safe for process workers).
+
+    *builder* takes the figure before it is closed; see ``_render_one_job``.
+    """
     use_style(style_profile)
 
     n_panels = len(job.panels)
@@ -1383,6 +2413,8 @@ def _render_one_compare_job(
         layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)  # type: ignore[call-arg]
 
     written = save_figure(fig, job.output_path, formats=formats)
+    if builder is not None:
+        builder.add(fig)
     plt.close(fig)
     return written
 
@@ -1395,10 +2427,23 @@ def _run_compare_jobs(
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None,
     n_jobs: int,
     verbose: bool,
+    pdf_spec: PdfReportSpec | None = None,
 ) -> list[Path]:
-    """Execute compare jobs sequentially or via a process pool."""
+    """Execute compare jobs sequentially or via a process pool.
+
+    As in ``_run_jobs``, a PDF report forces sequential rendering.
+    """
     workers = _resolve_n_jobs(n_jobs)
     use_parallel = workers > 1
+
+    if use_parallel and pdf_spec is not None:
+        warnings.warn(
+            "pdf_report requires sequential rendering; falling back to n_jobs=1.",
+            UserWarning,
+            stacklevel=3,
+        )
+        use_parallel = False
+        workers = 1
 
     if use_parallel and not _is_picklable(on_before_save):
         warnings.warn(
@@ -1421,23 +2466,28 @@ def _run_compare_jobs(
 
     if not use_parallel:
         use_style(style_profile)
-        if show_progress and _RICH and Progress is not None and _console is not None:
-            with Progress(*_progress_columns(), console=_console, transient=False) as progress:
-                task_id = progress.add_task(task_desc, total=total)
-                for job in jobs:
-                    progress.update(task_id, description=_job_label(job))
-                    written_paths.extend(
-                        _render_one_compare_job(job, style_profile, formats, on_before_save)
-                    )
-                    progress.advance(task_id)
-            return written_paths
+        with ExitStack() as stack:
+            builder: ReportBuilder | None = None
+            if pdf_spec is not None and jobs:
+                builder = stack.enter_context(ReportBuilder(pdf_spec, _compare_report_entries(jobs)))
 
-        for index, job in enumerate(jobs, start=1):
-            if verbose:
-                print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
-            written_paths.extend(
-                _render_one_compare_job(job, style_profile, formats, on_before_save)
-            )
+            if show_progress and _RICH and Progress is not None and _console is not None:
+                with Progress(*_progress_columns(), console=_console, transient=False) as progress:
+                    task_id = progress.add_task(task_desc, total=total)
+                    for job in jobs:
+                        progress.update(task_id, description=_job_label(job))
+                        written_paths.extend(
+                            _render_one_compare_job(job, style_profile, formats, on_before_save, builder)
+                        )
+                        progress.advance(task_id)
+                return written_paths
+
+            for index, job in enumerate(jobs, start=1):
+                if verbose:
+                    print(f"[batch] [{index}/{total}] writing {_job_label(job)}")
+                written_paths.extend(
+                    _render_one_compare_job(job, style_profile, formats, on_before_save, builder)
+                )
         return written_paths
 
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
@@ -1666,6 +2716,8 @@ def batch_compare_flight_points(
     verbose: bool = False,
     dry_run: bool = False,
     n_jobs: int = 1,
+    pdf_report: PdfReportArg = None,
+    clean: bool | str = False,
 ) -> list[Path]:
     """Compare several named flight points as subplots on shared polars.
 
@@ -1684,6 +2736,10 @@ def batch_compare_flight_points(
     flight_point_dict :
         Optional metadata (labels / units / template keys). Sweep keys listed
         here are excluded automatically, same as ``batch_plot``.
+    clean :
+        Wipe ``output_base`` before rendering — same argument and same guards
+        as :func:`batch_plot`. There is no ``fold`` here: a compare figure is
+        already several flight points on one sheet.
 
     Output layout (folder named from the joined ``compare_flight_points`` keys,
     e.g. ``design`` / ``off_design``)::
@@ -1754,6 +2810,11 @@ def batch_compare_flight_points(
             on_before_save=on_before_save,
         )
 
+    if clean:
+        clean_report = clean_figure_dir(output_base, mode=clean, dry_run=dry_run)
+        if verbose or report:
+            _print_clean_report(clean_report)
+
     if dry_run:
         planned: list[Path] = []
         for job in jobs:
@@ -1769,6 +2830,7 @@ def batch_compare_flight_points(
                 print(msg)
         return planned
 
+    spec = _resolve_pdf_spec(pdf_report, style_profile=style_profile, title=_study_title(jobs))
     written_paths = _run_compare_jobs(
         jobs,
         style_profile=style_profile,
@@ -1776,7 +2838,11 @@ def batch_compare_flight_points(
         on_before_save=on_before_save,
         n_jobs=n_jobs,
         verbose=verbose,
+        pdf_spec=spec,
     )
+
+    if spec is not None and jobs:
+        written_paths.append(Path(spec.path))
 
     if report and written_paths:
         _print_compare_file_report(jobs, formats)

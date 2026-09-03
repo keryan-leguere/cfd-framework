@@ -70,14 +70,6 @@ from cfd_plot import (
     sync_axes_limits,
     use_style,
 )
-from cfd_plot.dispersion import (
-    DispersionSpec,
-    QuantityDispersion,
-    band_from_dispersion,
-    plot_dispersion_band,
-    plot_dispersion_pdf,
-    plot_dispersion_type,
-)
 
 # Tolerance is an RMS difference, and it was calibrated rather than guessed.
 # Injecting one deliberate style regression (plot_line's white marker fill
@@ -327,58 +319,7 @@ def test_contour_quiver_composite():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.mpl_image_compare(**MPL)
-def test_dispersion_type_shapes():
-    """The six distribution shapes — pure geometry, no sampling."""
-    specs = [
-        DispersionSpec(disp_type=t, moy=0.5 if t == 2 else 0.0, var=0.0 if t in (1, 2) else 1.0)
-        for t in range(1, 7)
-    ]
-    with style_context("notebook"):
-        fig, axes = plt.subplots(2, 3, figsize=(11, 5))
-        for ax, spec in zip_strict(axes.ravel(), specs):
-            plot_dispersion_type(spec, ax=ax)
-    return fig
 
-
-@pytest.mark.mpl_image_compare(**MPL)
-def test_dispersion_pdf():
-    """Sampled, so the generator is seeded explicitly for reproducibility."""
-    qty = QuantityDispersion(
-        name=r"$C_{m\alpha}$",
-        nominal=-0.42,
-        bias=DispersionSpec(disp_type=4, moy=0.0, var=0.02),
-        scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),
-    )
-    fig, _ = plot_dispersion_pdf(qty, n=20000, rng=np.random.default_rng(0))
-    return fig
-
-
-@pytest.mark.mpl_image_compare(**MPL)
-def test_dispersion_band_along_a_sweep():
-    """A dispersed polar: mean, envelope, dashed nominal, and realisations.
-
-    Sampled, so the generator is seeded. Correlated draws are what make the
-    spaghetti curves smooth here — if that ever regresses to independent
-    sampling they go ragged and this comparison fails.
-    """
-    band = band_from_dispersion(
-        ALPHA, CN_SA,
-        bias=DispersionSpec(disp_type=5, moy=0.0, var=0.02),
-        scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),
-        n=20000, rng=np.random.default_rng(0),
-    )
-    fig, ax = new_figure(figsize=(6.5, 4.5))
-    plot_dispersion_band(ax, band, label=r"$C_N$ (moyenne)", realisations=15)
-    ax.set(xlabel=r"$\alpha$ (°)", ylabel=r"$C_N$ (-)")
-    set_title(ax, "Polaire dispersée")
-    make_legend(ax, loc="upper left")
-    return fig
-
-
-# --------------------------------------------------------------------------
-# Filling between two curves
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.mpl_image_compare(**MPL)

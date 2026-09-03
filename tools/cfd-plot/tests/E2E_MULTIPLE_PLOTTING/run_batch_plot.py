@@ -11,6 +11,7 @@ Usage (from ``tools/cfd-plot/``)::
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --dry-run --verbose
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --n-jobs -1
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --demo-hooks
+    PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --pdf-report ETUDE.pdf
 
 Regenerate CSV fixtures (162 rows per source) with::
 
@@ -255,6 +256,12 @@ def main() -> None:
         help="Parallel workers (1=sequential, -1=all CPUs).",
     )
     parser.add_argument(
+        "--pdf-report",
+        default=None,
+        metavar="PDF",
+        help="Also assemble every figure into one navigable PDF at this path.",
+    )
+    parser.add_argument(
         "--demo-hooks",
         action="store_true",
         help="Enable include_curve and on_before_save demo hooks.",
@@ -284,6 +291,7 @@ def main() -> None:
         n_jobs=args.n_jobs,
         include_curve=include_curve if args.demo_hooks else None,
         on_before_save=on_before_save if args.demo_hooks else None,
+        pdf_report=args.pdf_report,
     )
 
     if args.compare:

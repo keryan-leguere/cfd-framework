@@ -95,13 +95,17 @@ bibliothèque en paquet `cfd-plot` installable (layout `src/`, août 2026) :
 1. **`mypy --strict`.** `pyproject.toml` configure mypy en mode intermédiaire
    (`check_untyped_defs` + quelques garde-fous), qui passe proprement. Le mode
    `strict = true` des paquets voisins (`cfd-perf`, `cfd-atm`) remonte encore
-   ~132 erreurs, presque toutes des annotations manquantes sur les helpers
+   ~155 erreurs, presque toutes des annotations manquantes sur les helpers
    publics (`no-untyped-def`, `type-arg`, `no-any-return`). À faire module par
    module, en commençant par `_grid.py` et `prep.py` (les plus petits).
 
-2. **`ruff format`.** Le formateur n'a jamais tourné sur ce code : 22 fichiers
-   sur 29 seraient reformatés. La commande est `ruff format .`, mais elle doit
+   Les modules ajoutés depuis cette décision — `pdf/`, `layout.py`,
+   `palettes.py` — sont, eux, tenus aux règles strictes dès le départ, via un
+   `[[tool.mypy.overrides]]` ciblé. C'est ce qui empêche la liste ci-dessus de
+   continuer à grandir pendant qu'on la résorbe : le code neuf n'y entre pas.
+
+2. **`ruff format`.** Le formateur n'a jamais tourné sur l'ancien code : une
+   trentaine de fichiers seraient reformatés (les modules récents, eux, sont
+   déjà formatés). La commande est `ruff format .`, mais elle doit
    faire l'objet d'un commit séparé et dédié — mélangée à un changement de
-   fond, elle rend la relecture impossible. Attention : certains alignements
-   manuels (dictionnaires de décalages dans `dispersion/plots.py`) seront
-   perdus.
+   fond, elle rend la relecture impossible.

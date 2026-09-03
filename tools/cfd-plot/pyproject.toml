@@ -24,10 +24,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# cfd_plot.dispersion, and the interpolation helpers in field2d.py.
-dispersion = ["scipy>=1.11"]
+# The interpolation helpers in field2d.py (`interpolate_field2d`,
+# `plot_pcolormesh_interp`). Formerly named `dispersion`, back when
+# cfd_plot.dispersion needed SciPy too — that submodule now lives in the
+# sibling package tools/cfd-dispersion, which does not use SciPy at all.
+interp = ["scipy>=1.11"]
 # Pretty terminal tables from print_file_report and batch reporting.
 rich = ["rich>=13.0"]
+# Clickable outline (PDF bookmarks) on reports from cfd_plot.pdf. Strictly
+# optional: without it the report is written identically, minus the outline.
+# Matplotlib cannot write a PDF outline, which is the whole reason this exists.
+pdf = ["pypdf>=4.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
@@ -36,6 +43,8 @@ dev = [
     "mypy",
     "scipy>=1.11",
     "rich>=13.0",
+    # Also the only way to read a PDF back, so the report tests need it.
+    "pypdf>=4.0",
     "pandas-stubs",
     "scipy-stubs",
 ]
@@ -80,10 +89,12 @@ allowed-confusables = ["–", "−", "×", "’", " ", "σ", "α", "ρ", "ν", "
 # The public API is grouped by topic (styles, 2D scalar, 2D vector, batch, …)
 # with section banners. That grouping is documentation — don't alphabetise it.
 "src/cfd_plot/__init__.py" = ["I001", "RUF022"]
-"src/cfd_plot/dispersion/__init__.py" = ["RUF022"]
 # Grouped by layer (sugar / engine / encoder / presets), which is how the
 # module is meant to be read. Alphabetising it would hide that.
 "src/cfd_plot/anim/__init__.py" = ["RUF022"]
+# Same reason: pages / contact sheets / reports / outline, the order the layers
+# build on each other.
+"src/cfd_plot/pdf/__init__.py" = ["RUF022"]
 "01_EXEMPLE/demo_plotting.py" = [
     "E402",   # module-level import not at top — notebook-style cells
     "E702",   # multiple statements on one line — compact xlabel/ylabel pairs
@@ -119,6 +130,34 @@ warn_unused_configs = true
 
 [[tool.mypy.overrides]]
 module = ["matplotlib.*", "mpl_toolkits.*"]
+ignore_missing_imports = true
+
+# The modules added after the strict decision are held to the strict rules from
+# the start. Retrofitting the older ones is the TODO.md item; letting new code
+# join them there is how that list stops shrinking.
+#
+# Two deliberate choices here:
+#
+# * Spelled out rather than `strict = true`. In a per-module section that flag
+#   leaks into modules it does not name — the older files' errors come back and
+#   the count goes 157 -> 159, which is the opposite of scoping it.
+# * `disallow_untyped_calls` stays off. The only calls it would flag are
+#   `PdfPages.savefig` / `PdfPages.close`: matplotlib ships no stubs for
+#   `backend_pdf`, so they read as untyped. That is an upstream stub gap, not
+#   unannotated code of ours, and silencing it per-call would only add noise.
+[[tool.mypy.overrides]]
+module = ["cfd_plot.pdf.*", "cfd_plot.layout", "cfd_plot.palettes", "cfd_plot.cleanup"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+disallow_subclassing_any = true
+disallow_any_generics = true
+no_implicit_reexport = true
+warn_return_any = true
+extra_checks = true
+
+[[tool.mypy.overrides]]
+module = ["pypdf.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

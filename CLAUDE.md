@@ -280,15 +280,49 @@ not part of the Bash framework's runtime:
 - **`tools/paraview/`** — ParaView automation scripts (state replay + snapshotting, VTM/VTI conversion).
 - **`tools/cfd-plot/`** — a Matplotlib wrapper package (import name `cfd_plot`) providing styled
   figure helpers (`use_style`, `plot_line`, `plot_with_band`, `plot_bar`, `save_figure`, etc.) across
-  three profiles (`notebook`/`slides`/`paper`), plus a dict-driven `batch.py` for multi-source curve
-  comparisons (CFD/analytics/experimental data across flight points) and a `cfd_plot.dispersion`
-  submodule (needs SciPy — `.[dispersion]` extra). `cfd-perf` and `cfd-atm` import it *optionally*
-  via their `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they
-  stay deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).
+  three profiles (`notebook`/`slides`/`paper`), a dict-driven `batch.py` for multi-source curve
+  comparisons (CFD/analytics/experimental data across flight points), a `cfd_plot.anim` submodule
+  (GIF/MP4) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
+  optional `pypdf`). SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
+  `cfd-perf`, `cfd-atm`, `cfd-nozzle` and `cfd-dispersion` import it *optionally* via their
+  `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they stay
+  deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).
   mypy runs here at `check_untyped_defs` level, not `strict` like the other packages — see TODO.md.
+  The former `cfd_plot.dispersion` submodule was extracted into `tools/cfd-dispersion` and rebuilt
+  on OpenTURNS; it is gone from here, with no shim.
+- **`tools/cfd-dispersion/`** — dispersion laws, Monte-Carlo draws, validation and dispersed polars,
+  built on **OpenTURNS** (no SciPy). Input is your law table, `{coeff: {Biais_Type, Biais_M,
+  Biais_ET, FE_Type, FE_M, FE_ET}}`. French API and docs, like cfd-perf/atm/nozzle. Layout:
+  `00_DOC/` (FR docs 01–04 + `generer_figures.py`), `src/cfd_dispersion/{core,report,figures,cli}/`,
+  `batch.py`, and `01_EXEMPLE/` shipped as package data (located via `paths.py`).
+    - **`ET` is a half-range, not a standard deviation** — `σ = ET/2` for the Gaussian families.
+      This is the single most expensive mistake the model allows, it is invisible on a curve, and
+      it is what `core/validation.py` exists to catch. The six families map onto `ot.Dirac`,
+      `ot.Uniform`, `ot.Normal` and `ot.TruncatedNormal`; a test pins them against 400 000 draws of
+      the old SciPy implementation so the port cannot have quietly changed the physics.
+    - **Two OpenTURNS traps, both handled**: `Normal.getRange()` returns a *finite* numerical range
+      (≈ M ± 7.65 σ), not the support — so `support()` returns ±inf for type 4, and `plage_utile()`
+      is what figures use; and `getSample(n)` returns `(n, 1)`, which broadcasts against a `(npts,)`
+      sweep into a plausible-looking wrong `(n, npts)`. One helper, `core/alea.vers_numpy`, flattens
+      *and* copies (the raw view is read-only).
+    - **Reproducibility is global.** OpenTURNS has no per-call generator, so there is no `rng=` but a
+      `graine=`; `core/alea.graine_temporaire` restores the prior state so a seed never costs the
+      caller theirs.
+    - **Validation is three ordered checks** — support, then moments (against OpenTURNS' *exact*
+      truncated moments, not `ET/2`), then Kolmogorov–Smirnov. Each catches what the others miss: a
+      truncated law drawn as a full Gaussian passes KS at p = 0.13 but fails support; a bimodal law
+      with identical moments and support fails only KS. `valider_lot` corrects for multiplicity
+      (Šidák): without it a wholly conforming 12-point × 4-component study comes out clean 3 times
+      in 20, with it 19 times in 20.
+    - **`superposer_dispersion`** overlays a theoretical band, the per-draw curves, a min/max fill in
+      the series' own tint, ±1/2/3σ lines labelled *on* the curve, and a box naming the law. The σ
+      labels compute their angle in *display* coordinates and must be placed last, after anything
+      that can move the limits. `batch.py`'s `HookDispersion` plugs all of it into
+      `cfd_plot.batch_plot`'s `on_before_save`; it is a module-level class, not a closure, because
+      `batch_plot` silently drops to `n_jobs=1` when its hook is not picklable.
 
 Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
-its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.12) with a `dev` extra
+its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.9) with a `dev` extra
 (`pytest`, `ruff`, `mypy`/`pytest-cov`). There is no workspace tool, no lockfile and no
 `requirements.txt` anywhere: you `cd` into a package, install it editable into a venv, and run the
 tools directly. Install and test one in isolation, e.g.:

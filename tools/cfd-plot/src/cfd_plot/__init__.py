@@ -59,6 +59,8 @@ from .composite2d import (
 from .batch import (
     BatchPlotContext,
     DEFAULT_FLIGHT_POINT_KEYS,
+    FOLD_Y_STEM,
+    FoldSpec,
     batch_compare_flight_points,
     batch_plot,
     build_compare_output_path,
@@ -85,6 +87,34 @@ from .anim import (
     ffmpeg_available,
     frames_to_gif,
     frames_to_mp4,
+)
+
+# --- Paper-figure assembly ---------------------------------------------------
+from .layout import (
+    panel_labels,
+)
+
+from .palettes import (
+    PALETTES,
+    palette_colors,
+    palette_context,
+    set_palette,
+)
+
+# --- PDF reports -------------------------------------------------------------
+from .pdf import (
+    PAGE_SIZES,
+    PdfReportSpec,
+    ReportSection,
+    contact_sheet,
+    pdf_report,
+)
+
+# --- Cleaning a generated figure tree ----------------------------------------
+from .cleanup import (
+    FIGURE_SUFFIXES,
+    CleanReport,
+    clean_figure_dir,
 )
 
 from .prep import (
@@ -126,6 +156,8 @@ __all__ = [
     # Batch curve plotting
     "BatchPlotContext",
     "DEFAULT_FLIGHT_POINT_KEYS",
+    "FOLD_Y_STEM",
+    "FoldSpec",
     "batch_compare_flight_points",
     "batch_plot",
     "build_compare_output_path",
@@ -149,6 +181,22 @@ __all__ = [
     "ffmpeg_available",
     "frames_to_gif",
     "frames_to_mp4",
+    # Paper-figure assembly
+    "PALETTES",
+    "palette_colors",
+    "palette_context",
+    "panel_labels",
+    "set_palette",
+    # PDF reports
+    "PAGE_SIZES",
+    "PdfReportSpec",
+    "ReportSection",
+    "contact_sheet",
+    "pdf_report",
+    # Cleaning a generated figure tree
+    "CleanReport",
+    "FIGURE_SUFFIXES",
+    "clean_figure_dir",
     # Data preparation
     "dataframe_to_grid",
     "dataframe_to_masked_grid",

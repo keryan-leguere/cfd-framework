@@ -35,8 +35,9 @@ Four things it gives you that plain Matplotlib does not:
 - [13. Data preparation](#13-data-preparation)
 - [14. Exporting figures](#14-exporting-figures)
 - [15. Batch plotting](#15-batch-plotting)
-- [16. Dispersion analysis](#16-dispersion-analysis)
-- [17. Animations (GIF / MP4)](#17-animations-gif--mp4)
+- [16. Animations (GIF / MP4)](#16-animations-gif--mp4)
+- [17. Panel labels and palettes](#17-panel-labels-and-palettes)
+- [18. PDF reports and contact sheets](#18-pdf-reports-and-contact-sheets)
 - [API reference](#api-reference)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -49,13 +50,13 @@ Four things it gives you that plain Matplotlib does not:
 cd tools/cfd-plot
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"      # runtime deps + pytest / ruff / mypy
-pytest                       # 455 tests
+pytest                       # 590 tests
 ```
 
 | Extra | Pulls | Needed for |
 |:---|:---|:---|
 | *(base)* | `matplotlib`, `numpy`, **`pandas`** | `import cfd_plot` |
-| `.[dispersion]` | `scipy` | `cfd_plot.dispersion`, `interpolate_field2d` |
+| `.[interp]` | `scipy` | `interpolate_field2d`, `plot_pcolormesh_interp` |
 | `.[rich]` | `rich` | pretty terminal export reports |
 | `.[dev]` | the above + `pytest`, `pytest-cov`, `pytest-mpl`, `ruff`, `mypy`, type stubs | development |
 
@@ -170,7 +171,7 @@ plot_line(ax, alpha, cn_exp, marker="^", ls="none", label="Experiment")   # mark
 ```
 
 `plot_with_band` draws a curve plus a shaded envelope — uncertainty, min/max across a sweep,
-±2σ from a dispersion study:
+±2σ from an uncertainty study:
 
 ```python
 plot_with_band(ax, alpha, cn, y_low=cn - 2 * sigma, y_high=cn + 2 * sigma,
@@ -385,7 +386,7 @@ plot_pcolormesh_interp(ax, x, y, z, *, factor=2, method="cubic", ...)
 ```
 
 Refines a structured grid by `factor` in each direction (requires SciPy —
-`pip install -e ".[dispersion]"`). `plot_pcolormesh_interp` interpolates and draws in one call.
+`pip install -e ".[interp]"`). `plot_pcolormesh_interp` interpolates and draws in one call.
 
 > **Interpolation is cosmetic.** It makes a coarse CFD grid look smooth; it does not add
 > information and it will happily smooth over a shock. For quantitative plots prefer
@@ -767,155 +768,7 @@ The CSV fixtures (`kw.csv`, `sa.csv`, `exp.csv`) show the expected column layout
 
 ---
 
-## 16. Dispersion analysis
-
-`cfd_plot.dispersion` turns uncertainty specifications into sampled distributions and
-diagnostic figures. **Requires SciPy** (`pip install -e ".[dispersion]"`).
-
-```python
-from cfd_plot.dispersion import DispersionSpec, QuantityDispersion
-```
-
-### The model
-
-A quantity is dispersed by a **bias** (additive) and a **scale** (multiplicative):
-
-```
-sample = (1 + scale) * nominal + bias
-```
-
-> **Two traps in one formula.** A *centred* scale error has `moy=0.0`, not `1.0` — passing
-> `1.0` doubles your nominal. And `var` is a **half-range**, not a variance: for the Gaussian
-> families `sigma = var / 2`.
-
-`DispersionSpec(disp_type, moy, var)` selects a family:
-
-| `disp_type` | Family | Meaning |
-|:---:|:---|:---|
-| 1 | Null | always 0 — component disabled |
-| 2 | Constant | always `moy` |
-| 3 | Uniform | uniform on `moy ± var` |
-| 4 | Gaussian | `N(moy, var/2)`, untruncated |
-| 5 | Gaussian ±3σ | truncated at ±3σ |
-| 6 | Gaussian ±2σ | truncated at ±2σ |
-
-![dispersion types](00_DOC/FIGURES/14_dispersion_types.png)
-
-```python
-from cfd_plot.dispersion import plot_dispersion_type
-
-fig, ax = plot_dispersion_type(DispersionSpec(disp_type=4, moy=0.0, var=1.0))
-```
-
-### Per-quantity figures
-
-```python
-qty = QuantityDispersion(
-    name=r"$C_{m\alpha}$",
-    nominal=-0.42,
-    bias=DispersionSpec(disp_type=4, moy=0.0, var=0.02),    # additive, σ = 0.01
-    scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),   # multiplicative, σ = 5 %
-)
-```
-
-| `plot_dispersion_pdf` | `plot_dispersion_cdf` |
-|:---:|:---:|
-| ![pdf](00_DOC/FIGURES/15_dispersion_pdf.png) | ![cdf](00_DOC/FIGURES/16_dispersion_cdf.png) |
-
-The PDF panel overlays a KDE, the nominal, the sampled mean and nested ±1/2/3σ bands with
-their theoretical coverage. The CDF marks the same σ levels with empirical coverage.
-
-**`plot_dispersion_dashboard`** — the two input components plus the resulting distribution:
-
-![dashboard](00_DOC/FIGURES/17_dispersion_dashboard.png)
-
-**`plot_dispersion_matrix`** — several quantities at once:
-
-![matrix](00_DOC/FIGURES/18_dispersion_matrix.png)
-
-```python
-from cfd_plot.dispersion import plot_dispersion_dashboard, plot_dispersion_matrix
-
-fig, axes = plot_dispersion_dashboard(qty, n=20000)
-fig, axes = plot_dispersion_matrix([qty, qty2, qty3], n=20000, ncols=3, share_x=True)
-```
-
-Pass `rng=np.random.default_rng(seed)` for reproducible sampling; without it the legacy
-`np.random` global state is used, so `np.random.seed(...)` still works.
-
-### Along a sweep
-
-The figures above answer *"how is one dispersed quantity distributed?"*. This answers the
-question that reaches a deliverable: *"what does my **polar** look like once the
-coefficients are dispersed?"*. The dispersion is Monte-Carlo-sampled at every point of the
-sweep, the cloud reduced to an envelope, and the result handed to `plot_with_band`.
-
-```python
-band_from_dispersion(x, nominal, *, bias, scale, n=20000, interval="percentile",
-                     coverage=None, k=None, correlated=True, rng=None) -> DispersionBand
-band_from_quantities(x, quantities, *, n=20000, interval="percentile",
-                     coverage=None, k=None, rng=None) -> DispersionBand
-plot_dispersion_band(ax, band, *, label=None, band_label=None, color=None,
-                     show_nominal=True, realisations=0, ...) -> dict[str, Artist]
-```
-
-```python
-from cfd_plot.dispersion import DispersionSpec, band_from_dispersion, plot_dispersion_band
-
-band = band_from_dispersion(
-    alpha, cn_nominal,
-    bias=DispersionSpec(disp_type=5, moy=0.0, var=0.02),    # additive
-    scale=DispersionSpec(disp_type=6, moy=0.0, var=0.10),   # multiplicative
-)
-plot_dispersion_band(ax, band, label=r"$C_N$", realisations=15)
-```
-
-Use **`band_from_dispersion`** when one bias/scale pair applies to the whole sweep, and
-**`band_from_quantities`** when each point carries its own `QuantityDispersion` — a
-coefficient whose uncertainty grows past stall, say, or a table of per-flight-point
-tolerances. The nominal is then read from the quantities themselves.
-
-#### Correlated or independent — the choice that matters
-
-![dispersion band](00_DOC/FIGURES/18b_dispersion_band.png)
-
-A calibration error on a coefficient is normally *the same error* at every point of a
-sweep: one realisation shifts or tilts the whole curve coherently. That is the default,
-`correlated=True`, and its realisations are smooth curves. Drawing an independent error per
-point instead models a per-point noise such as an unconverged residual, and its realisations
-are ragged.
-
-Both panels above use the same dispersion and produce the same envelope; only what lies
-*inside* it differs — which is why `realisations=N` is worth switching on. Only the
-correlated envelope can be read as "the true curve lies in here", which is usually the
-claim being made.
-
-#### Reading the result
-
-`DispersionBand` is a frozen dataclass carrying `x`, `nominal`, `mean`, `low`, `high` and
-the full `samples` cloud of shape `(n, npts)`, plus `std`, `half_width`, `n_samples` and a
-`label` (`"95 %"`, `"±2σ"`, …). Keeping the cloud means you can re-reduce it without
-resampling:
-
-```python
-band.reduce(interval="sigma", level=1.0)     # same cloud, ±1σ instead of 95 %
-```
-
-`interval="percentile"` (default, set with `coverage=`) reduces to a coverage interval;
-`interval="sigma"` (set with `k=`) to mean ± *k*·σ. Prefer percentiles: types 5 and 6 are
-*truncated* Gaussians, so mean ± 2σ overstates their envelope. Passing the knob that
-belongs to the other mode raises rather than being silently ignored.
-
-`plot_dispersion_band` draws the mean curve with its envelope and overlays the nominal
-dashed, so the bias introduced by an off-centre component (`moy != 0`) stays visible
-instead of being hidden by the very band that reports it. When the dispersion is centred
-the two coincide — itself a useful confirmation.
-
-A runnable walkthrough lives in [`01_EXEMPLE/demo_dispersion.py`](01_EXEMPLE/demo_dispersion.py).
-
----
-
-## 17. Animations (GIF / MP4)
+## 16. Animations (GIF / MP4)
 
 ![reveal](00_DOC/FIGURES/21_animation_reveal.gif)
 
@@ -1049,6 +902,185 @@ A runnable walkthrough of all six lives in
 
 ---
 
+## 17. Panel labels and palettes
+
+Two things every publication figure needs, and neither of which the style
+profiles can do for you.
+
+### `panel_labels`
+
+```python
+from cfd_plot import new_figure, panel_labels, plot_line
+
+fig, axes = new_figure(2, 2)
+# ... plot into each panel ...
+panel_labels(axes)                       # (a) (b) (c) (d), reading order
+panel_labels(axes, fmt="{}.")            # a.  b.  c.  d.
+panel_labels(axes, loc="upper right", outside=True)
+```
+
+![panel labels](00_DOC/FIGURES/22_panel_labels.png)
+
+Labels are placed in **axes coordinates**, so they survive a limit change, a
+shared axis, or a constrained-layout reflow. A 2-D array from `new_figure(2, 2)`
+is flattened row-major — reading order. Panels that are not visible are skipped:
+`plt.subplots` on an over-large grid leaves blank axes behind, and labelling
+those would shift every subsequent letter onto the wrong panel.
+
+Past 26 panels the default labels continue `aa`, `ab`, … rather than repeating.
+
+### Palettes
+
+Matplotlib's default `tab10` is fine on screen and poor everywhere else: two of
+its ten colours are indistinguishable to a red-green deficiency, and the whole
+cycle collapses when the paper is printed in black and white.
+
+```python
+from cfd_plot import palette_colors, palette_context, set_palette
+
+with palette_context("okabe_ito"):        # global, restored on exit
+    ...
+
+set_palette("grayscale", ax=ax)           # scoped to one Axes — prefer this
+colors = palette_colors("tol_bright", 5)  # assign by hand; cycles past the end
+```
+
+![palettes](00_DOC/FIGURES/23_palettes.png)
+
+| Palette | Colours | For |
+|:---|:--|:---|
+| `okabe_ito` | 8 | The default recommendation — designed for all three common forms of colour blindness. Black first, so a single-series figure comes out black. |
+| `tol_bright` | 7 | Paul Tol's bright qualitative scheme. |
+| `tol_muted` | 9 | Tol's muted scheme; the trailing pale grey is his designated "bad data" colour. |
+| `grayscale` | 6 | Print, and checking that a figure still reads with the colour gone. Spaced evenly in *luminance*, not in RGB. |
+| `tab10` | 10 | Matplotlib's default, for when you deliberately want it. |
+
+`set_palette(ax=...)` and `palette_context` exist because `set_palette()` on its
+own mutates global rcParams permanently — occasionally what you want in a
+notebook, almost never what you want in a script that also draws other figures.
+
+---
+
+## 18. PDF reports and contact sheets
+
+A parametric study writes hundreds of figures into a nested tree. These two turn
+that pile into something you can read, and hand to someone else.
+
+### The short version
+
+```python
+from cfd_plot import batch_plot
+
+batch_plot(..., output_base="figures/", pdf_report="ETUDE.pdf")
+```
+
+Cover page, table of contents, one divider per polar, one page per figure, page
+numbers, and a clickable outline. The figures go in as **vector**.
+
+![pdf report](00_DOC/FIGURES/25_pdf_report.png)
+
+`formats=()` alongside it means *the report is the deliverable* — no loose figure
+files at all.
+
+### Why it is built during the run
+
+Matplotlib has no vector-to-vector import: it cannot place an existing SVG or
+PDF onto a page. A report assembled afterwards from the files on disk is
+therefore necessarily **raster**. Building it while the figures are still open
+keeps them vector, which is why `pdf_report=` is a `batch_plot` argument rather
+than a post-processing step.
+
+The cost is that rendering becomes sequential — `PdfPages` cannot cross a
+process boundary — so `n_jobs` is forced to 1, with a warning. For a study whose
+figures are ordinary line plots this is rarely the bottleneck. If it is, run the
+batch in parallel with `formats=("png",)` and assemble afterwards:
+
+```python
+from cfd_plot import pdf_report
+written = batch_plot(..., formats=("png",), n_jobs=-1)
+pdf_report(written, "ETUDE.pdf", title="Etude")   # raster, but parallel
+```
+
+Memory is not a concern either way: the page plan — and therefore every table of
+contents page number — is computed from the figure *labels* before anything is
+drawn, so figures stream into the document one at a time.
+
+### Building a report by hand
+
+```python
+from cfd_plot import ReportSection, pdf_report
+
+pdf_report(
+    [
+        ReportSection("ALPHA_POLAR", [fig_a, fig_b]),
+        ReportSection("BETA_POLAR", [fig_c]),
+    ],
+    "etude.pdf",
+    title="Etude X",
+    subtitle="k-omega vs SA vs essais",
+    summary=[("Figures", "3"), ("Sources", "CFD, essais")],
+)
+```
+
+Items are live `Figure` objects, paths to **raster** images, or nested
+`ReportSection`s. Sections nest arbitrarily; `divider_depth` controls how deep a
+section gets its own divider page (default: top level only — otherwise a
+200-figure report is half divider pages), and `toc_depth` how deep the contents
+list goes. Figures are listed by their `fig.set_label(...)`.
+
+A figure you pass in is **not** closed and **not** permanently resized: a report
+must not be a side effect that reshapes the figures it was handed.
+
+### Options
+
+| Argument | Default | Notes |
+|:---|:--|:---|
+| `page_size`, `landscape` | `"a4"`, `True` | `PAGE_SIZES` has A3/A4/A5/letter/legal. `page_size=None` keeps each figure's own size, giving mixed page sizes. |
+| `n_up` | `None` | `(rows, cols)` to put several figures on a page. Figures are **rasterised** in this mode — compositing them is not otherwise possible. |
+| `toc`, `toc_depth` | `True`, `1` | |
+| `divider_depth` | `0` | |
+| `footer` | `True` | `page n / N`, or a callable `(number, total) -> str`. |
+| `metadata` | `None` | PDF document metadata. `title` fills `Title`. |
+| `bookmarks` | `True` | Needs `pypdf`; see below. |
+
+### The outline is optional
+
+Matplotlib cannot write a PDF outline, so the clickable bookmark tree needs
+[`pypdf`](https://pypi.org/project/pypdf/):
+
+```bash
+pip install 'cfd-plot[pdf]'
+```
+
+Without it the report is written **identically**, minus the outline, after one
+`logging.info`. Nothing raises, and nothing is lost but navigation.
+
+### Contact sheets
+
+For triage rather than delivery: everything at once, so you can spot the one
+that went wrong and go open it full size.
+
+```python
+from cfd_plot import contact_sheet
+
+contact_sheet(pngs, "sheet.pdf", rows=4, cols=3, title="Study")
+contact_sheet(pngs, "sheet.png", rows=2, cols=3)   # one PNG per page
+```
+
+![contact sheet](00_DOC/FIGURES/24_contact_sheet.png)
+
+Each image is fitted to its own aspect ratio inside its cell and the axes sized
+to match, rather than letterboxed inside a fixed cell — letterboxing leaves grey
+margins that make a regular grid look ragged, and it is what the obvious
+implementation gives you.
+
+**Contact sheets read rasters, not SVG.** `batch_plot` writes SVG by default, so
+export PNG as well (`formats=("svg", "png")`) or use `pdf_report=` instead. The
+error message says so, because it is the first mistake everyone makes.
+
+
+---
+
 ## API reference
 
 | Group | Functions |
@@ -1064,10 +1096,10 @@ A runnable walkthrough of all six lives in
 | **Data prep** | `reshape_structured2d`, `dataframe_to_grid`, `dataframe_to_masked_grid`, `mask_field`, `extract_slice2d` |
 | **Export** | `save_figure`, `print_file_report` |
 | **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
-| **Dispersion** | `cfd_plot.dispersion`: `DispersionSpec`, `QuantityDispersion`, `plot_dispersion_{type,pdf,cdf,dashboard,matrix}`, `sigma`, `dispersion_type_label` |
-| **Dispersion → curves** | `cfd_plot.dispersion`: `band_from_dispersion`, `band_from_quantities`, `DispersionBand`, `plot_dispersion_band` |
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
+| **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |
+| **PDF reports** | `pdf_report`, `contact_sheet`, `ReportSection`, `PdfReportSpec`, `PAGE_SIZES`; `batch_plot(..., pdf_report=...)` |
 
 ---
 
@@ -1081,7 +1113,6 @@ tools/cfd-plot/
 │   └── FIGURES/              # the pictures (versioned)
 ├── 01_EXEMPLE/
 │   ├── demo_plotting.py      # runnable tutorial, notebook-cell style
-│   ├── demo_dispersion.py    # dispersion walkthrough
 │   └── demo_animation.py     # animation walkthrough (GIF / MP4)
 ├── src/cfd_plot/
 │   ├── __init__.py           # public API (grouped by topic — not alphabetical)
@@ -1093,17 +1124,19 @@ tools/cfd-plot/
 │   ├── prep.py               # long table → grid, slicing, masking
 │   ├── _grid.py              # internal coordinate/cmap validators
 │   ├── fonts/  styles/       # package data (TeX Gyre, 3 .mplstyle)
-│   ├── dispersion/           # dispersion analysis (needs scipy)
-│   └── anim/                 # GIF / MP4 (encode → engine → sweep)
+│   ├── layout.py             # panel labels
+│   ├── palettes.py           # named colour cycles
+│   ├── anim/                 # GIF / MP4 (encode → engine → sweep)
+│   └── pdf/                  # reports (pages → sheet → assemble → bookmarks)
 └── tests/
     ├── test_*.py
-    ├── dispersion/
     ├── anim/
+    ├── pdf/
     └── E2E_MULTIPLE_PLOTTING/   # batch driver + CSV fixtures
 ```
 
 ```bash
-pytest                              # 455 tests
+pytest                              # 590 tests
 pytest --mpl                        # + compare figures against tests/baseline/
 ruff check . && ruff format --check .
 mypy src
@@ -1156,7 +1189,7 @@ this codebase.
 |:---|:---|:---|
 | `sync_axes_limits` leaves a panel unsynced | that panel's only data is a reference line / span — those are ignored by design | plot the real data, or set the limits by hand |
 | `ModuleNotFoundError: No module named 'pandas'` on `import cfd_plot` | pandas is a hard dependency | `pip install pandas` |
-| `ModuleNotFoundError: No module named 'scipy'` | `cfd_plot.dispersion` / `interpolate_field2d` need SciPy | `pip install -e ".[dispersion]"` |
+| `ModuleNotFoundError: No module named 'scipy'` | `interpolate_field2d` needs SciPy | `pip install -e ".[interp]"` |
 | `AttributeError: 'tuple' object has no attribute 'cmap'` | the 2D helpers return `(artist, colorbar)` | unpack: `artist, cbar = plot_pcolormesh(...)` |
 | Shared colorbar does not match the panels | panels normalised independently | pass the same `vmin`/`vmax` everywhere and `colorbar=False` |
 | `ValueError: field must be 3D` from `extract_slice2d` | it slices a 3D volume, not a 2D plane | index the 2D array directly, or pass an `(nx, ny, nz)` array |
