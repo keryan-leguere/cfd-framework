@@ -283,7 +283,14 @@ not part of the Bash framework's runtime:
   three profiles (`notebook`/`slides`/`paper`), a dict-driven `batch.py` for multi-source curve
   comparisons (CFD/analytics/experimental data across flight points), a `cfd_plot.anim` submodule
   (GIF/MP4) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
-  optional `pypdf`). SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
+  optional `pypdf`). `batch_plot` also takes `clean=` (wipe the generated tree first —
+  `cfd_plot.cleanup`, which refuses `/`, `$HOME`, a top-level dir and a repo root) and `fold=`
+  (bonus sheets gathering siblings: `FoldSpec(kind="y")` puts every Y of one condition on one
+  sheet beside them, `kind="context"` puts one Y across conditions under `<POLAR>/FOLD/` as
+  panels or, `layout="overlay"`, on one axes under `FOLD_OVERLAY/` where colour reads the
+  condition and marker/linestyle the source; families larger than `max_panels` split into
+  numbered sheets rather than shrinking).
+  SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
   `cfd-perf`, `cfd-atm`, `cfd-nozzle` and `cfd-dispersion` import it *optionally* via their
   `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they stay
   deployable on their own. Note: pandas is a hard dependency (`__init__` re-exports `batch`).

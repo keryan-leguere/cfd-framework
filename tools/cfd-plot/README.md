@@ -35,6 +35,8 @@ Four things it gives you that plain Matplotlib does not:
 - [13. Data preparation](#13-data-preparation)
 - [14. Exporting figures](#14-exporting-figures)
 - [15. Batch plotting](#15-batch-plotting)
+  - [Cleaning the output tree](#cleaning-the-output-tree)
+  - [Folding: bonus sheets that gather siblings](#folding-bonus-sheets-that-gather-siblings)
 - [16. Animations (GIF / MP4)](#16-animations-gif--mp4)
 - [17. Panel labels and palettes](#17-panel-labels-and-palettes)
 - [18. PDF reports and contact sheets](#18-pdf-reports-and-contact-sheets)
@@ -710,6 +712,136 @@ batch_compare_flight_points(
 Omitting a key raises `KeyError: compare_flight_points['…'] missing flight-point keys: [...]`.
 The sweep variable (`alpha` here) is excluded automatically.
 
+### Cleaning the output tree
+
+A batch tree is generated output, and the generator only ever *writes*. Rename a Y variable,
+drop a flight point, change a `save_name` — the previous run's files stay where they were and
+nothing overwrites them. What you open afterwards is a directory holding two studies with no
+way to tell which figure came from which. `clean` is the answer:
+
+```python
+batch_plot(..., clean=True)     # or clean="figures" — same thing
+batch_plot(..., clean="all")    # rm -rf the tree, non-figures included
+```
+
+`clean=True` deletes only files with a figure extension (`.svg`, `.png`, `.pdf`, `.gif`,
+`.mp4`, …) and then prunes the directories left empty — a `notes.md` or a CSV you dropped in
+there survives. `clean="all"` removes the whole tree. Both honour `dry_run`, so
+`batch_plot(dry_run=True, clean=True, verbose=True)` tells you what would go *and* what would
+arrive, without touching the disk.
+
+The same argument works on `batch_compare_flight_points`. Standalone:
+
+```python
+from cfd_plot import clean_figure_dir
+
+report = clean_figure_dir("09_POST_TRAITEMENT/FIGURE", mode="figures", dry_run=True)
+print(report.summary())   # clean (figures): would remove 214 file(s) and 61 empty ...
+```
+
+`output_base` is almost always assembled from variables, and an empty one turns it into `/`
+or `$HOME` — where `mode="all"` is unrecoverable. So `clean_figure_dir` refuses the filesystem
+root, the home directory, any top-level directory, and the root of a git repository. A figure
+directory *inside* a repository is fine; the repository itself is not.
+
+### Folding: bonus sheets that gather siblings
+
+A batch run produces one figure per (polar, condition, Y). That is the right unit to produce
+and the wrong unit to read: comparing CN against CA at one condition means opening two files,
+and comparing one Y across five altitudes means opening five files in five directories.
+`fold` writes **bonus sheets** that gather those siblings. The individual figures stay exactly
+where they were — a fold is an extra file, never a replacement.
+
+```python
+batch_plot(..., fold="y")               # every Y of one condition, on one sheet
+batch_plot(..., fold="context")         # one Y across conditions, as panels
+batch_plot(..., fold="context-overlay") # ... or all on one axes
+batch_plot(..., fold=True)              # shorthand for ("y", "context")
+```
+
+**`fold="y"`** — one sheet per condition, one panel per entry of `y_axis_dict`, written
+*beside* the figures it folds:
+
+```
+ALPHA_POLAR/M_0.8/Z_8000/BETA_2/CN_vs_alpha.svg
+ALPHA_POLAR/M_0.8/Z_8000/BETA_2/CA_vs_alpha.svg
+ALPHA_POLAR/M_0.8/Z_8000/BETA_2/FOLD_Y_vs_alpha.svg   ← the fold
+```
+
+The panels keep **independent** axes: CN and CA have different units, so a shared scale would
+flatten one of them. The heading names the quantities on the first line and the condition on
+the second.
+
+**`fold="context"`** — one sheet per Y, gathering the conditions that differ only by a
+directory level, under a `FOLD/` sub-directory of the polar:
+
+![fold context](00_DOC/FIGURES/26_batch_fold.png)
+
+```
+ALPHA_POLAR/FOLD/M_0.7/BETA_0/CN_vs_alpha_by_Z.svg
+```
+
+The filename says what was folded (`_by_Z`), the path keeps what was not (`M_0.7/BETA_0`), and
+the panels share their scales — same quantity, same unit, so a common range is what makes them
+comparable.
+
+**`fold="context-overlay"`** — the same family on a *single* axes, under `FOLD_OVERLAY/`:
+
+![fold overlay](00_DOC/FIGURES/27_batch_fold_overlay.png)
+
+Colour reads the **condition** and the marker/linestyle reads the **source**, so a legend of
+`n_conditions × n_sources` entries stays decodable. With a single source the legend drops the
+source name entirely, which is the case this layout is best at — one CFD campaign, one model,
+several altitudes. `FoldSpec(overlay_color="source")` flips the assignment: each source keeps
+its own colour and the condition is read off the dash pattern.
+
+Use a `FoldSpec` for anything beyond the shorthands:
+
+```python
+from cfd_plot import FoldSpec
+
+batch_plot(
+    ...,
+    fold=[
+        FoldSpec(kind="y"),
+        FoldSpec(kind="context", over=("Altitude_m",), max_panels=6, max_cols=3),
+        FoldSpec(kind="context", layout="overlay", over=("Altitude_m",)),
+    ],
+)
+```
+
+| Field | Meaning |
+|:---|:---|
+| `kind` | `"y"` (fold the quantities) or `"context"` (fold the conditions) |
+| `layout` | `"subplot"` or `"overlay"` — `"overlay"` is rejected for `kind="y"` |
+| `over` | keys the context fold gathers, e.g. `("Altitude_m",)`; default: every key that varies inside the polar |
+| `max_panels` | panels (or overlaid conditions) per sheet, default 6 |
+| `max_cols` | subplot columns, 1–3 |
+| `folder` | sub-directory name; default `FOLD` / `FOLD_OVERLAY` |
+| `sync_axes` | `"x"`, `"y"`, `"both"`, `None`, or `"auto"` (default) |
+| `overlay_color` | `"fold"` (default) or `"source"` |
+
+`over=("Altitude_m",)` is the useful case: with sweeps on Mach *and* altitude, it puts every
+altitude on one sheet and keeps a separate sheet per Mach. Leave it out and the fold gathers
+everything that varies, so you get one sheet per Y covering the whole study.
+
+A family larger than `max_panels` is **split**, not shrunk: six panels per sheet, and the extra
+sheets are numbered `_p1of3`, `_p2of3`, … in the filename and in the subtitle. A family of one
+is skipped — a single-panel sheet is a copy of the figure it folds.
+
+Folded sheets go through the same pipeline as everything else: `dry_run` lists them,
+`n_jobs` renders them in parallel, `pdf_report` includes them (in a `Folded` section under
+their own polar), and `on_before_save` is called once per panel with `context.fold_kind`,
+`context.fold_layout` and `context.fold_label` set:
+
+```python
+def on_before_save(fig, ax, context):
+    if context.fold_kind is not None and context.fold_layout == "subplot":
+        add_textbox(ax, context.fold_label, loc="lower right")
+```
+
+Axis synchronisation happens **before** the hook, so a hook that pins its own limits still wins.
+
 ### Hooks
 
 Two escape hatches keep the batch generic while letting you special-case individual figures.
@@ -735,6 +867,7 @@ axes-level tweaks. `context` is a `BatchPlotContext` with:
 | `polar_prefix` | top-level directory name |
 | `output_path` | where the figure is about to be written |
 | `compare_name`, `panel_index` | set only in `batch_compare_flight_points` |
+| `fold_kind`, `fold_layout`, `fold_label` | set only on a folded sheet (see below) |
 
 ```python
 def on_before_save(fig, ax, context):
@@ -752,7 +885,8 @@ stable contract, the prefix is a path convenience.
 Available if you need to reproduce the naming outside a batch run: `build_output_path`,
 `build_compare_output_path`, `format_axis_label`, `format_axis_title_label`,
 `format_flight_point_title_suffix`, `format_plot_title`, `iter_flight_points`,
-`iter_fixed_sweep_combinations`, `varying_flight_keys`.
+`iter_fixed_sweep_combinations`, `varying_flight_keys`. `FOLD_Y_STEM` is the filename stem a
+`kind="y"` fold uses, if you need to find those sheets again.
 
 ### End-to-end example
 
@@ -762,6 +896,8 @@ python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py
 python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --dry-run --verbose
 python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --n-jobs -1
 python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --demo-hooks
+python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --clean --fold y context
+python3 tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --fold context-overlay --fold-over Altitude_m
 ```
 
 The CSV fixtures (`kw.csv`, `sa.csv`, `exp.csv`) show the expected column layout.

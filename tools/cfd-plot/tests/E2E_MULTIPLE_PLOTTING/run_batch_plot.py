@@ -12,6 +12,8 @@ Usage (from ``tools/cfd-plot/``)::
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --n-jobs -1
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --demo-hooks
     PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --pdf-report ETUDE.pdf
+    PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --clean --fold y context
+    PYTHONPATH=. python tests/E2E_MULTIPLE_PLOTTING/run_batch_plot.py --fold context-overlay --fold-over Altitude_m
 
 Regenerate CSV fixtures (162 rows per source) with::
 
@@ -26,6 +28,7 @@ from pathlib import Path
 import pandas as pd
 
 from cfd_plot import (
+    FoldSpec,
     batch_compare_flight_points,
     batch_plot,
     discover_flight_point_values,
@@ -219,6 +222,51 @@ def on_before_save(fig, ax, context):
     if context.compare_name is not None:
         sync_axes_limits(fig.axes, which="y")
 
+    # Folded sheets only: mark which panel of the sheet this is. context.fold_*
+    # is set exactly there, so the branch cannot fire on an ordinary figure.
+    # An overlay has one axes carrying every condition, hence one call whose
+    # fold_label names them all.
+    if context.fold_kind is not None and context.fold_layout == "subplot":
+        ax.text(
+            0.98,
+            0.02,
+            context.fold_label,
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=6,
+            color="0.5",
+        )
+
+
+def _build_fold(args) -> list:
+    """Turn the --fold / --fold-over flags into FoldSpec objects.
+
+    ``--fold`` with no value means the two obvious folds; naming kinds picks
+    them explicitly. ``--fold-over`` only applies to the context kinds — a Y
+    fold gathers the Y axes and has nothing to fold over.
+    """
+    if args.fold is None:
+        return []
+    kinds = args.fold or ["y", "context"]
+    over = tuple(args.fold_over) if args.fold_over else None
+    specs = []
+    for kind in kinds:
+        if kind == "y":
+            specs.append(FoldSpec(kind="y", max_panels=args.fold_max_panels))
+        elif kind in ("context", "context-overlay"):
+            specs.append(
+                FoldSpec(
+                    kind="context",
+                    layout="overlay" if kind.endswith("overlay") else "subplot",
+                    over=over,
+                    max_panels=args.fold_max_panels,
+                )
+            )
+        else:
+            raise SystemExit(f"unknown --fold kind {kind!r} (y, context, context-overlay)")
+    return specs
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run batch plotting E2E example.")
@@ -271,7 +319,40 @@ def main() -> None:
         action="store_true",
         help="Compare two named flight points as subplots (batch_compare_flight_points).",
     )
+    parser.add_argument(
+        "--clean",
+        nargs="?",
+        const="figures",
+        default=None,
+        choices=["figures", "all"],
+        help="Wipe the output tree first: 'figures' (default) or 'all'.",
+    )
+    parser.add_argument(
+        "--fold",
+        nargs="*",
+        default=None,
+        metavar="KIND",
+        help=(
+            "Also write folded sheets. One or more of: y, context, "
+            "context-overlay. Bare --fold means 'y context'."
+        ),
+    )
+    parser.add_argument(
+        "--fold-over",
+        nargs="*",
+        default=None,
+        metavar="KEY",
+        help="Keys the context folds gather (default: every varying key).",
+    )
+    parser.add_argument(
+        "--fold-max-panels",
+        type=int,
+        default=6,
+        help="Panels per folded sheet; a larger family is split (default 6).",
+    )
     args = parser.parse_args()
+
+    fold = _build_fold(args)
 
     configuration_dict = _load_configuration_dict(args.data_dir)
     y_axis_dict, sweep_dict = _build_axis_dicts()
@@ -292,6 +373,7 @@ def main() -> None:
         include_curve=include_curve if args.demo_hooks else None,
         on_before_save=on_before_save if args.demo_hooks else None,
         pdf_report=args.pdf_report,
+        clean=args.clean or False,
     )
 
     if args.compare:
@@ -324,7 +406,7 @@ def main() -> None:
             **common,
         )
     else:
-        written = batch_plot(**common)
+        written = batch_plot(fold=fold, **common)
 
     if args.dry_run:
         print(f"Dry run: {len(written)} figure(s) would be written under {args.output_base}")

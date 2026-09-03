@@ -27,6 +27,7 @@ import pandas as pd
 
 from cfd_plot import (
     PALETTES,
+    FoldSpec,
     add_reference_lines,
     add_shared_colorbar,
     add_textbox,
@@ -672,6 +673,62 @@ def fig_batch() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 26/27 — folded batch sheets
+# ---------------------------------------------------------------------------
+
+def _pick(directory, prefix: str):
+    """First sheet whose name starts with *prefix*.
+
+    CA sorts before CN and its three curves lie on top of each other in this
+    fixture — a truthful figure, and a useless illustration.
+    """
+    return sorted(p for p in directory.rglob("*.png") if p.name.startswith(prefix))[0]
+
+
+def fig_batch_fold() -> None:
+    """The two fold layouts, on the same family of figures.
+
+    ``clean=True`` on the second run is not decoration: the two runs share
+    ``tmp``, and the first one's sheets would otherwise be picked up by
+    ``sorted(...)`` below and turn the overlay illustration into a subplot one.
+    """
+    import shutil
+
+    cfg, y_axis, sweep, fp = _batch_config()
+    y_axis = {
+        **y_axis,
+        "CA": {"col_name": "CA", "literal_name": "Axial force coefficient",
+               "symbol": r"$C_A$", "unit": "-", "y_save_name": "CA"},
+    }
+    tmp = FIGURES / "_tmp_fold"
+
+    batch_plot(
+        configuration_dict=cfg, y_axis_dict=y_axis, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+        clean=True,
+        fold=[FoldSpec(kind="context", over=("Altitude_m",))],
+    )
+    shutil.copy(_pick(tmp / "ALPHA_POLAR" / "FOLD", "CN_"), FIGURES / "26_batch_fold.png")
+    print("  26_batch_fold.png")
+
+    batch_plot(
+        configuration_dict=cfg, y_axis_dict=y_axis, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+        clean=True,
+        fold=[FoldSpec(kind="context", layout="overlay", over=("Altitude_m",))],
+    )
+    shutil.copy(
+        _pick(tmp / "ALPHA_POLAR" / "FOLD_OVERLAY", "CN_"),
+        FIGURES / "27_batch_fold_overlay.png",
+    )
+    print("  27_batch_fold_overlay.png")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # 22 — panel labels
 # ---------------------------------------------------------------------------
 
@@ -818,6 +875,7 @@ def main() -> None:
     fig_prep()
     fig_declassify()
     fig_batch()
+    fig_batch_fold()
     fig_animation()
     fig_panel_labels()
     fig_palettes()

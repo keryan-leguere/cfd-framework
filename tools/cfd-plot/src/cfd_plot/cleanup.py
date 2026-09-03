@@ -88,9 +88,10 @@ class CleanReport:
         if self.mode == "all":
             return f"clean (all): {verb} {self.root} and everything under it"
         kept = f", kept {len(self.kept_files)} non-figure file(s)" if self.kept_files else ""
+        directories = "directory" if self.n_dirs == 1 else "directories"
         return (
             f"clean (figures): {verb} {self.n_files} file(s) and "
-            f"{self.n_dirs} empty director(y|ies) under {self.root}{kept}"
+            f"{self.n_dirs} empty {directories} under {self.root}{kept}"
         )
 
 

@@ -104,6 +104,14 @@ bibliothèque en paquet `cfd-plot` installable (layout `src/`, août 2026) :
    `[[tool.mypy.overrides]]` ciblé. C'est ce qui empêche la liste ci-dessus de
    continuer à grandir pendant qu'on la résorbe : le code neuf n'y entre pas.
 
+   Une exception assumée : le code de *pliage* (`FoldSpec`, `_FoldJob`,
+   `_enumerate_*_folds`, `_render_fold_*`) est neuf mais vit dans `batch.py`,
+   qui reste au niveau intermédiaire — le séparer dans un module strict
+   imposait soit un import circulaire, soit de déplacer `_SourceCurve` et les
+   formateurs de libellés hors de `batch.py`, pour un gain de typage nul. Il
+   passera à strict avec le reste du fichier. `cleanup.py`, lui, est bien dans
+   la liste stricte.
+
 2. **`ruff format`.** Le formateur n'a jamais tourné sur l'ancien code : une
    trentaine de fichiers seraient reformatés (les modules récents, eux, sont
    déjà formatés). La commande est `ruff format .`, mais elle doit
