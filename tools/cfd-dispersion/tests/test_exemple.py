@@ -1,0 +1,138 @@
+"""L'exemple livré doit tourner tel quel."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import pytest
+
+from cfd_dispersion.core.lois import JeuDeLois
+from cfd_dispersion.paths import EXEMPLE_DIR
+
+FICHIERS = (
+    "LOIS.yaml",
+    "modele.py",
+    "01_tirage.py",
+    "02_monte_carlo.py",
+    "03_polaire_batch_plot.py",
+    "RUN_EXEMPLE.sh",
+)
+
+
+class TestContenu:
+    @pytest.mark.parametrize("nom", FICHIERS)
+    def test_le_fichier_est_livre_avec_le_paquet(self, nom: str) -> None:
+        """Package data : ``pip install cfd-dispersion`` doit suffire."""
+        assert (EXEMPLE_DIR / nom).is_file()
+
+    def test_les_lois_de_l_exemple_se_chargent(self) -> None:
+        from cfd_dispersion import charger_lois_yaml
+
+        lois = charger_lois_yaml(EXEMPLE_DIR / "LOIS.yaml")
+        assert list(lois) == ["CN", "CA", "Cm_alpha"]
+
+
+class TestModele:
+    def test_le_modele_rend_une_ligne_par_point_de_vol_et_tirage(self) -> None:
+        modele = _modele()
+        lois = _lois()
+        resultats = modele.appeler_modele(lois, n=50)
+        assert len(resultats) == 50 * len(modele.POINTS_DE_VOL)
+        assert {"Mach", "Altitude_m", "CN", "CN_Biais", "CN_FE"} <= set(resultats.columns)
+
+    def test_le_defaut_volontaire_est_bien_la(self) -> None:
+        """Un exemple où tout passe ne prouverait rien."""
+        from cfd_dispersion import valider_lot
+
+        modele = _modele()
+        lois = _lois()
+        verdicts = valider_lot(modele.appeler_modele(lois, n=600), lois, par=("Mach", "Altitude_m"))
+        rejets = verdicts.loc[~verdicts["valide"]]
+        assert len(rejets) == 1
+        coefficient, composante = modele.COMPOSANTE_FAUTIVE
+        assert rejets.iloc[0]["coefficient"] == coefficient
+        assert rejets.iloc[0]["composante"] == composante
+        assert rejets.iloc[0]["Mach"] == modele.PDV_FAUTIF
+
+    def test_sans_le_defaut_tout_est_valide(self) -> None:
+        from cfd_dispersion import valider_lot
+
+        modele = _modele()
+        lois = _lois()
+        verdicts = valider_lot(
+            modele.appeler_modele(lois, n=600, fausser=False),
+            lois,
+            par=("Mach", "Altitude_m"),
+        )
+        assert verdicts["valide"].all()
+
+    def test_le_modele_polaire_rend_un_balayage_par_tirage(self) -> None:
+        import numpy as np
+
+        modele = _modele()
+        alpha = np.linspace(0.0, 12.0, 15)
+        a_plat = modele.appeler_modele_polaire(_lois(), alpha, n=20)
+        assert len(a_plat) == 20 * alpha.size
+
+        from cfd_dispersion.figures.polaire import courbes_par_tirage
+
+        _, courbes = courbes_par_tirage(a_plat, x="alpha", y="CN", par=["tirage"])
+        assert courbes.shape == (20, alpha.size)
+
+
+class TestExecution:
+    """Les scripts tournent réellement, dans un répertoire temporaire."""
+
+    def _lancer(self, script: str, tmp_path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(EXEMPLE_DIR / script), "--sortie", str(tmp_path), *extra],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(EXEMPLE_DIR),
+        )
+
+    def test_01_tirage(self, tmp_path: Path) -> None:
+        resultat = self._lancer("01_tirage.py", tmp_path, "-n", "50")
+        assert resultat.returncode == 0, resultat.stderr
+        assert (tmp_path / "lot.csv").is_file()
+        assert len(list(tmp_path.glob("tirage_*.png"))) == 3
+        assert len(pd.read_csv(tmp_path / "lot.csv")) == 50
+
+    def test_02_monte_carlo(self, tmp_path: Path) -> None:
+        resultat = self._lancer("02_monte_carlo.py", tmp_path, "-n", "300")
+        assert resultat.returncode == 0, resultat.stderr
+        assert (tmp_path / "synthese.png").is_file()
+        assert (tmp_path / "verdicts.csv").is_file()
+        # Le défaut volontaire doit ressortir, et déclencher des figures.
+        assert "rejeté" in resultat.stdout
+        assert list(tmp_path.glob("mc_*.png"))
+
+    def test_03_polaire_batch_plot(self, tmp_path: Path) -> None:
+        pytest.importorskip("cfd_plot", reason="cet exemple exige cfd-plot")
+        resultat = self._lancer("03_polaire_batch_plot.py", tmp_path, "-n", "40")
+        assert resultat.returncode == 0, resultat.stderr
+        assert list(tmp_path.rglob("*_vs_alpha.png"))
+
+
+def _modele() -> Any:
+    """Importe le modèle jouet livré avec l'exemple."""
+    import importlib.util
+
+    specification = importlib.util.spec_from_file_location(
+        "_modele_exemple", EXEMPLE_DIR / "modele.py"
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
+
+
+def _lois() -> JeuDeLois:
+    from cfd_dispersion import charger_lois_yaml
+
+    return charger_lois_yaml(EXEMPLE_DIR / "LOIS.yaml")

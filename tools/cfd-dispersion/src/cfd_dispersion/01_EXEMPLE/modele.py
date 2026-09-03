@@ -1,0 +1,157 @@
+"""Un modèle jouet, à la place du vôtre.
+
+Le vrai modèle est une fonction Python qui reçoit les points de vol, la table
+de lois, les coefficients et un tirage, et rend un ``DataFrame``. Celui-ci en
+a la forme exacte, en beaucoup plus simple : il applique la convention aux
+coefficients nominaux et rend une ligne par (point de vol × tirage).
+
+Un défaut est glissé volontairement : au point de vol ``M = 0.85``, le facteur
+d'échelle de ``Cm_alpha`` est tiré avec une demi-étendue **doublée** — la
+confusion classique entre demi-étendue et écart-type. Rien ne le montre à
+l'œil sur une courbe ; c'est exactement ce que la validation doit rattraper.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from cfd_dispersion import JeuDeLois, charger_lois, convention, tirer_lot
+
+#: Les points de vol de l'étude.
+POINTS_DE_VOL: tuple[dict[str, float], ...] = (
+    {"Mach": 0.70, "Altitude_m": 5000.0},
+    {"Mach": 0.80, "Altitude_m": 8000.0},
+    {"Mach": 0.85, "Altitude_m": 10000.0},
+    {"Mach": 0.90, "Altitude_m": 12000.0},
+)
+
+#: Le point de vol où le tirage est volontairement faussé.
+PDV_FAUTIF = 0.85
+
+#: Le coefficient et la composante faussés.
+COMPOSANTE_FAUTIVE = ("Cm_alpha", "FE")
+
+
+def coefficients_nominaux(mach: float) -> dict[str, float]:
+    """Les coefficients nominaux à un point de vol — une dépendance en Mach."""
+    return {
+        "CN": 0.85 + 0.6 * (mach - 0.7),
+        "CA": 0.032 + 0.05 * (mach - 0.7) ** 2,
+        "Cm_alpha": -2.5 - 1.2 * (mach - 0.7),
+    }
+
+
+def _lois_du_point(lois: JeuDeLois, mach: float, fausser: bool) -> JeuDeLois:
+    """Les lois effectivement tirées à un point de vol."""
+    if not fausser or mach != PDV_FAUTIF:
+        return lois
+
+    coefficient, composante = COMPOSANTE_FAUTIVE
+    table: dict[str, dict[str, Any]] = {}
+    for nom, loi in lois.items():
+        table[nom] = {
+            "Biais_Type": loi.biais.type_loi,
+            "Biais_M": loi.biais.M,
+            "Biais_ET": loi.biais.ET,
+            "FE_Type": loi.fe.type_loi,
+            "FE_M": loi.fe.M,
+            "FE_ET": loi.fe.ET,
+        }
+    table[coefficient][f"{composante}_ET"] *= 2.0
+    return charger_lois(table)
+
+
+def appeler_modele(
+    lois: JeuDeLois,
+    *,
+    n: int = 800,
+    points_de_vol: Sequence[Mapping[str, float]] = POINTS_DE_VOL,
+    convention_: str = "lineaire",
+    graine: int = 2026,
+    fausser: bool = True,
+) -> pd.DataFrame:
+    """Appelle le modèle *n* fois par point de vol.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Une ligne par (point de vol × tirage). Porte les colonnes de point de
+        vol, les composantes tirées (``"<coeff>_Biais"``, ``"<coeff>_FE"``) et
+        les coefficients dispersés (``"<coeff>"``).
+    """
+    relation = convention(convention_)
+    morceaux = []
+
+    for indice, point in enumerate(points_de_vol):
+        mach = float(point["Mach"])
+        lot = tirer_lot(_lois_du_point(lois, mach, fausser), n, graine=graine + indice)
+
+        nominaux = coefficients_nominaux(mach)
+        for coefficient, valeur in nominaux.items():
+            lot[coefficient] = relation(
+                valeur, lot[f"{coefficient}_Biais"], lot[f"{coefficient}_FE"]
+            )
+        for cle, valeur in point.items():
+            lot[cle] = valeur
+        lot["tirage"] = np.arange(n)
+        morceaux.append(lot)
+
+    return pd.concat(morceaux, ignore_index=True)
+
+
+def appeler_modele_polaire(
+    lois: JeuDeLois,
+    alpha: np.ndarray,
+    *,
+    n: int = 300,
+    mach: float = 0.80,
+    convention_: str = "lineaire",
+    graine: int = 7,
+) -> pd.DataFrame:
+    """Appelle le modèle *n* fois sur un balayage en incidence.
+
+    C'est la forme dont part le cas d'usage 2.3 : un tableau à plat, une ligne
+    par (tirage × point du balayage), à regrouper en une courbe par tirage.
+    """
+    relation = convention(convention_)
+    lot = tirer_lot(lois, n, graine=graine)
+    nominaux = coefficients_nominaux(mach)
+
+    lignes = []
+    for indice, tirage in lot.iterrows():
+        colonnes: dict[str, Any] = {"alpha": alpha}
+        for coefficient, valeur in nominaux.items():
+            # Le coefficient nominal varie le long du balayage ; le tirage,
+            # lui, est partagé sur toute la courbe — le cas corrélé.
+            courbe = valeur * _forme(coefficient, alpha)
+            biais = float(tirage[f"{coefficient}_Biais"])
+            fe = float(tirage[f"{coefficient}_FE"])
+            colonnes[coefficient] = relation(courbe, biais, fe)
+            colonnes[f"{coefficient}_Biais"] = biais
+            colonnes[f"{coefficient}_FE"] = fe
+        colonnes["tirage"] = int(indice)  # type: ignore[call-overload]
+        colonnes["Mach"] = mach
+        lignes.append(pd.DataFrame(colonnes))
+
+    return pd.concat(lignes, ignore_index=True)
+
+
+def _forme(coefficient: str, alpha: np.ndarray) -> np.ndarray:
+    """La dépendance en incidence de chaque coefficient, en unités du nominal."""
+    if coefficient == "CN":
+        return 0.11 * alpha + 0.0045 * alpha**2
+    if coefficient == "CA":
+        return 1.0 + 0.012 * alpha**2
+    return 1.0 + 0.02 * alpha
+
+
+def polaire_nominale(alpha: np.ndarray, *, mach: float = 0.80) -> dict[str, np.ndarray]:
+    """Les polaires non dispersées, pour servir de référence sur les figures."""
+    nominaux = coefficients_nominaux(mach)
+    return {
+        coefficient: valeur * _forme(coefficient, alpha) for coefficient, valeur in nominaux.items()
+    }

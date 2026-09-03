@@ -1,0 +1,171 @@
+# 4. La polaire dispersée
+
+Le livrable : la dispersion superposée sur les polaires que le framework produit
+déjà.
+
+![polaire dispersée](FIGURES/07_polaire_dispersee.png)
+
+```python
+from cfd_dispersion import superposer_dispersion
+
+superposer_dispersion(
+    ax,
+    alpha,
+    CN,
+    loi=lois["CN"],  # la bande théorique
+    tirages=courbes,  # les courbes réellement obtenues, (n, npts)
+    serie="CFD",  # se rattacher à cette courbe-là
+)
+```
+
+---
+
+## 4.1 Se rattacher à une série
+
+`serie="CFD"` va chercher la couleur de la courbe intitulée ainsi sur les axes :
+le remplissage la reprend en transparence, la moyenne dispersée en **plus
+sombre**. La dispersion se lit alors comme appartenant à cette série, sans
+légende supplémentaire — ce qui compte dès qu'il y en a trois sur la figure.
+
+À défaut, `couleur="C3"` trace un faisceau autonome.
+
+---
+
+## 4.2 Les courbes par tirage
+
+Mille appels du modèle donnent un tableau à plat : une ligne par (tirage × point
+du balayage). `courbes_par_tirage` le remet en forme.
+
+```python
+from cfd_dispersion import courbes_par_tirage
+
+x, courbes = courbes_par_tirage(
+    resultats,
+    x="alpha",
+    y="CN",
+    par=["Cm_alpha_Biais", "Cm_alpha_FE"],
+)
+# -> courbes.shape == (n_tirages, npts)
+```
+
+`par` nomme les colonnes qui identifient un tirage — les composantes tirées, ou
+un simple numéro. La fonction **refuse** des tirages qui ne partagent pas la
+même abscisse : les empiler donnerait un tableau dont les colonnes ne
+correspondraient pas au même point du balayage.
+
+`max_tirages` plafonne le nombre de courbes réellement dessinées (200 par
+défaut) : mille courbes opaques ne montrent rien de plus que deux cents, et
+coûtent un fichier vectoriel dix fois plus lourd.
+
+---
+
+## 4.3 Remplissages
+
+![les trois remplissages](FIGURES/08_remplissages.png)
+
+| `remplissage` | ce que la bande recouvre |
+|:--|:--|
+| `"minmax"` *(défaut)* | tout le nuage, sans hypothèse |
+| `"percentile"` | une fraction de couverture, queues écartées |
+| `"sigma"` | moyenne ± kσ — suppose une forme |
+
+Préférer les percentiles aux σ pour les composantes uniformes ou tronquées,
+dont les queues ne sont pas gaussiennes.
+
+---
+
+## 4.4 Les lignes ±kσ, étiquetées sur la courbe
+
+Matplotlib n'offre pas d'équivalent public de `clabel` en dehors des contours.
+`etiqueter_ligne` le fait à la main : elle prend le point à une fraction donnée
+de la courbe, calcule la pente locale **en coordonnées d'affichage**, et pose un
+texte incliné dans un cartouche de la couleur du fond.
+
+Deux conséquences, toutes deux voulues :
+
+* l'inclinaison suit la pente **réellement tracée**, y compris sur un axe
+  logarithmique ou avec des échelles x et y sans rapport — où l'angle en unités
+  de données n'a aucun sens visuel ;
+* les étiquettes doivent être posées **en dernier**, après tout artiste
+  susceptible de déplacer les limites. `superposer_dispersion` s'en charge, et
+  c'est la raison de son ordre de tracé.
+
+Les positions par défaut (`0.55`, `0.72`, `0.89`) étalent les trois σ le long de
+la courbe plutôt que de les grouper près du bord, et la branche basse est
+décalée de 0.07 : à la même abscisse, `+kσ` et `−kσ` se chevauchent dès que la
+bande est étroite — et une bande est étroite précisément là où elle est
+intéressante.
+
+---
+
+## 4.5 La boîte de paramètres
+
+Elle nomme la loi effectivement tirée — type, M, ET, convention, effectif,
+corrélé ou non, et le nombre de tirages du modèle. **Une figure ne doit jamais
+pouvoir cacher quelle dispersion l'a produite.** `boite_parametres=False` la
+retire.
+
+---
+
+## 4.6 Corrélé ou indépendant
+
+La distinction compte plus que le choix de l'intervalle, et se tromper dessus
+est la façon classique de publier une mauvaise enveloppe.
+
+Une erreur de recalage est normalement *la même erreur* en tout point du
+balayage : une réalisation décale ou incline la courbe entière. C'est
+`correle=True`, le défaut, et ses réalisations sont des courbes lisses.
+
+Tirer une erreur indépendante par point — `correle=False` — modélise un bruit
+point à point, un résidu mal convergé par exemple. Ses réalisations sont
+hachées.
+
+L'enveloppe sort semblable dans les deux cas ; ce qui change, c'est ce qu'il y a
+dedans. **Seule l'enveloppe corrélée se lit « la vraie courbe est là-dedans »**,
+qui est pourtant l'affirmation qu'on croit faire.
+
+---
+
+## 4.7 Greffe sur `cfd_plot.batch_plot`
+
+```python
+from cfd_dispersion.batch import hook_dispersion
+
+batch_plot(
+    ...,
+    on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages, n=6000),
+)
+```
+
+Le hook se branche sur `on_before_save`, le seul point de mutation de
+`batch_plot`, appelé une fois les courbes, les libellés, la légende et le titre
+posés et juste avant l'enregistrement. Tout ce qu'il dessine se retrouve dans le
+SVG **et** dans la page du rapport PDF.
+
+**La courbe nominale n'est pas à redonner** : elle est déjà sur les axes. Le hook
+va chercher la série nommée, en lit l'abscisse et l'ordonnée, et disperse
+celles-là. Une divergence entre les données tracées et les données dispersées
+devient impossible.
+
+### Pourquoi une classe et non une fermeture
+
+`batch_plot` sérialise le hook pour l'envoyer à ses processus de travail, et
+**retombe silencieusement sur `n_jobs=1`** — avec un simple `UserWarning` — quand
+il n'y parvient pas. Une fermeture capturant un `DataFrame` coûterait tous les
+cœurs de la machine sans rien dire de plus qu'un avertissement noyé dans la
+sortie.
+
+`HookDispersion` est une classe de niveau module dont tous les attributs sont
+des données simples : elle est sérialisable, et un test le vérifie. Seule
+réserve, une `Convention` maison bâtie sur une `lambda` ne l'est pas — passer
+son nom, ou définir sa relation comme une fonction de niveau module.
+
+### Et cfd-plot dans tout ça
+
+Le module s'importe sans lui, et `HookDispersion` se construit et s'exécute sans
+lui : la superposition retombe sur Matplotlib nu comme le reste du paquet. Ce
+qui exige cfd-plot, c'est `batch_plot`, donc l'appelant.
+
+`hook_dispersion` le vérifie quand même et lève un `ImportError` nommant la
+commande d'installation — une politesse, pour que l'échec survienne à la ligne
+où l'on construit le hook et non au milieu d'un lot de deux cents figures.

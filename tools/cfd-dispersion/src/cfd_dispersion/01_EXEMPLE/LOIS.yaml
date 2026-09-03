@@ -1,0 +1,48 @@
+# Table de lois de dispersion — exemple cfd-dispersion.
+#
+# Une entrée par coefficient, six clés chacune :
+#
+#   Biais_Type / FE_Type   la famille, entier 1 à 6
+#     1 Nulle · 2 Constante · 3 Uniforme
+#     4 Gaussienne · 5 Gaussienne ±3σ · 6 Gaussienne ±2σ
+#   Biais_M / FE_M         la moyenne
+#   Biais_ET / FE_ET       la DEMI-ÉTENDUE — pas l'écart-type.
+#                          Pour les familles gaussiennes, σ = ET/2.
+#
+# Le coefficient dispersé se reconstruit selon la convention retenue ;
+# par défaut c_disp = biais + FE · c, d'où les FE centrés sur 1.
+
+lois:
+  CN:
+    # Portance : biais serré et tronqué, échelle à ±8 %.
+    Biais_Type: 5
+    Biais_M: 0.0
+    Biais_ET: 0.02
+    FE_Type: 6
+    FE_M: 1.0
+    FE_ET: 0.08
+
+  CA:
+    # Traînée : un biais d'étalonnage constant, une échelle uniforme à ±5 %.
+    Biais_Type: 2
+    Biais_M: 0.001
+    Biais_ET: 0.0
+    FE_Type: 3
+    FE_M: 1.0
+    FE_ET: 0.05
+
+  Cm_alpha:
+    # Moment de tangage : la grandeur la plus incertaine du lot.
+    Biais_Type: 5
+    Biais_M: 0.0
+    Biais_ET: 0.015
+    FE_Type: 4
+    FE_M: 1.0
+    FE_ET: 0.10
+
+# Facultatif. Nommer deux coefficients corrèle leurs composantes de même
+# nature — biais avec biais, FE avec FE. Décommenter pour lier CN et Cm_alpha,
+# qui sortent du même recalage :
+#
+# correlation:
+#   "CN, Cm_alpha": 0.6

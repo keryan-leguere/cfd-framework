@@ -1,0 +1,104 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-dispersion"
+version = "1.0.0"
+description = "Lois de dispersion, tirage Monte-Carlo, validation et superposition sur polaires, bâtis sur OpenTURNS."
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    # Le cœur statistique : lois, plans d'expérience, tests d'adéquation,
+    # lissage à noyau. Remplace SciPy, dont le paquet n'a plus besoin.
+    # La roue PyPI est marquée cp39-abi3 / manylinux_2_28 : elle s'installe
+    # donc sur RHEL 8 (glibc 2.28), mais elle pèse 63 Mo — sur un calculateur
+    # isolé, il faut qu'elle soit déjà dans le cache de roues.
+    "openturns>=1.24",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    # Les sorties de modèle arrivent en DataFrame : `valider_lot` et les
+    # figures par point de vol groupent dessus.
+    "pandas>=2.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pandas-stubs",
+]
+
+[project.scripts]
+cfd-dispersion = "cfd_dispersion.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_dispersion = ["01_EXEMPLE/*.py", "01_EXEMPLE/*.yaml", "01_EXEMPLE/*.sh"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# Les docs, le rapport et les libellés de figures sont en français et emploient
+# légitimement tirets demi-cadratins, signes moins, signes multiplié,
+# apostrophes courbes et espaces insécables ; ce ne sont pas des homoglyphes
+# fautifs. Les lettres grecques sont des symboles (σ écart-type, µ moyenne,
+# α incidence, β dérapage, ρ corrélation), pas des sosies de lettres latines.
+allowed-confusables = ["–", "−", "×", "’", " ", "σ", "µ", "α", "β", "ρ", "ε", "ℝ"]
+
+[tool.ruff.lint.per-file-ignores]
+# L'idiome `valeur == pytest.approx(attendu)` se lit naturellement ; ne pas l'inverser.
+"tests/**" = ["SIM300"]
+# L'API publique est groupée par couche (lois / tirage / bande / validation /
+# figures), avec des bandeaux de section. Ce regroupement est de la
+# documentation : ne pas l'alphabétiser.
+"src/cfd_dispersion/__init__.py" = ["I001", "RUF022"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_dispersion"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+# Pas de python_version = "3.9" : mypy ne sait plus cibler 3.9. La compatibilité
+# 3.9 est tenue par le code et vérifiée en exécutant la suite de tests sous un
+# interpréteur 3.9 (ruff, lui, cible bien py39 et refuse la syntaxe trop récente).
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*", "mpl_toolkits.*"]
+ignore_missing_imports = true
+
+# OpenTURNS est généré par SWIG et ne livre pas de stubs.
+[[tool.mypy.overrides]]
+module = ["openturns.*"]
+ignore_missing_imports = true
+
+# cfd-plot est un paquet frère de ce dépôt (voir report/_plotting_lib.py), pas
+# une publication PyPI : il peut légitimement manquer de l'environnement.
+[[tool.mypy.overrides]]
+module = ["cfd_plot"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
