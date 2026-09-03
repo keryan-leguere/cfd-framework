@@ -673,7 +673,7 @@ def fig_batch() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 26/27 — folded batch sheets
+# 26-30 — folded batch sheets
 # ---------------------------------------------------------------------------
 
 def _pick(directory, prefix: str):
@@ -685,45 +685,98 @@ def _pick(directory, prefix: str):
     return sorted(p for p in directory.rglob("*.png") if p.name.startswith(prefix))[0]
 
 
-def fig_batch_fold() -> None:
-    """The two fold layouts, on the same family of figures.
+def _fold_config(sweep_keys, machs, altitudes):
+    """The README's worked example, narrowed to one polar.
 
-    ``clean=True`` on the second run is not decoration: the two runs share
-    ``tmp``, and the first one's sheets would otherwise be picked up by
-    ``sorted(...)`` below and turn the overlay illustration into a subplot one.
+    ``batch_plot`` renders every ordinary figure before it can fold them, and
+    the README's two-sweep study is ~150 renders per illustration. Each picture
+    only needs one polar, so each run declares only the sweep it is about.
+
+    That is not a simplification the pictures pay for: a key left out of
+    ``sweep_dict`` becomes a flight point, and a flight point produces the same
+    directory level, the same title fragment and the same fold families as a
+    pinned sweep. The sheets below are byte-identical to the ones the full
+    two-sweep run would write.
     """
-    import shutil
-
     cfg, y_axis, sweep, fp = _batch_config()
     y_axis = {
         **y_axis,
         "CA": {"col_name": "CA", "literal_name": "Axial force coefficient",
                "symbol": r"$C_A$", "unit": "-", "y_save_name": "CA"},
     }
+    sweep = {
+        **sweep,
+        "beta": {"col_name": "beta", "literal_name": "Sideslip angle",
+                 "symbol": r"$\beta$", "unit": "°", "x_save_name": "beta",
+                 "polar_prefix": "BETA_POLAR", "label": r"$\beta$", "save_name": "BETA"},
+    }
+    sweep = {key: sweep[key] for key in sweep_keys}
+    for key, entry in cfg.items():
+        df = entry["df"]
+        cfg[key] = {**entry, "df": df[df["Mach"].isin(machs) & df["Altitude_m"].isin(altitudes)]}
+    return cfg, y_axis, sweep, fp
+
+
+def fig_batch_fold() -> None:
+    """Every fold option, on the study the README walks through.
+
+    Two runs, because the two interesting fold axes live in different polars:
+    ALPHA_POLAR folds over the altitude (and over the Y list), BETA_POLAR folds
+    over alpha — nine values, which is what makes the ``max_panels`` split
+    visible.
+    """
+    import shutil
+
     tmp = FIGURES / "_tmp_fold"
 
+    # --- ALPHA_POLAR: fold the Y list, and fold the altitudes three ways -----
+    cfg, y_axis, sweep, fp = _fold_config(["alpha"], [0.7, 0.85], [5000, 8000, 10000])
     batch_plot(
         configuration_dict=cfg, y_axis_dict=y_axis, sweep_dict=sweep,
         flight_point_dict=fp, output_base=tmp,
         style_profile="paper", formats=("png",), report=False,
         clean=True,
-        fold=[FoldSpec(kind="context", over=("Altitude_m",))],
+        fold=[
+            FoldSpec(kind="y"),
+            FoldSpec(kind="context", over=("Altitude_m",)),
+            FoldSpec(kind="context", layout="overlay", over=("Altitude_m",)),
+            # A second overlay of the same family: without its own folder it
+            # would overwrite the one above, which is what `folder` is for.
+            FoldSpec(kind="context", layout="overlay", over=("Altitude_m",),
+                     overlay_color="source", folder="FOLD_OVERLAY_SOURCE"),
+        ],
     )
-    shutil.copy(_pick(tmp / "ALPHA_POLAR" / "FOLD", "CN_"), FIGURES / "26_batch_fold.png")
-    print("  26_batch_fold.png")
+    polar = tmp / "ALPHA_POLAR"
+    for source, name in [
+        (_pick(polar / "M_0.7" / "Z_8000", "FOLD_Y"), "28_batch_fold_y.png"),
+        (_pick(polar / "FOLD", "CN_"), "26_batch_fold.png"),
+        (_pick(polar / "FOLD_OVERLAY", "CN_"), "27_batch_fold_overlay.png"),
+        (_pick(polar / "FOLD_OVERLAY_SOURCE", "CN_"), "30_batch_fold_overlay_source.png"),
+    ]:
+        shutil.copy(source, FIGURES / name)
+        print(f"  {name}")
 
+    # --- BETA_POLAR: fold over alpha, nine values, split into two sheets -----
+    # Same Mach/altitude set as above, so the sheet's subtitle matches the
+    # study the README walks through. Only CN, because ``batch_plot`` renders
+    # every ordinary figure before folding it and CA would double 54 renders
+    # for a picture that shows a CN sheet either way.
+    cfg, y_axis, sweep, fp = _fold_config(["beta"], [0.7, 0.85], [5000, 8000, 10000])
+    y_axis = {"CN": y_axis["CN"]}
     batch_plot(
         configuration_dict=cfg, y_axis_dict=y_axis, sweep_dict=sweep,
         flight_point_dict=fp, output_base=tmp,
         style_profile="paper", formats=("png",), report=False,
         clean=True,
-        fold=[FoldSpec(kind="context", layout="overlay", over=("Altitude_m",))],
+        fold=[FoldSpec(kind="context", over=("alpha",))],
     )
+    # Pinned to the exact sheet the README's tree expands, so the picture and
+    # the tree name the same file.
     shutil.copy(
-        _pick(tmp / "ALPHA_POLAR" / "FOLD_OVERLAY", "CN_"),
-        FIGURES / "27_batch_fold_overlay.png",
+        _pick(tmp / "BETA_POLAR" / "FOLD" / "M_0.7" / "Z_5000", "CN_"),
+        FIGURES / "29_batch_fold_split.png",
     )
-    print("  27_batch_fold_overlay.png")
+    print("  29_batch_fold_split.png")
 
     shutil.rmtree(tmp, ignore_errors=True)
 

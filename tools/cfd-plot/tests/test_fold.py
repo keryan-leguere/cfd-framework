@@ -97,6 +97,57 @@ FLIGHT_POINTS = {
 }
 
 
+BETA_SWEEP = {
+    "beta": {
+        "col_name": "beta",
+        "symbol": r"$\beta$",
+        "unit": "deg",
+        "x_save_name": "beta",
+        "polar_prefix": "BETA_POLAR",
+        "save_name": "BETA",
+    },
+}
+
+
+@pytest.fixture()
+def two_sweeps() -> dict:
+    """A study where beta varies too, so both alpha and beta are real polars."""
+    rows = []
+    for scheme, offset in [("KW", 0.10), ("SA", 0.12)]:
+        for beta in (0.0, 2.0):
+            for row in _rows(scheme, offset):
+                rows.append({**row, "beta": beta, "CN": row["CN"] + 0.01 * beta})
+    frame = pd.DataFrame(rows)
+    return {
+        key: {"name": key, "label": key, "df": frame[frame["scheme"] == key]}
+        for key in ("KW", "SA")
+    }
+
+
+def _plan_two_sweeps(configuration_dict: dict, base: Path, specs) -> list:
+    """As :func:`_plan`, with alpha *and* beta as sweeps; returns the folds."""
+    sweeps = _prepare_sweep_dict(configuration_dict, {**SWEEPS, **BETA_SWEEP})
+    flight_points = _prepare_flight_point_dict(
+        configuration_dict, FLIGHT_POINTS, list(sweeps)
+    )
+    jobs = _enumerate_jobs(
+        configuration_dict=configuration_dict,
+        y_axis_dict=Y_AXES,
+        completed_sweeps=sweeps,
+        completed_flight_points=flight_points,
+        output_base=base,
+        include_curve=None,
+    )
+    return _enumerate_fold_jobs(
+        jobs,
+        specs,
+        y_axis_dict=Y_AXES,
+        completed_sweeps=sweeps,
+        completed_flight_points=flight_points,
+        output_base=base,
+    )
+
+
 def _plan(configuration_dict: dict, base: Path, specs) -> tuple[list, list]:
     """Enumerate the ordinary jobs and the folds they produce, without drawing."""
     sweeps = _prepare_sweep_dict(configuration_dict, SWEEPS)
@@ -343,6 +394,19 @@ class TestContextFold:
         """beta never varies here, so there is no family to fold."""
         _, folds = _plan(two_sources, tmp_path, [FoldSpec(kind="context", over=("beta",))])
         assert folds == []
+
+    def test_a_polars_own_sweep_is_skipped_there(self, two_sweeps: dict, tmp_path: Path) -> None:
+        """Folding over alpha gathers the pinned alphas of BETA_POLAR.
+
+        In ALPHA_POLAR alpha is the x axis, so there is no family of alphas to
+        gather — and that is a silent skip, not an error, so one spec can serve
+        a study whose polars pin different variables.
+        """
+        folds = _plan_two_sweeps(
+            two_sweeps, tmp_path, [FoldSpec(kind="context", over=("alpha",))]
+        )
+        assert {fold.polar_prefix for fold in folds} == {"BETA_POLAR"}
+        assert all("_by_ALPHA" in fold.output_path.name for fold in folds)
 
     def test_an_unknown_over_key_is_reported(self, two_sources: dict, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="unknown keys"):

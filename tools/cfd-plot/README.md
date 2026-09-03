@@ -746,56 +746,186 @@ directory *inside* a repository is fine; the repository itself is not.
 
 ### Folding: bonus sheets that gather siblings
 
-A batch run produces one figure per (polar, condition, Y). That is the right unit to produce
-and the wrong unit to read: comparing CN against CA at one condition means opening two files,
-and comparing one Y across five altitudes means opening five files in five directories.
-`fold` writes **bonus sheets** that gather those siblings. The individual figures stay exactly
-where they were — a fold is an extra file, never a replacement.
+A batch run produces one figure per (polar, condition, Y). That is the right unit to *produce*
+and the wrong unit to *read*: comparing CN against CA at one condition means opening two files,
+and comparing one Y across nine incidences means opening nine files in nine directories.
+`fold` writes **bonus sheets** that gather those siblings onto one page. The individual figures
+stay exactly where they were — a fold is an extra file, never a replacement.
 
 ```python
-batch_plot(..., fold="y")               # every Y of one condition, on one sheet
-batch_plot(..., fold="context")         # one Y across conditions, as panels
-batch_plot(..., fold="context-overlay") # ... or all on one axes
-batch_plot(..., fold=True)              # shorthand for ("y", "context")
+batch_plot(..., fold="y")                # every Y of one condition, on one sheet
+batch_plot(..., fold="context")          # one Y across conditions, as panels
+batch_plot(..., fold="context-overlay")  # ... or all on one axes
+batch_plot(..., fold=True)               # shorthand for ("y", "context")
 ```
 
-**`fold="y"`** — one sheet per condition, one panel per entry of `y_axis_dict`, written
-*beside* the figures it folds:
+`fold` exists on `batch_plot` only. A compare figure is already several flight points on one
+sheet, so there is nothing left to fold.
+
+#### The study these examples fold
+
+Everything below is one real run, with **two sweeps** — so `alpha` is the x axis of one polar
+and a pinned directory level in the other:
+
+```python
+sweep_dict  = {"alpha": {...}, "beta": {...}}   # → ALPHA_POLAR and BETA_POLAR
+y_axis_dict = {"CN": {...},    "CA": {...}}     # → two quantities
+# discovered from the data: Mach ∈ {0.70, 0.85}, Altitude_m ∈ {5000, 8000, 10000},
+#                           alpha ∈ 0…8 (nine values), beta ∈ {0, 2}
+```
+
+That is **132 figures**, one directory level per varying parameter:
 
 ```
-ALPHA_POLAR/M_0.8/Z_8000/BETA_2/CN_vs_alpha.svg
-ALPHA_POLAR/M_0.8/Z_8000/BETA_2/CA_vs_alpha.svg
-ALPHA_POLAR/M_0.8/Z_8000/BETA_2/FOLD_Y_vs_alpha.svg   ← the fold
+FIGURE/
+├── ALPHA_POLAR/                     ← x = alpha, so beta is pinned in the path
+│   ├── M_0.7/
+│   │   ├── Z_5000/
+│   │   │   ├── BETA_0/
+│   │   │   │   ├── CN_vs_alpha.svg
+│   │   │   │   └── CA_vs_alpha.svg
+│   │   │   └── BETA_2/              ← the same two files
+│   │   ├── Z_8000/                  ← ... and again, per beta
+│   │   └── Z_10000/
+│   └── M_0.85/                      ← ... and again, per altitude and beta
+└── BETA_POLAR/                      ← x = beta, so *alpha* is pinned in the path
+    ├── M_0.7/
+    │   ├── Z_5000/
+    │   │   ├── ALPHA_0/
+    │   │   │   ├── CN_vs_beta.svg
+    │   │   │   └── CA_vs_beta.svg
+    │   │   ├── ALPHA_1/             ← ...
+    │   │   └── ALPHA_8/             ← nine incidences, two files each
+    │   ├── Z_8000/
+    │   └── Z_10000/
+    └── M_0.85/
 ```
 
-The panels keep **independent** axes: CN and CA have different units, so a shared scale would
-flatten one of them. The heading names the quantities on the first line and the condition on
-the second.
+`BETA_POLAR` is where folding earns its keep: 108 of those 132 files, spread over 54
+directories that differ by one number.
 
-**`fold="context"`** — one sheet per Y, gathering the conditions that differ only by a
-directory level, under a `FOLD/` sub-directory of the polar:
+#### `fold="y"` — every Y of one condition
+
+One sheet per condition, one panel per entry of `y_axis_dict`, written **beside** the figures
+it folds:
+
+![fold y](00_DOC/FIGURES/28_batch_fold_y.png)
+
+```
+FIGURE/ALPHA_POLAR/M_0.7/Z_8000/BETA_0/
+├── CN_vs_alpha.svg
+├── CA_vs_alpha.svg
+└── FOLD_Y_vs_alpha.svg      ← the fold: both quantities, same condition
+```
+
+**+66 sheets** here — one per leaf directory, in both polars (12 in `ALPHA_POLAR`, 54 in
+`BETA_POLAR`). The panels keep **independent** axes: CN and CA have different units, so a
+shared scale would flatten one of them. For the same reason `layout="overlay"` is rejected for
+`kind="y"` — stacking quantities that share no unit on one axis is a coincidence, not a figure.
+
+The heading names the quantities on the first line and the condition on the second, so the
+sheet is readable out of context.
+
+#### `fold="context"` — one Y across conditions
+
+One sheet per Y, gathering the conditions that differ only by a directory level, under a
+`FOLD/` sub-directory of the polar:
 
 ![fold context](00_DOC/FIGURES/26_batch_fold.png)
 
-```
-ALPHA_POLAR/FOLD/M_0.7/BETA_0/CN_vs_alpha_by_Z.svg
+```python
+batch_plot(..., fold=FoldSpec(kind="context", over=("Altitude_m",)))
 ```
 
-The filename says what was folded (`_by_Z`), the path keeps what was not (`M_0.7/BETA_0`), and
-the panels share their scales — same quantity, same unit, so a common range is what makes them
-comparable.
+```
+FIGURE/ALPHA_POLAR/FOLD/
+├── M_0.7/
+│   ├── BETA_0/
+│   │   ├── CN_vs_alpha_by_Z.svg     ← the three altitudes, one panel each
+│   │   └── CA_vs_alpha_by_Z.svg
+│   └── BETA_2/
+└── M_0.85/
+```
 
-**`fold="context-overlay"`** — the same family on a *single* axes, under `FOLD_OVERLAY/`:
+**+44 sheets**: 8 here (2 Mach × 2 beta × 2 Y), and 36 in `BETA_POLAR`, where the altitude
+also varies under every pinned alpha.
+
+Read the naming as a sentence: the **filename** says what was folded (`_by_Z`), the **path**
+keeps what was not (`M_0.7/BETA_0`). Panels share their scales by default — same quantity,
+same unit, so a common range is what makes them comparable.
+
+#### `over=` — choosing what gets folded
+
+`over` names the flight-point or sweep keys the sheet gathers. Left out, it folds *everything*
+that varies inside the polar, which gives one family per Y covering the whole study.
+
+The interesting case in this run is folding **over alpha**, in the polar where alpha is a
+pinned directory level rather than the x axis:
+
+```python
+batch_plot(..., fold=FoldSpec(kind="context", over=("alpha",)))
+```
+
+```
+FIGURE/BETA_POLAR/FOLD/
+├── M_0.7/
+│   ├── Z_5000/
+│   │   ├── CN_vs_beta_by_ALPHA_p1of2.svg    ← alpha 0…5
+│   │   ├── CN_vs_beta_by_ALPHA_p2of2.svg    ← alpha 6…8
+│   │   ├── CA_vs_beta_by_ALPHA_p1of2.svg
+│   │   └── CA_vs_beta_by_ALPHA_p2of2.svg
+│   ├── Z_8000/
+│   └── Z_10000/
+└── M_0.85/
+```
+
+Nine directories of two files each collapse to two sheets per Y: **24 sheets standing in for
+all 108 `BETA_POLAR` figures**. Nothing appears under `ALPHA_POLAR/` — there alpha is the
+x axis, so there is no family of alphas to fold, and the key is skipped rather than erroring.
+That is the general rule: a key that is a polar's own sweep, or that does not vary inside it,
+simply produces no sheet there.
+
+Naming a key that exists nowhere in the run *is* an error:
+
+```
+ValueError: FoldSpec.over refers to unknown keys ['Reynolds'].
+            Available: ['Altitude_m', 'DL', 'DM', 'DN', 'Mach', 'alpha', 'beta'].
+```
+
+#### `max_panels` — a family too big for one sheet
+
+A family larger than `max_panels` (6 by default) is **split**, never shrunk. The extra sheets
+are numbered in the filename *and* in the subtitle, so a printed page still says which part it
+is. The picture below is `CN_vs_beta_by_ALPHA_p1of2.svg` from the tree above — alpha 0 to 5,
+with 6 to 8 on the second sheet:
+
+![fold split](00_DOC/FIGURES/29_batch_fold_split.png)
+
+A family of **one** is skipped entirely — a single-panel sheet is a copy of the figure it
+folds, under a name that suggests otherwise.
+
+#### `layout="overlay"` — all conditions on one axes
+
+The altitude family again — `over=("Altitude_m",)`, the same sheet as two sections above —
+drawn together instead of side by side, under `FOLD_OVERLAY/`:
 
 ![fold overlay](00_DOC/FIGURES/27_batch_fold_overlay.png)
 
-Colour reads the **condition** and the marker/linestyle reads the **source**, so a legend of
-`n_conditions × n_sources` entries stays decodable. With a single source the legend drops the
-source name entirely, which is the case this layout is best at — one CFD campaign, one model,
-several altitudes. `FoldSpec(overlay_color="source")` flips the assignment: each source keeps
-its own colour and the condition is read off the dash pattern.
+Colour reads the **condition**, marker and linestyle read the **source** — that assignment is
+what keeps a legend of `n_conditions × n_sources` entries decodable. With a single source the
+legend drops the source name and shows the conditions alone, which is what this layout is best
+at: one CFD campaign, one model, several altitudes.
 
-Use a `FoldSpec` for anything beyond the shorthands:
+`overlay_color="source"` flips it — each source keeps its own colour, and the condition is read
+off the dash pattern:
+
+![fold overlay by source](00_DOC/FIGURES/30_batch_fold_overlay_source.png)
+
+Whichever you pick, the style channel carrying the *condition* overrides what
+`configuration_dict` set there — `color` under `"fold"`, `linestyle` under `"source"` — and the
+other channel is passed through untouched.
+
+#### Every option
 
 ```python
 from cfd_plot import FoldSpec
@@ -806,33 +936,46 @@ batch_plot(
         FoldSpec(kind="y"),
         FoldSpec(kind="context", over=("Altitude_m",), max_panels=6, max_cols=3),
         FoldSpec(kind="context", layout="overlay", over=("Altitude_m",)),
+        FoldSpec(kind="context", layout="overlay", over=("Altitude_m",),
+                 overlay_color="source", folder="FOLD_OVERLAY_SOURCE"),
     ],
 )
 ```
 
-| Field | Meaning |
-|:---|:---|
-| `kind` | `"y"` (fold the quantities) or `"context"` (fold the conditions) |
-| `layout` | `"subplot"` or `"overlay"` — `"overlay"` is rejected for `kind="y"` |
-| `over` | keys the context fold gathers, e.g. `("Altitude_m",)`; default: every key that varies inside the polar |
-| `max_panels` | panels (or overlaid conditions) per sheet, default 6 |
-| `max_cols` | subplot columns, 1–3 |
-| `folder` | sub-directory name; default `FOLD` / `FOLD_OVERLAY` |
-| `sync_axes` | `"x"`, `"y"`, `"both"`, `None`, or `"auto"` (default) |
-| `overlay_color` | `"fold"` (default) or `"source"` |
+| Field | Default | Meaning |
+|:---|:---|:---|
+| `kind` | `"y"` | `"y"` folds the quantities, `"context"` folds the conditions |
+| `layout` | `"subplot"` | `"subplot"` or `"overlay"`; `"overlay"` is rejected for `kind="y"` |
+| `over` | `None` | keys a context fold gathers; `None` = every key that varies in the polar |
+| `max_panels` | `6` | panels (or overlaid conditions) per sheet; the rest go to `_p2of3`, … |
+| `max_cols` | `3` | subplot grid width, 1–3 |
+| `folder` | `None` | sub-directory of the polar; `None` → `FOLD` / `FOLD_OVERLAY` |
+| `sync_axes` | `"auto"` | `"x"`, `"y"`, `"both"`, `None`; `"auto"` = `"both"` for context subplots, off elsewhere |
+| `overlay_color` | `"fold"` | `"fold"` colours by condition, `"source"` colours by source |
 
-`over=("Altitude_m",)` is the useful case: with sweeps on Mach *and* altitude, it puts every
-altitude on one sheet and keeps a separate sheet per Mach. Leave it out and the fold gathers
-everything that varies, so you get one sheet per Y covering the whole study.
+Two specs of the same layout writing to the same folder would overwrite each other, which is
+what `folder` is for — as in the fourth entry above.
 
-A family larger than `max_panels` is **split**, not shrunk: six panels per sheet, and the extra
-sheets are numbered `_p1of3`, `_p2of3`, … in the filename and in the subtitle. A family of one
-is skipped — a single-panel sheet is a copy of the figure it folds.
+Shorthand strings map onto specs: `"y"` → `FoldSpec(kind="y")`, `"context"` →
+`FoldSpec(kind="context")`, `"context-overlay"` (alias `"overlay"`) →
+`FoldSpec(kind="context", layout="overlay")`, and `fold=True` → `("y", "context")`. A typo is
+reported with the list of valid names rather than silently folding nothing.
 
-Folded sheets go through the same pipeline as everything else: `dry_run` lists them,
-`n_jobs` renders them in parallel, `pdf_report` includes them (in a `Folded` section under
-their own polar), and `on_before_save` is called once per panel with `context.fold_kind`,
-`context.fold_layout` and `context.fold_label` set:
+#### Folds in the rest of the pipeline
+
+They are ordinary figures as far as everything else is concerned:
+
+- `verbose=True` prints a *Folded sheets* table before anything is drawn, one row per spec
+  with the number of sheets it will produce — including a **zero**, which is how a mistaken
+  `over=` is caught early rather than by noticing an empty directory later;
+- `dry_run=True` returns every path, folds included, without drawing;
+- `n_jobs` renders them in the same process pool;
+- `pdf_report` includes them, in a `Folded` section under their own polar rather than as an
+  orphan chapter at the end;
+- the returned list contains their paths;
+- `on_before_save` is called once per axes, with `context.fold_kind`, `context.fold_layout`
+  and `context.fold_label` set (an overlay has one axes, so it gets one call whose
+  `fold_label` names every condition on it):
 
 ```python
 def on_before_save(fig, ax, context):
@@ -866,8 +1009,9 @@ axes-level tweaks. `context` is a `BatchPlotContext` with:
 | `x_spec`, `y_spec` | the matching dict entries |
 | `polar_prefix` | top-level directory name |
 | `output_path` | where the figure is about to be written |
-| `compare_name`, `panel_index` | set only in `batch_compare_flight_points` |
-| `fold_kind`, `fold_layout`, `fold_label` | set only on a folded sheet (see below) |
+| `compare_name` | set only in `batch_compare_flight_points` |
+| `panel_index` | which panel this call is for, on compare figures and folded sheets |
+| `fold_kind`, `fold_layout`, `fold_label` | set only on a [folded sheet](#folding-bonus-sheets-that-gather-siblings) |
 
 ```python
 def on_before_save(fig, ax, context):
