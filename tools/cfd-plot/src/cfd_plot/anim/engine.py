@@ -58,6 +58,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 from PIL import Image
 
+from .._compat import figure_disable_layout
 from ..mpl_template import print_file_report
 from .encode import AnimPreset, _choose_backend, build_sequence, frames_to_gif, frames_to_mp4, resolve_preset
 
@@ -288,7 +289,7 @@ class Animator:
             self._size_px = _png_size(path)
             # The layout engine has now run against a real renderer, so the
             # axes are where they will stay. Freeze them.
-            self._fig.set_layout_engine("none")
+            figure_disable_layout(self._fig)
         else:
             self._check_size(path)
 

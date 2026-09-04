@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from .._compat import figure_disable_layout
+
 __all__ = [
     "PAGE_SIZES",
     "TocEntry",
@@ -105,7 +107,7 @@ def blank_page(page: tuple[float, float]) -> tuple[Figure, Axes]:
     fig = plt.figure(figsize=page)
     # No constrained layout here: these pages position everything in figure
     # coordinates, and a layout engine would fight that (and warn about it).
-    fig.set_layout_engine("none")
+    figure_disable_layout(fig)
     ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
     ax.set_axis_off()
     ax.set_xlim(0.0, 1.0)

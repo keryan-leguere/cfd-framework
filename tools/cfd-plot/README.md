@@ -1511,6 +1511,7 @@ this codebase.
 | Image tests pass but never catch anything | `pytest` without `--mpl` builds figures without comparing | run `pytest --mpl` |
 | `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.1.0 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
 | Title overlaps the subtitle | `set_subtitle` called before `set_title` | call `set_title` first |
+| `AttributeError: 'Figure' object has no attribute 'get_layout_engine'` from `batch_compare_flight_points` or a folded sheet | Matplotlib older than 3.6 — typically one *provided* by the machine (module, container, site install) rather than the one `pyproject.toml` asked for | fixed — upgrade cfd-plot (the layout calls go through `cfd_plot._compat`, which speaks both APIs); `python -c "import matplotlib; print(matplotlib.__version__)"` tells you what you are actually running |
 | `FigureCanvasAgg is non-interactive`, no window in Spyder / Jupyter / IPython | pre-1.1.0 `batch.py` called `matplotlib.use("Agg")` at import, so `import cfd_plot` forced a headless backend on the whole session | fixed — upgrade, then **restart the kernel** (the old backend is sticky in a running one) |
 | `RuntimeError: the figure was resized mid-capture` | `set_size_inches` (or a helper that resizes) called inside the capture loop | size the figure before the first `capture()` |
 | `ValueError: nothing was captured` | the loop never reached `capture()` — an empty iterable, or every frame hit a `continue` | check the loop actually yields frames |

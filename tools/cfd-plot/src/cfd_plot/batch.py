@@ -30,7 +30,7 @@ import pandas as pd
 from matplotlib.artist import ArtistInspector
 from matplotlib.lines import Line2D
 
-from cfd_plot._compat import zip_strict
+from cfd_plot._compat import figure_set_layout_pad, zip_strict
 
 from .cleanup import CleanReport, clean_figure_dir
 from .mpl_template import (
@@ -1449,9 +1449,7 @@ def _render_one_fold_job(
                 ),
             )
 
-    layout_engine = fig.get_layout_engine()
-    if layout_engine is not None:
-        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)  # type: ignore[call-arg]
+    figure_set_layout_pad(fig, h_pad=_COMPARE_LAYOUT_H_PAD)
 
     written = save_figure(fig, job.output_path, formats=formats)
     if builder is not None:
@@ -2494,11 +2492,9 @@ def _render_one_compare_job(
     # fig.tight_layout() a no-op: Figure.set_layout_engine(None) re-selects 'constrained'
     # from rcParams in its `finally` clause, silently discarding any tight_layout rect/pad.
     # Tune the actual active engine's padding instead of the ineffective tight_layout call.
-    layout_engine = fig.get_layout_engine()
-    if layout_engine is not None:
-        # h_pad is accepted by the tight/constrained engines actually in use;
-        # the base LayoutEngine.set signature does not declare it.
-        layout_engine.set(h_pad=_COMPARE_LAYOUT_H_PAD)  # type: ignore[call-arg]
+    # (figure_set_layout_pad also covers Matplotlib < 3.6, which has no engine
+    # object — see cfd_plot._compat.)
+    figure_set_layout_pad(fig, h_pad=_COMPARE_LAYOUT_H_PAD)
 
     written = save_figure(fig, job.output_path, formats=formats)
     if builder is not None:
