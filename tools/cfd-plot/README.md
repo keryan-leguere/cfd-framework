@@ -1448,6 +1448,8 @@ The default — a `0.12` fill plus a name above each region — is the quietest 
 reads at a glance. The alternatives exist because the right answer depends on how busy the
 figure already is:
 
+![ways to delimit domain regions](00_DOC/FIGURES/32_domains_variants.png)
+
 | Option | What it gives | When |
 |:---|:---|:---|
 | *(default)* | Tint + name above the frame | The general case |

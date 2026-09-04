@@ -55,9 +55,9 @@ from cfd_plot import (
     plot_contour,
     plot_contour_quiver,
     plot_contourf,
+    plot_domains,
     plot_imshow,
     plot_line,
-    plot_domains,
     plot_pcolormesh,
     plot_quiver,
     plot_streamplot,
@@ -783,7 +783,7 @@ def fig_batch_fold() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 31 — domain regions: four ways to delimit them
+# 31 / 32 — domain regions: the default, then four ways to delimit them
 # ---------------------------------------------------------------------------
 
 def _mach_sweep():
@@ -806,6 +806,16 @@ def fig_domains() -> None:
     use_style("notebook")
     mach, cn, idomain = _mach_sweep()
 
+    # The headline picture: one curve, the regions it crosses, their names.
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    plot_line(ax, mach, cn, label=r"$C_N$")
+    plot_domains(ax, mach, idomain, domains=DOMAINS)
+    ax.set_xlabel(r"$M$ [-]")
+    ax.set_ylabel(r"$C_N$ [-]")
+    set_title(ax, "Normal force across the flight regimes")
+    make_legend(ax, loc="upper right")
+    _write(fig, "31_domains")
+
     variants = (
         ("default — tint + name above", dict()),
         ("alternate=True", dict(alternate=True)),
@@ -822,7 +832,7 @@ def fig_domains() -> None:
         set_title(ax, title)
         if options.get("legend"):
             make_legend(ax, loc="lower left", fontsize=7)
-    _write(fig, "31_domains")
+    _write(fig, "32_domains_variants")
 
 
 # ---------------------------------------------------------------------------
