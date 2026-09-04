@@ -57,6 +57,7 @@ from cfd_plot import (
     plot_contourf,
     plot_imshow,
     plot_line,
+    plot_domains,
     plot_pcolormesh,
     plot_quiver,
     plot_streamplot,
@@ -782,6 +783,49 @@ def fig_batch_fold() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 31 — domain regions: four ways to delimit them
+# ---------------------------------------------------------------------------
+
+def _mach_sweep():
+    """A Mach sweep with a regime flag, the way a model hands one over."""
+    mach = np.linspace(0.3, 1.6, 53)
+    cn = 0.55 + 0.35 / np.sqrt(np.abs(1 - mach**2) + 0.08) * (mach < 1.02) + 0.25 * (mach >= 1.02)
+    cn = cn - 0.5 * np.clip(mach - 1.02, 0, None)
+    idomain = np.where(mach < 0.75, 0, np.where(mach < 1.15, 1, 2))
+    return mach, cn, idomain
+
+
+DOMAINS = {
+    0: {"name": "Subsonic", "color": "#0072B2"},
+    1: {"name": "Transonic", "color": "#D55E00"},
+    2: {"name": "Supersonic", "color": "#009E73"},
+}
+
+
+def fig_domains() -> None:
+    use_style("notebook")
+    mach, cn, idomain = _mach_sweep()
+
+    variants = (
+        ("default — tint + name above", dict()),
+        ("alternate=True", dict(alternate=True)),
+        ("fill=False, lines=True", dict(fill=False, lines=True)),
+        ("label_box=True, legend=True", dict(label_box=True, legend=True, alpha=0.10)),
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(10.4, 6.4))
+    for ax, (title, options) in zip(axes.ravel(), variants):
+        plot_line(ax, mach, cn, label=r"$C_N$")
+        plot_domains(ax, mach, idomain, domains=DOMAINS, **options)
+        ax.set_xlabel(r"$M$ [-]")
+        ax.set_ylabel(r"$C_N$ [-]")
+        set_title(ax, title)
+        if options.get("legend"):
+            make_legend(ax, loc="lower left", fontsize=7)
+    _write(fig, "31_domains")
+
+
+# ---------------------------------------------------------------------------
 # 22 — panel labels
 # ---------------------------------------------------------------------------
 
@@ -930,6 +974,7 @@ def main() -> None:
     fig_batch()
     fig_batch_fold()
     fig_animation()
+    fig_domains()
     fig_panel_labels()
     fig_palettes()
     fig_pdf_report()

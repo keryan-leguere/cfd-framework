@@ -40,6 +40,7 @@ Four things it gives you that plain Matplotlib does not:
 - [16. Animations (GIF / MP4)](#16-animations-gif--mp4)
 - [17. Panel labels and palettes](#17-panel-labels-and-palettes)
 - [18. PDF reports and contact sheets](#18-pdf-reports-and-contact-sheets)
+- [19. Domain regions](#19-domain-regions)
 - [API reference](#api-reference)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -251,6 +252,9 @@ Two ordering rules worth remembering:
 - **`annotate_point`'s `offset` is in points**, relative to the annotated data point;
   negative x moves the label left. Use it instead of hand-computing `xytext` in data
   coordinates, which breaks the moment the axis limits change.
+
+To name a *stretch* of the x axis rather than a point — a regime, a domain, a phase — see
+[19. Domain regions](#19-domain-regions).
 
 ---
 
@@ -1393,6 +1397,138 @@ error message says so, because it is the first mistake everyone makes.
 
 ---
 
+## 19. Domain regions
+
+A sweep is rarely one regime. A Mach sweep goes subsonic, transonic, supersonic; a polar goes
+attached, buffet, stalled. The model usually says so already, as an integer column sampled at
+the same points as the curve — `iDomain`, `regime`, `flag`. `plot_domains` turns that column
+into a light tint behind each region with its **name** written above it.
+
+![domain regions](00_DOC/FIGURES/31_domains.png)
+
+```python
+from cfd_plot import plot_domains
+
+plot_line(ax, mach, cn, label=r"$C_N$")
+plot_domains(ax, mach, idomain, domains={
+    0: "Subsonic",
+    1: {"name": "Transonic", "color": "#D55E00"},
+    2: "Supersonic",
+})
+```
+
+`domains` maps a value to a name, to a dict (`name`, `color`, `hatch`, `alpha`), or to a
+`Domain(...)`. It is optional: a value with no entry is named after itself and coloured from
+the palette. Draw the curves **first** — the regions are sized from `x`.
+
+### How the column is read
+
+Consecutive points sharing a value form one region, so a value that comes back later gets a
+*second* region rather than one stretched over the gap:
+
+```python
+domain_segments([0, 1, 2, 3], [0, 1, 1, 0])
+# [(0, 0.0, 0.5), (1, 0.5, 2.5), (0, 2.5, 3.0)]
+```
+
+Three details that are decisions, not accidents:
+
+- **The cut is halfway between the two samples that disagree.** The model only says the switch
+  happened *between* them, and the midpoint is the only unbiased reading of that. Use
+  `boundary="left"` or `"right"` to snap it to a sample instead.
+- **Points are sorted by x first.** Solver output is not always monotonic, and unsorted input
+  would produce regions that overlap each other.
+- **A missing domain (`NaN`, `None`) breaks the run and is left blank.** Shading through a hole
+  would claim a region the model never gave. A point with no `x` is simply dropped — it cannot
+  be placed, and it says nothing about its neighbours.
+
+### Ways to delimit, from lightest to heaviest
+
+The default — a `0.12` fill plus a name above each region — is the quietest thing that still
+reads at a glance. The alternatives exist because the right answer depends on how busy the
+figure already is:
+
+| Option | What it gives | When |
+|:---|:---|:---|
+| *(default)* | Tint + name above the frame | The general case |
+| `alternate=True` | Tints every *other* region | A dense curve, or several overlapping ones — half the figure stays white |
+| `lines=True` | A rule at each boundary | When *where* it changes matters more than *which* region it is; pass a dict to restyle |
+| `fill=False, lines=True` | Boundaries only | Black-and-white printing, or a figure already carrying colour |
+| `Domain(hatch="//")` | Hatching, drawn in the domain colour | The other black-and-white answer; survives a photocopier |
+| `legend=True` | Names in the legend | Narrow regions, long names, small panels |
+| `label_box=True` | Each name on a coloured chip | Reads as a ribbon above the axes, and ties a name to a pale tint |
+| `label_loc="inside"` | Names under the top spine | When the header is already busy (a subtitle, a two-line suptitle) |
+
+`label_loc="top"` (the default) writes the names just above the frame **and pushes the axes
+title up** to make room — once per axes, no matter how many times you call it. `"inside"`,
+`"bottom"` and `"none"` never touch the title.
+
+### The rest of the arguments
+
+```python
+plot_domains(
+    ax, x, domain, *,
+    domains=None,            # {value: name | dict | Domain}
+    palette="okabe_ito",     # colours for values without an explicit one
+    alpha=0.12,              # fill opacity — context, never competing with the curve
+    fill=True, alternate=False, lines=False,
+    labels=True, label_loc="top", label_rotation=0.0, label_box=False,
+    label_kwargs=None,       # forwarded to ax.text (fontsize, color, …)
+    min_label_width=0.04,    # fraction of the x range below which a name is dropped
+    legend=False,
+    boundary="midpoint",     # "left" | "right"
+    extend="data",           # "axes" → run the outer regions out to the axis limits
+    zorder=0.0,
+    **kwargs,                # forwarded to ax.axvspan
+) -> list[DomainSpan]
+```
+
+- **`min_label_width`** is why a sliver region comes out unnamed: a name wider than its own
+  region lands on its neighbour, which is worse than no name. Set it to `0.0` to force them
+  all, or use `legend=True` to name the narrow ones somewhere they fit.
+- **`extend="axes"`** removes the white slivers at the left and right edges (Matplotlib's
+  autoscale margin sits outside the data). It reads the limits at call time, so call it last.
+- **The returned `DomainSpan`s** carry `value`, `name`, `start`, `end`, `width`, `color`,
+  `alpha`, and the `patch` / `text` artists — everything needed to keep tweaking.
+
+### Colour stability across figures
+
+Region colours are picked from the palette by the domain *value* when it is a non-negative
+integer, not by order of appearance: `iDomain = 2` is the third palette colour whether or not
+domains 0 and 1 occur in this particular sweep. A flight point that never leaves the transonic
+range therefore keeps the colours of the one next to it — which is the whole point of a set of
+figures meant to be compared. Pin them explicitly in `domains` when that is not enough.
+
+With the default `okabe_ito` palette, domain `0` comes out neutral grey (its first colour is
+black, faded to 12 %), which usually suits the baseline regime.
+
+### In a batch
+
+`plot_domains` is an ordinary axes helper, so in `batch_plot` it belongs in `on_before_save`.
+Make the hook a **module-level** function or class — `batch_plot` silently drops to
+`n_jobs=1` when its hook cannot be pickled:
+
+```python
+class DomainBands:
+    """Shade the regime regions of whichever flight point is being drawn."""
+
+    def __init__(self, df, *, column="iDomain", domains=None):
+        self.df, self.column, self.domains = df, column, domains
+
+    def __call__(self, fig, ax, context):
+        sub = self.df
+        for key, value in {**context.flight_point, **context.fixed_sweeps}.items():
+            sub = sub[sub[key] == value]
+        x_col = context.x_spec["col_name"]
+        sub = sub.sort_values(x_col)
+        plot_domains(ax, sub[x_col], sub[self.column], domains=self.domains)
+
+
+batch_plot(..., on_before_save=DomainBands(df, domains={0: "Subsonic", 1: "Transonic"}))
+```
+
+---
+
 ## API reference
 
 | Group | Functions |
@@ -1411,6 +1547,7 @@ error message says so, because it is the first mistake everyone makes.
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |
+| **Domain regions** | `plot_domains`, `domain_segments`, `Domain`, `DomainSpan` |
 | **PDF reports** | `pdf_report`, `contact_sheet`, `ReportSection`, `PdfReportSpec`, `PAGE_SIZES`; `batch_plot(..., pdf_report=...)` |
 
 ---

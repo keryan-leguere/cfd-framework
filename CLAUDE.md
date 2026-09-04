@@ -290,6 +290,16 @@ not part of the Bash framework's runtime:
   panels or, `layout="overlay"`, on one axes under `FOLD_OVERLAY/` where colour reads the
   condition and marker/linestyle the source; families larger than `max_panels` split into
   numbered sheets rather than shrinking).
+  `cfd_plot.domains` (`plot_domains`) shades and names the regions a curve crosses from a
+  per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
+  the samples that disagree, a hole in the column left blank rather than shaded through, and
+  palette colours keyed on the *value* so a regime keeps its colour on a figure where a
+  neighbouring regime is absent.
+  A configuration entry may also carry the caller's own keys (`masse`, `maillage`): only
+  keywords Matplotlib recognises (asked of `ArtistInspector(Line2D)`) reach `plot_line`, with
+  `style` as the never-filtered escape hatch. Layout calls go through `cfd_plot._compat`
+  (`figure_set_layout_pad` / `figure_disable_layout`), which also speaks the pre-3.6 Matplotlib
+  API — a cluster often *provides* a Matplotlib older than the declared floor.
   SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
   `cfd-perf`, `cfd-atm` and `cfd-nozzle` import it *optionally* via their
   `report/_plotting_lib.py` and fall back to plain Matplotlib when it is absent, so they stay

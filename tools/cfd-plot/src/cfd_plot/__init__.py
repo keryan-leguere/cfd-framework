@@ -78,6 +78,14 @@ from .batch import (
     varying_flight_keys,
 )
 
+# --- Domain regions ----------------------------------------------------------
+from .domains import (
+    Domain,
+    DomainSpan,
+    domain_segments,
+    plot_domains,
+)
+
 # --- Animation (GIF / MP4) ---------------------------------------------------
 from .anim import (
     PRESETS,
@@ -176,6 +184,11 @@ __all__ = [
     "iter_fixed_sweep_combinations",
     "iter_flight_points",
     "varying_flight_keys",
+    # Domain regions
+    "Domain",
+    "DomainSpan",
+    "domain_segments",
+    "plot_domains",
     # Animation (GIF / MP4)
     "AnimPreset",
     "AnimationResult",
