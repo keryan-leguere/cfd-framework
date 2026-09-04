@@ -7,7 +7,11 @@ pas s'en remettre à l'œil sur mille histogrammes.
 
 Trois panneaux, comme au tirage : le biais, le facteur d'échelle, et la
 reconstruction. La différence est qu'à chaque loi théorique se superpose
-maintenant la densité empirique du modèle.
+maintenant la densité empirique du modèle — le troisième panneau confronte donc
+la loi **prescrite du coefficient dispersé**, biais et FE combinés (voir
+:mod:`cfd_dispersion.core.combinaison`), à l'histogramme réellement obtenu.
+C'est là que se voit ce qu'une erreur sur une composante fait à la grandeur
+livrée : les deux courbes ne se superposent pas.
 
 Histogramme ou diagramme quantile-quantile
 ------------------------------------------
@@ -29,6 +33,7 @@ import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
+from ..core.combinaison import loi_combinee
 from ..core.convention import ConventionArg, convention
 from ..core.loi import LoiDispersion
 from ..core.lois import COMPOSANTES, JeuDeLois, LoiCoefficient
@@ -45,7 +50,7 @@ from ._base import (
     tracer_bande,
     tracer_ligne,
 )
-from .tirage import tracer_loi
+from .tirage import axe_pourcentage, tracer_loi, tracer_sigmas
 
 __all__ = ["figure_comparaison", "figures_par_pdv"]
 
@@ -147,6 +152,7 @@ def figure_comparaison(
         _panneau_reconstruction(
             trois[2],
             nom,
+            loi,
             biais=tableaux["Biais"],
             fe=tableaux["FE"],
             nominal=nominal,
@@ -242,6 +248,7 @@ def _boite_verdict(ax: Axes, verdict: Verdict) -> None:
 def _panneau_reconstruction(
     ax: Axes,
     coefficient: str,
+    loi: LoiCoefficient,
     *,
     biais: np.ndarray,
     fe: np.ndarray,
@@ -271,6 +278,28 @@ def _panneau_reconstruction(
         ax.axvline(float(nominal_[0]), color="0.25", ls="--", lw=1.4, label="nominal", zorder=6)
         ax.set_xlabel(coefficient)
         ax.set_ylabel("densité")
+
+        # La loi que le coefficient dispersé devrait suivre, superposée à celle
+        # qu'il suit. L'histogramme seul ne dit pas s'il est trop large : les
+        # deux panneaux précédents jugent chaque composante, celui-ci juge leur
+        # combinaison, qui est la grandeur livrée.
+        combinee = loi_combinee(loi, float(nominal_[0]), convention_=relation)
+        if not combinee.est_degeneree:
+            grille = np.linspace(*combinee.plage_utile(), _N_GRILLE)
+            tracer_ligne(
+                ax,
+                grille,
+                combinee.pdf(grille),
+                color="C2",
+                lw=1.6,
+                marker="",
+                label="prescrite (combinée)",
+            )
+            # Les lignes ±kσ lisent les limites courantes : il faut donc que
+            # l'autoscale ait tenu compte de tout ce qui précède.
+            ax.autoscale_view()
+            tracer_sigmas(ax, combinee.M_theorique, combinee.ET_theorique)
+        axe_pourcentage(ax, combinee.nominal)
     else:
         abscisse = (
             np.arange(nominal_.size, dtype=float) if x is None else np.asarray(x, dtype=float)

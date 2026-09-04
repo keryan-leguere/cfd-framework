@@ -101,6 +101,12 @@ Trois panneaux, comme au tirage, mais chaque loi théorique porte maintenant la
 densité empirique du modèle (lissage à noyau `ot.KernelSmoothing`), plus la
 boîte de verdict. On *voit* le FE réalisé déborder de son support prescrit.
 
+Le troisième panneau confronte la loi **prescrite du coefficient dispersé** —
+biais et FE combinés, [voir 02 §2.4](02_CONVENTIONS_ET_TIRAGE.md#24-la-loi-du-coefficient-dispersé) —
+à l'histogramme réellement obtenu, sur un axe supérieur gradué en pourcentage
+d'écart au nominal. C'est là que se lit ce qu'une erreur sur une composante
+coûte à la grandeur livrée : ±15 % prescrits contre ±30 % obtenus.
+
 `qq=True` remplace la densité empirique par un diagramme quantile-quantile : un
 histogramme se lit bien au centre et mal dans les queues, or c'est dans les
 queues qu'une loi tronquée dérape.

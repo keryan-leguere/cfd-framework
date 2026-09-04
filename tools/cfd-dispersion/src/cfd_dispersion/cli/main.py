@@ -86,11 +86,18 @@ def _ecrire_figures_tirage(lois: Any, args: argparse.Namespace) -> None:
     resultat = tirer(lois, graine=args.graine, methode=args.methode)
     args.figures.mkdir(parents=True, exist_ok=True)
     for coefficient in lois:
-        figure, _ = figure_tirage(coefficient, lois[coefficient], resultat, nominal=1.0)
-        chemin = args.figures / f"tirage_{coefficient}.png"
-        figure.savefig(chemin, dpi=130, bbox_inches="tight")
-        plt.close(figure)
-        console.print(f"[{theme.OK}]écrit :[/] {chemin}")
+        # Tracer et écrire ne font qu'un appel, et le fichier sort par le
+        # gabarit d'export de cfd-plot — pas par un `savefig` de fortune.
+        rendue = figure_tirage(
+            coefficient,
+            lois[coefficient],
+            resultat,
+            nominal=1.0,
+            chemin=args.figures / f"tirage_{coefficient}",
+        )
+        plt.close(rendue.figure)
+        for chemin in rendue.fichiers:
+            console.print(f"[{theme.OK}]écrit :[/] {chemin}")
 
 
 def cmd_valider(args: argparse.Namespace) -> int:

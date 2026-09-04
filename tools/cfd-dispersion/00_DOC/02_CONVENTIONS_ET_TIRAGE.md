@@ -79,7 +79,46 @@ petit en LHS qu'en Monte-Carlo ; c'est ce qu'un test vérifie.
 
 ---
 
-## 2.4 La figure du tirage
+## 2.4 La loi du coefficient dispersé
+
+Les lois du biais et du facteur d'échelle sont connues. Mais la question posée
+n'est pas « comment se répartit le biais » : c'est **comment se répartit le
+coefficient**, une fois la relation appliquée.
+
+```python
+from cfd_dispersion import loi_combinee
+
+combinee = loi_combinee(lois["Cm_alpha"], nominal=-2.5)
+combinee.M_theorique, combinee.ET_theorique  # les moments du coefficient dispersé
+combinee.pourcent(-2.58)  # -3.25 (%), None si le nominal est nul
+combinee.exacte, combinee.methode  # True, "loi exacte (combinaison linéaire)"
+```
+
+Deux chemins, essayés dans cet ordre :
+
+| | quand | comment |
+|:--|:--|:--|
+| **exact** | la relation est affine en (biais, FE) à nominal fixé | `ot.LinearCombinationDistribution` : loi exacte de `a·biais + b·FE + cst` |
+| **lissé** | relation maison non affine | 20 000 tirages LHS, densité estimée par noyau (`ot.KernelSmoothing`) |
+
+Les trois conventions livrées sont affines, et toute relation de la forme
+`biais + f(c)·FE` l'est aussi — si tordue que soit `f`. La voie exacte couvre
+donc presque tout, et vaut mieux qu'un histogramme : elle est juste jusque dans
+les queues, là où une loi tronquée se distingue d'une gaussienne pleine.
+
+L'affinité n'est pas **supposée**, elle est **mesurée** : la relation est
+évaluée en trois points pour en extraire `(a, b, cst)`, puis en trois autres
+pour vérifier qu'elle s'y superpose. Une relation non affine bascule donc sur le
+lissage, au lieu de produire une loi « exacte » exactement fausse.
+
+> Une loi combinée n'existe qu'**en un point**. Le facteur d'échelle multiplie
+> le nominal : la dispersion absolue du coefficient change le long d'un
+> balayage. Pour tout un balayage, c'est [04](04_POLAIRE_DISPERSEE.md) — une
+> bande, pas une densité.
+
+---
+
+## 2.5 La figure du tirage
 
 ![le tirage en trois panneaux](FIGURES/04_tirage_3_panneaux.png)
 
@@ -87,16 +126,41 @@ Trois panneaux par coefficient :
 
 1. la loi théorique du **biais**, la valeur tirée, et les bornes du support ;
 2. la même chose pour le **facteur d'échelle** ;
-3. la **reconstruction** — le nominal, le dispersé, la formule employée et
-   l'écart obtenu.
+3. la **loi du coefficient dispersé** — §2.4 — le nominal et la valeur tirée
+   repérés, et l'écart en pourcentage.
 
 Le troisième est celui qui compte. Les deux premiers montrent que chaque
 composante est bien tombée dans sa loi ; seul le troisième montre ce que cela
 fait au coefficient, qui est la question posée.
 
+Chaque panneau porte ses lignes **±1/2/3 σ** (`cfd_plot.add_reference_lines`),
+σ étant l'écart-type *exact* de la loi — celui d'une tronquée vaut moins que
+`ET/2`, et la figure le montre. Le troisième porte en plus un axe supérieur
+gradué en **pourcentage d'écart au nominal** : c'est ainsi qu'une dispersion se
+lit et se raconte.
+
 ```python
 from cfd_dispersion import figure_tirage, figure_tirage_matrice
 
-figure, axes = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5)
-figure, grille = figure_tirage_matrice(lois, tirage, nominaux={"Cm_alpha": -2.5, ...})
+# Tracer et écrire ne font qu'un appel : SVG, par le gabarit de cfd-plot.
+rendue = figure_tirage(
+    "Cm_alpha",
+    lois["Cm_alpha"],
+    tirage,
+    nominal=-2.5,
+    chemin=sortie / "tirage_Cm_alpha",  # -> tirage_Cm_alpha.svg
+)
+rendue.figure, rendue.axes, rendue.fichiers
+
+# Quatre coefficients par figure au plus : au-delà, la matrice pagine et
+# numérote les fichiers (tirage_01.svg, tirage_02.svg, …).
+pages = figure_tirage_matrice(
+    lois,
+    tirage,
+    nominaux={"Cm_alpha": -2.5, "CN": 0.85},
+    chemin=sortie / "tirage",
+)
 ```
+
+Sans `chemin`, rien n'est écrit : `rendue.fichiers` est vide et la figure reste
+à l'appelant.

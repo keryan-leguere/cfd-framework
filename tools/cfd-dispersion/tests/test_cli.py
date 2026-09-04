@@ -102,10 +102,10 @@ class TestTirage:
             )
             == 0
         )
-        assert sorted(p.name for p in tmp_path.glob("*.png")) == [
-            "tirage_CA.png",
-            "tirage_CN.png",
-            "tirage_Cm_alpha.png",
+        assert sorted(p.name for p in tmp_path.glob("*.svg")) == [
+            "tirage_CA.svg",
+            "tirage_CN.svg",
+            "tirage_Cm_alpha.svg",
         ]
 
 

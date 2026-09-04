@@ -244,8 +244,8 @@ def figure_conventions() -> None:
 def figure_tirage_trois_panneaux() -> None:
     lois = charger_lois(TABLE)
     tirage = tirer(lois, graine=42)
-    figure, _ = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5)
-    _ecrire(figure, "04_tirage_3_panneaux")
+    rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5)
+    _ecrire(rendue.figure, "04_tirage_3_panneaux")
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ from cfd_dispersion.figures._base import (
     enregistrer,
     etiqueter_ligne,
     legende,
+    lignes_reference,
     nouvelle_figure,
     remplir_entre,
     style,
@@ -170,6 +171,20 @@ class TestPrimitives:
         legende(axes)
 
 
+class TestLignesReference:
+    def test_trace_une_verticale_par_position(self, axes: Axes) -> None:
+        artistes = lignes_reference(axes, verticales=[0.25, 0.75])
+        assert len(artistes) == 2
+        assert [ligne.get_xdata()[0] for ligne in artistes] == [0.25, 0.75]
+
+    def test_trace_aussi_des_horizontales(self, axes: Axes) -> None:
+        (ligne,) = lignes_reference(axes, horizontales=[1.5])
+        assert ligne.get_ydata()[0] == 1.5
+
+    def test_sans_position_ne_trace_rien(self, axes: Axes) -> None:
+        assert lignes_reference(axes) == []
+
+
 class TestToutPasseParCfdPlot:
     """Le format des figures vient de cfd-plot, pas de Matplotlib nu.
 
@@ -202,6 +217,7 @@ class TestToutPasseParCfdPlot:
         tracer_ligne(ax, [0, 1], [0, 1], label="a", color="C0")
         tracer_bande(ax, [0, 1], [0, 1], y_bas=[-1, 0], y_haut=[1, 2])
         remplir_entre(ax, [0, 1], [0, 0], [1, 1])
+        lignes_reference(ax, verticales=[0.5])
         boite_texte(ax, "x", loc="upper left")
         legende(ax)
         titre(ax, "titre")
@@ -213,6 +229,7 @@ class TestToutPasseParCfdPlot:
             "plot_line",
             "plot_with_band",
             "fill_between_curves",
+            "add_reference_lines",
             "add_textbox",
             "make_legend",
             "set_title",

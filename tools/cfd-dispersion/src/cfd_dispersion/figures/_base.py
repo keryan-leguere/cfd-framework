@@ -38,6 +38,7 @@ __all__ = [
     "enregistrer",
     "etiqueter_ligne",
     "legende",
+    "lignes_reference",
     "nouvelle_figure",
     "remplir_entre",
     "style",
@@ -126,6 +127,27 @@ def remplir_entre(
         ax, x, y1, y2, color=couleur, alpha=alpha, label=label, lines=lignes, **kwargs
     )
     return polygones[0] if polygones else None
+
+
+def lignes_reference(
+    ax: Axes,
+    *,
+    horizontales: Sequence[float] | None = None,
+    verticales: Sequence[float] | None = None,
+    **kwargs: Any,
+) -> list[Any]:
+    """Trace des droites de repère (``cfd_plot.add_reference_lines``).
+
+    C'est par là que passent les lignes ±kσ des figures de tirage : une ligne
+    de repère a son épaisseur, sa teinte et son plan de profondeur définis
+    dans cfd-plot, comme le reste du format.
+    """
+    return get_plotting().add_reference_lines(  # type: ignore[no-any-return]
+        ax,
+        hlines=list(horizontales) if horizontales is not None else None,
+        vlines=list(verticales) if verticales is not None else None,
+        **kwargs,
+    )
 
 
 def boite_texte(ax: Axes, texte: str, *, loc: str = "upper right", **kwargs: Any) -> Text:

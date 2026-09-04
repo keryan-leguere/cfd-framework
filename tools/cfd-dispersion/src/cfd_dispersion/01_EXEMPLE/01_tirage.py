@@ -8,14 +8,19 @@ Ce que le script montre, dans l'ordre :
   1. charger une table de lois — depuis un dict Python, puis depuis LOIS.yaml ;
   2. tirer une réalisation : c'est le ``DICT_DISP_DRAWN`` du modèle ;
   3. reconstruire le coefficient dispersé sous les quatre conventions ;
-  4. la figure en trois panneaux, par coefficient puis en matrice ;
-  5. tirer un lot de mille, et comparer les trois plans d'échantillonnage.
+  4. la loi du coefficient dispersé, biais et FE combinés ;
+  5. les figures, qui s'écrivent d'elles-mêmes ;
+  6. tirer un lot de mille, et comparer les trois plans d'échantillonnage.
 
 Sorties, dans SORTIE/ :
 
-    tirage_<coefficient>.png   trois panneaux : biais, FE, reconstruction
-    tirage_matrice.png         une ligne de trois par coefficient
+    tirage_<coefficient>.svg   trois panneaux : biais, FE, coefficient dispersé
+    tirage_matrice.svg         une ligne de trois par coefficient
+    tirage_pagine_01.svg …     la même, paginée (deux coefficients par figure)
     lot.csv                    le lot, prêt à alimenter un modèle
+
+Les figures s'écrivent d'elles-mêmes : ``chemin=`` suffit, et le fichier sort
+en SVG par le gabarit d'export de cfd-plot.
 """
 
 from __future__ import annotations
@@ -33,12 +38,13 @@ from rich.console import Console
 
 from cfd_dispersion import (
     CONVENTIONS,
+    MAX_COEFFICIENTS_PAR_FIGURE,
     Convention,
     charger_lois,
     charger_lois_yaml,
-    enregistrer,
     figure_tirage,
     figure_tirage_matrice,
+    loi_combinee,
     tirer,
     tirer_lot,
 )
@@ -79,6 +85,23 @@ MAISON = Convention(
 )
 
 
+def convention_saturee(c: Any, biais: Any, fe: Any) -> np.ndarray:
+    """Une relation **non affine** en (biais, FE) : le FE y sature.
+
+    C'est le cas où la loi du coefficient dispersé n'a pas de forme fermée —
+    et où le paquet bascule sur un gros tirage LHS lissé par noyau.
+    """
+    fe = np.asarray(fe, dtype=float)
+    return np.asarray(biais + fe * c / (1.0 + np.abs(fe)), dtype=float)
+
+
+SATUREE = Convention(
+    nom="saturee",
+    formule="biais + FE · c / (1 + |FE|)",
+    appliquer=convention_saturee,
+)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lois", type=Path, default=ICI / "LOIS.yaml")
@@ -113,8 +136,9 @@ def main() -> int:
     # Rien dans une figure ne trahit qu'on s'est trompé de convention : la
     # courbe reste lisse et l'ordre de grandeur reste crédible.
     console.print("\n[bold]Le coefficient dispersé, convention par convention[/]")
-    for nom in (*CONVENTIONS, MAISON.nom):
-        relation = MAISON if nom == MAISON.nom else CONVENTIONS[nom]
+    maisons = {MAISON.nom: MAISON, SATUREE.nom: SATUREE}
+    for nom in (*CONVENTIONS, *maisons):
+        relation = maisons.get(nom) or CONVENTIONS[nom]
         disperses = tirage.appliquer(NOMINAUX, convention_=relation)
         detail = "  ".join(
             f"{coefficient} {float(valeur):+.5g}" for coefficient, valeur in disperses.items()
@@ -124,23 +148,66 @@ def main() -> int:
         f"  {'nominal':<12} {'':<28} " + "  ".join(f"{k} {v:+.5g}" for k, v in NOMINAUX.items())
     )
 
-    # --- 4. les figures ------------------------------------------------
-    for coefficient in lois:
-        figure, _ = figure_tirage(
-            coefficient, lois[coefficient], tirage, nominal=NOMINAUX[coefficient]
+    # --- 4. la loi du coefficient dispersé ------------------------------
+    #
+    # Le troisième panneau des figures ne montre pas un histogramme : la loi
+    # du coefficient, biais et FE combinés, est calculée. Exactement quand la
+    # relation est affine à nominal fixé — le cas des conventions livrées —
+    # sinon lissée sur un gros tirage LHS.
+    console.print("\n[bold]La loi du coefficient dispersé[/]")
+    for coefficient, nominal in NOMINAUX.items():
+        combinee = loi_combinee(lois[coefficient], nominal)
+        relatif = combinee.pourcent(combinee.M_theorique + combinee.ET_theorique)
+        console.print(
+            f"  {coefficient:<10} nominal {nominal:+.5g}  "
+            f"σ {combinee.ET_theorique:.5g} ({abs(relatif or 0.0):.2f} %)  "
+            f"{combinee.methode}"
         )
-        # `enregistrer` passe par cfd_plot.save_figure : DPI, marges et fond
-        # viennent du profil de style, comme pour toute figure du framework.
-        (chemin,) = enregistrer(figure, args.sortie / f"tirage_{coefficient}", formats=("png",))
-        plt.close(figure)
-        console.print(f"[green]écrit :[/] {chemin}")
+    # Une relation maison reste affine en (biais, FE) tant que le FE n'y
+    # apparaît qu'au premier degré : la voie exacte tient. Sinon, le paquet
+    # bascule tout seul sur un tirage LHS lissé — et le dit.
+    for relation in (MAISON, SATUREE):
+        combinee = loi_combinee(lois["CN"], NOMINAUX["CN"], convention_=relation)
+        console.print(f"  {relation.nom:<10} {relation.formule:<28} {combinee.methode}")
 
-    figure, _ = figure_tirage_matrice(lois, tirage, nominaux=NOMINAUX)
-    (chemin,) = enregistrer(figure, args.sortie / "tirage_matrice", formats=("png",))
-    plt.close(figure)
-    console.print(f"[green]écrit :[/] {chemin}")
+    # --- 5. les figures ------------------------------------------------
+    #
+    # Tracer et écrire ne font qu'un appel : `chemin=` suffit. Le fichier
+    # passe par cfd_plot.save_figure — DPI, marges et fond viennent du profil
+    # de style, comme pour toute figure du framework.
+    for coefficient in lois:
+        rendue = figure_tirage(
+            coefficient,
+            lois[coefficient],
+            tirage,
+            nominal=NOMINAUX[coefficient],
+            chemin=args.sortie / f"tirage_{coefficient}",
+        )
+        plt.close(rendue.figure)
+        console.print(f"[green]écrit :[/] {rendue.fichiers[0]}")
 
-    # --- 5. le lot, et les trois plans ---------------------------------
+    (page,) = figure_tirage_matrice(
+        lois, tirage, nominaux=NOMINAUX, chemin=args.sortie / "tirage_matrice"
+    )
+    plt.close(page.figure)
+    console.print(f"[green]écrit :[/] {page.fichiers[0]}")
+
+    # Au-delà de MAX_COEFFICIENTS_PAR_FIGURE (quatre) coefficients, la matrice
+    # passe à la figure suivante et numérote les fichiers d'elle-même. Forcé
+    # ici à deux par page, faute d'assez de coefficients pour le montrer
+    # autrement.
+    console.print(f"  (défaut : {MAX_COEFFICIENTS_PAR_FIGURE} coefficients par figure)")
+    for page in figure_tirage_matrice(
+        lois,
+        tirage,
+        nominaux=NOMINAUX,
+        chemin=args.sortie / "tirage_pagine",
+        max_par_figure=2,
+    ):
+        plt.close(page.figure)
+        console.print(f"[green]écrit :[/] {page.fichiers[0]}  {list(page.coefficients)}")
+
+    # --- 6. le lot, et les trois plans ---------------------------------
     console.print("\n[bold]Les trois plans d'échantillonnage[/]")
     for methode in ("mc", "lhs", "sobol"):
         lot = tirer_lot(lois, args.n, graine=args.graine, methode=methode)

@@ -358,6 +358,27 @@ not part of the Bash framework's runtime:
       that can move the limits. `batch.py`'s `HookDispersion` plugs all of it into
       `cfd_plot.batch_plot`'s `on_before_save`; it is a module-level class, not a closure, because
       `batch_plot` silently drops to `n_jobs=1` when its hook is not picklable.
+    - **The law of the dispersed coefficient** (`core/combinaison.py`, `loi_combinee`) is what the
+      third panel of every draw figure now shows — a computed density, not a histogram. Exact
+      whenever the reconstruction relation is affine in (biais, FE) at a fixed nominal
+      (`ot.LinearCombinationDistribution` over the two component laws, whatever their families);
+      otherwise a 20 000-point LHS smoothed by `ot.KernelSmoothing`. Affinity is **measured**, not
+      assumed — three evaluations to extract `(a, b, cst)`, three more to check they hold — so a
+      non-affine house convention falls back instead of producing an "exact" law that is exactly
+      wrong. Degenerate components fold into the constant rather than entering as Dirac masses.
+      A combined law exists **at one point only** (FE multiplies the nominal), so a swept nominal
+      is reduced to one abscissa and the figure says which.
+    - **The draw figures draw and write in one call.** `figure_tirage(..., chemin=)` and
+      `figure_tirage_matrice(..., chemin=)` save through `enregistrer` — **SVG** by default — and
+      return `FigureTirage` (`figure`, `axes`, `fichiers`, `coefficients`); the matrix returns a
+      *list*, paginating at `MAX_COEFFICIENTS_PAR_FIGURE` = 4 coefficients and numbering files
+      `_01`, `_02`… beyond that. Every density panel carries ±1/2/3 σ reference lines
+      (`cfd_plot.add_reference_lines`, wrapped as `lignes_reference`) drawn at the law's *exact* σ
+      and only where they fall inside the axis, labelled at the foot of the line because the top of
+      the panel belongs to the parameter box and the legend; the coefficient panel adds a secondary
+      top axis in **% deviation from nominal**. `figure_comparaison`'s third panel overlays the same
+      prescribed combined law on the realised histogram, which is where an ET-vs-σ error becomes
+      visible on the delivered quantity (±15 % prescribed against ±30 % obtained).
     - **Every figure goes through cfd-plot**, primitive by primitive (`figures/_base.py`, asserted
       by `test_base.py::TestToutPasseParCfdPlot`) — the format of a deliverable is defined there and
       nowhere else. Hence the exported `style` / `nouvelle_figure` / `tracer_ligne` / `enregistrer`.

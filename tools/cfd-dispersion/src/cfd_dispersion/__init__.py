@@ -65,6 +65,12 @@ from .core.tirage import (
     tirer_lot,
 )
 
+# --- La loi du coefficient dispersé ------------------------------------------
+from .core.combinaison import (
+    LoiCombinee,
+    loi_combinee,
+)
+
 # --- La propagation le long d'un balayage ------------------------------------
 from .core.bande import (
     INTERVALLES,
@@ -101,9 +107,12 @@ from .figures.synthese import (
     tableau_par_pdv,
 )
 from .figures.tirage import (
+    MAX_COEFFICIENTS_PAR_FIGURE,
+    FigureTirage,
     figure_tirage,
     figure_tirage_matrice,
     tracer_loi,
+    tracer_loi_combinee,
 )
 
 __all__ = [
@@ -138,6 +147,9 @@ __all__ = [
     "tirer",
     "tirer_lot",
     "graine_temporaire",
+    # La loi du coefficient dispersé
+    "LoiCombinee",
+    "loi_combinee",
     # La propagation
     "BandeDispersion",
     "INTERVALLES",
@@ -154,6 +166,9 @@ __all__ = [
     "style",
     "tracer_ligne",
     "tracer_loi",
+    "tracer_loi_combinee",
+    "FigureTirage",
+    "MAX_COEFFICIENTS_PAR_FIGURE",
     "figure_tirage",
     "figure_tirage_matrice",
     "figure_comparaison",

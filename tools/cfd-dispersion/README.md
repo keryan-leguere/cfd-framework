@@ -28,15 +28,16 @@ produit déjà.
 - [Guide d'utilisation](#guide-dutilisation)
   - [1. Charger et tirer](#1-charger-et-tirer)
   - [2. Reconstruire : les conventions](#2-reconstruire--les-conventions)
-  - [3. Valider mille appels du modèle](#3-valider-mille-appels-du-modèle)
-  - [4. Synthétiser, et ne tracer que les rejets](#4-synthétiser-et-ne-tracer-que-les-rejets)
-  - [5. Propager le long d'un balayage](#5-propager-le-long-dun-balayage)
-  - [6. La polaire dispersée](#6-la-polaire-dispersée)
-  - [7. La greffe sur `batch_plot`](#7-la-greffe-sur-batch_plot)
-  - [8. Corréler deux coefficients](#8-corréler-deux-coefficients)
-  - [9. La ligne de commande](#9-la-ligne-de-commande)
-  - [10. Les figures, et leur format](#10-les-figures-et-leur-format)
-  - [11. Les erreurs](#11-les-erreurs)
+  - [3. La loi du coefficient dispersé](#3-la-loi-du-coefficient-dispersé)
+  - [4. Valider mille appels du modèle](#4-valider-mille-appels-du-modèle)
+  - [5. Synthétiser, et ne tracer que les rejets](#5-synthétiser-et-ne-tracer-que-les-rejets)
+  - [6. Propager le long d'un balayage](#6-propager-le-long-dun-balayage)
+  - [7. La polaire dispersée](#7-la-polaire-dispersée)
+  - [8. La greffe sur `batch_plot`](#8-la-greffe-sur-batch_plot)
+  - [9. Corréler deux coefficients](#9-corréler-deux-coefficients)
+  - [10. La ligne de commande](#10-la-ligne-de-commande)
+  - [11. Les figures, et leur format](#11-les-figures-et-leur-format)
+  - [12. Les erreurs](#12-les-erreurs)
 - [Recettes](#recettes)
 - [Référence de l'API publique](#référence-de-lapi-publique)
 - [Limites du modèle](#limites-du-modèle)
@@ -334,13 +335,35 @@ La figure du tirage, trois panneaux par coefficient :
 ![le tirage en trois panneaux](00_DOC/FIGURES/04_tirage_3_panneaux.png)
 
 ```python
-figure, axes = figure_tirage("CN", lois["CN"], tirage, nominal=0.85)
-figure, grille = figure_tirage_matrice(lois, tirage, nominaux=NOMINAUX)
+rendue = figure_tirage(
+    "CN", lois["CN"], tirage, nominal=0.85, chemin=sortie / "tirage_CN"
+)  # -> tirage_CN.svg
+pages = figure_tirage_matrice(
+    lois, tirage, nominaux=NOMINAUX, chemin=sortie / "tirage"
+)  # -> tirage_01.svg, …
+
+rendue.figure, rendue.axes, rendue.fichiers  # la figure, ses axes, ses fichiers
 ```
 
-Le troisième panneau est celui qui compte. Les deux premiers montrent que chaque
-composante est bien tombée dans sa loi ; seul le troisième montre ce que cela
-fait au coefficient, qui est la question posée.
+**Tracer et écrire ne font qu'un appel.** `chemin=` — sans extension — suffit :
+le fichier part en **SVG**, par le gabarit d'export de cfd-plot. Sans `chemin`,
+rien n'est écrit et `rendue.fichiers` est vide.
+
+**Quatre coefficients par figure au plus** (`MAX_COEFFICIENTS_PAR_FIGURE`).
+Au-delà, `figure_tirage_matrice` passe à la figure suivante plutôt que de
+rétrécir des panneaux jusqu'à l'illisible, et numérote les fichiers
+`_01`, `_02`… d'elle-même. Elle rend donc une **liste** de pages.
+
+Chaque panneau porte ses lignes **±1/2/3 σ** (`cfd_plot.add_reference_lines`),
+σ étant l'écart-type *exact* de la loi — celui d'une tronquée vaut moins que
+`ET/2`.
+
+Le troisième panneau est celui qui compte : c'est la **loi du coefficient
+dispersé**, biais et facteur d'échelle combinés par la relation de
+reconstruction. Pas un histogramme — une densité calculée (voir
+[§3](#3-la-loi-du-coefficient-dispersé)) — le nominal et la valeur tirée
+repérés, et un axe supérieur gradué en **pourcentage d'écart au nominal**, qui
+est la façon dont une dispersion se lit.
 
 ### 2. Reconstruire : les conventions
 
@@ -372,7 +395,40 @@ def ma_relation(c, biais, fe):  # de niveau module : voir §7
 MAISON = Convention(nom="maison", formule="biais + FE · c · (1 + c²)", appliquer=ma_relation)
 ```
 
-### 3. Valider mille appels du modèle
+### 3. La loi du coefficient dispersé
+
+```python
+loi_combinee(lois["CN"], nominal, *, convention_=None, n=20_000) -> LoiCombinee
+```
+
+La question posée n'est pas « comment se répartit le biais » mais **comment se
+répartit le coefficient**. Deux chemins, essayés dans cet ordre :
+
+| | quand | comment |
+|:--|:--|:--|
+| **exact** | la relation est affine en (biais, FE) à nominal fixé — les trois conventions livrées, et toute relation `biais + f(c)·FE` | `ot.LinearCombinationDistribution` : loi exacte de `a·biais + b·FE + cst`, quelles que soient les familles |
+| **lissé** | relation maison non affine | 20 000 tirages LHS passés dans la relation, densité estimée par noyau (`ot.KernelSmoothing`) |
+
+L'affinité n'est pas supposée, elle est **mesurée** : la relation est évaluée en
+trois points pour en extraire `(a, b, cst)`, puis en trois autres pour vérifier
+qu'elle s'y superpose. Une relation non affine bascule donc sur le lissage au
+lieu de produire une loi « exacte » exactement fausse. La figure dit toujours
+lequel des deux chemins elle montre.
+
+```python
+combinee = loi_combinee(lois["CN"], 0.85)
+combinee.M_theorique, combinee.ET_theorique  # les moments du coefficient dispersé
+combinee.pourcent(0.87)  # +2.35 (%), None si le nominal est nul
+combinee.bornes()  # le support, ou None s'il est infini
+combinee.exacte, combinee.methode  # True, "loi exacte (combinaison linéaire)"
+```
+
+Une loi combinée n'existe qu'**en un point** : le facteur d'échelle multiplie le
+nominal, donc la dispersion absolue du coefficient change le long d'un balayage.
+Passer tout un balayage à `figure_tirage` est admis — le panneau en choisit un
+point (le milieu, ou celui que désigne `reference=`) et écrit lequel.
+
+### 4. Valider mille appels du modèle
 
 ```python
 valider(echantillon, loi, *, alpha=0.05, tol_M=0.10, tol_ET=0.10, n_min=20) -> Verdict
@@ -412,7 +468,7 @@ livrable dont tout l'intérêt est qu'on ne regarde *que* les cases rouges.
 | sans correction | 58 / 960 | 3 / 20 |
 | avec Šidák *(défaut)* | 1 / 960 | 19 / 20 |
 
-### 4. Synthétiser, et ne tracer que les rejets
+### 5. Synthétiser, et ne tracer que les rejets
 
 ![la synthèse](00_DOC/FIGURES/06_synthese.png)
 
@@ -438,7 +494,7 @@ for cles, coefficient, figure in figures_par_pdv(
 `figures_par_pdv` est un **générateur** : un millier de figures n'est jamais tout
 en mémoire à la fois.
 
-### 5. Propager le long d'un balayage
+### 6. Propager le long d'un balayage
 
 ```python
 bande_depuis_loi(x, nominal, *, loi, n=20000, intervalle="percentile",
@@ -461,7 +517,7 @@ point — un résidu mal convergé, par exemple. Les deux enveloppes se ressembl
 **seule celle de gauche se lit « la vraie courbe est là-dedans »**, qui est
 pourtant l'affirmation qu'on croit faire.
 
-### 6. La polaire dispersée
+### 7. La polaire dispersée
 
 ```python
 superposer_dispersion(ax, x, nominal, *, loi=None, tirages=None,
@@ -517,7 +573,7 @@ tirages qui ne partagent pas la même abscisse : les empiler donnerait une matri
 dont les colonnes ne correspondent pas au même point du balayage — une figure
 fausse, et lisse.
 
-### 7. La greffe sur `batch_plot`
+### 8. La greffe sur `batch_plot`
 
 C'est le livrable. `batch_plot` (paquet [cfd-plot](../cfd-plot)) prend quatre
 dictionnaires et écrit tout un arbre de figures ; la dispersion s'y ajoute par
@@ -599,7 +655,7 @@ Le détail clé par clé des quatre dictionnaires est dans
 [00_DOC/05 §5.7](00_DOC/05_BRANCHER_SON_MODELE.md#57-la-greffe-sur-batch_plot) ;
 `01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable.
 
-### 8. Corréler deux coefficients
+### 9. Corréler deux coefficients
 
 Sans argument, les composantes sont **indépendantes**. C'est presque toujours ce
 qu'on veut, et presque jamais ce qu'on a vérifié : deux coefficients issus du
@@ -622,7 +678,7 @@ Pour cibler une paire croisée, nommer les deux composantes :
 L'hypothèse d'indépendance étant invisible sur une figure, elle est rendue
 explicite : `lois.independantes` est reportée dans chaque boîte de paramètres.
 
-### 9. La ligne de commande
+### 10. La ligne de commande
 
 ```bash
 cfd-dispersion check   --lois LOIS.yaml
@@ -639,10 +695,11 @@ Le script console de pip fige le chemin de l'interpréteur ;
 `python -m cfd_dispersion.cli.main` est l'équivalent qui marche partout — venv
 déplacé, image Apptainer, chemin trop long pour un `#!`.
 
-### 10. Les figures, et leur format
+### 11. Les figures, et leur format
 
-Toutes les figures passent par cfd-plot. Quatre primitives sont exportées pour
-que les vôtres en fassent autant :
+Toutes les figures passent par cfd-plot — y compris les lignes de repère
+(`add_reference_lines`, sous les ±kσ des figures de tirage). Les primitives sont
+exportées pour que les vôtres en fassent autant :
 
 ```python
 from cfd_dispersion import style, nouvelle_figure, tracer_ligne, enregistrer
@@ -654,6 +711,10 @@ with style("paper"):  # style local, pas de rcParams globaux
     (chemin,) = enregistrer(figure, sortie / "CN_M0.85", formats=("png", "svg"))
 ```
 
+Les figures du paquet, elles, s'écrivent d'elles-mêmes : `figure_tirage` et
+`figure_tirage_matrice` prennent un `chemin=` et rendent leurs `fichiers`, en
+**SVG** par défaut. `enregistrer` reste là pour vos propres figures.
+
 `enregistrer` écrit par `cfd_plot.save_figure` — c'est ce qui donne au fichier le
 DPI, les marges et le fond du profil. Le chemin se donne **sans extension**, mais
 un point dans le nom est admis : `save_figure` compose son fichier avec
@@ -662,7 +723,7 @@ aussi banal que `CN_M0.85` y perdrait son `.85` — toute une série de points d
 vol s'écrasant alors dans un seul fichier, sans erreur. `enregistrer` s'en
 protège, et un test le vérifie.
 
-### 11. Les erreurs
+### 12. Les erreurs
 
 Toutes les erreurs sont des `ValueError` nommant le coupable :
 
@@ -721,7 +782,8 @@ après huit heures de calcul.
 | `Tirage`, `tirer`, `tirer_lot`, `graine_temporaire` | le tirage |
 | `BandeDispersion`, `bande_depuis_loi`, `bande_depuis_points`, `INTERVALLES` | la propagation |
 | `Verdict`, `valider`, `valider_lot`, `alpha_corrige` | la validation |
-| `tracer_loi`, `figure_tirage`, `figure_tirage_matrice` | figures du tirage |
+| `LoiCombinee`, `loi_combinee` | la loi du coefficient dispersé |
+| `tracer_loi`, `tracer_loi_combinee`, `figure_tirage`, `figure_tirage_matrice`, `FigureTirage`, `MAX_COEFFICIENTS_PAR_FIGURE` | figures du tirage |
 | `figure_comparaison`, `figures_par_pdv` | figures Monte-Carlo |
 | `synthese`, `tableau_par_pdv`, `pdv_rejetes`, `figure_synthese`, `table_rich` | la synthèse |
 | `superposer_dispersion`, `courbes_par_tirage` | la polaire dispersée |
@@ -755,7 +817,7 @@ après huit heures de calcul.
 | | |
 |:--|:--|
 | [00_DOC/01](00_DOC/01_LOIS_DE_DISPERSION.md) | les six familles, la convention `M`/`ET`, les pièges OpenTURNS |
-| [00_DOC/02](00_DOC/02_CONVENTIONS_ET_TIRAGE.md) | les trois relations, les plans MC/LHS/Sobol |
+| [00_DOC/02](00_DOC/02_CONVENTIONS_ET_TIRAGE.md) | les trois relations, les plans MC/LHS/Sobol, la loi du coefficient dispersé |
 | [00_DOC/03](00_DOC/03_VALIDATION_MONTE_CARLO.md) | les trois contrôles, la multiplicité, la synthèse |
 | [00_DOC/04](00_DOC/04_POLAIRE_DISPERSEE.md) | la superposition, corrélé/indépendant, `batch_plot` |
 | [00_DOC/05](00_DOC/05_BRANCHER_SON_MODELE.md) | **brancher son modèle** : les dictionnaires, les colonnes, les quatre dicts de `batch_plot` |
@@ -779,6 +841,7 @@ cfd-dispersion/
 │   │   ├── loi.py           les six familles
 │   │   ├── lois.py          la table {coeff: {Biais_*, FE_*}}, la corrélation
 │   │   ├── convention.py    les relations de reconstruction
+│   │   ├── combinaison.py   la loi du coefficient dispersé (exacte ou lissée)
 │   │   ├── tirage.py        tirer / tirer_lot
 │   │   ├── bande.py         propagation le long d'un balayage
 │   │   └── validation.py    support / moments / Kolmogorov–Smirnov
@@ -795,7 +858,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 509 tests
+pytest                                  # 571 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc
@@ -813,6 +876,9 @@ Quelques invariants que la suite tient :
 | chacun des cinq motifs attrape ce que les autres laissent passer | `test_validation.py::TestLesQuatreMotifs` |
 | le taux de faux rejet vaut α, et la correction nettoie le tableau | `test_validation.py::TestCalibration` |
 | toute figure passe par cfd-plot, primitive par primitive | `test_base.py::TestToutPasseParCfdPlot` |
+| la loi exacte du coefficient dispersé retrouve un tirage de 200 000 points, et la lissée aussi | `test_combinaison.py` |
+| une relation non affine est détectée, et bascule sur le lissage | `test_combinaison.py::TestDecompositionAffine` |
+| au-delà de quatre coefficients, la matrice pagine et numérote ses fichiers | `test_tirage.py::TestFigureTirageMatrice` |
 | un point dans un nom de figure ne fait pas disparaître le fichier | `test_base.py`, `test_exemple.py` |
 | un tableau croisé est refusé tant qu'il n'est pas dédoublonné, et le message dit comment | `test_tableau.py::TestPiegeDuCroisement` |
 | les dictionnaires du modèle survivent à un aller-retour par CSV | `test_tableau.py::TestLireSortieModele` |

@@ -1,10 +1,10 @@
 # Exemple cfd-dispersion — prêt à tourner
 
-Tout est là : une table de lois, un modèle jouet, et quatre scripts qui
+Tout est là : une table de lois, un modèle jouet, et cinq scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les quatre, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les cinq, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -27,7 +27,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 |:--|:--|
 | `LOIS.yaml` | la **table de lois** : six clés par coefficient, la corrélation en option |
 | `modele.py` | le **modèle jouet** — à remplacer par le vôtre ; c'est lui qui montre le contrat d'entrée/sortie |
-| `01_tirage.py` | cas d'usage 1 : tirer, reconstruire, tracer, comparer les plans |
+| `01_tirage.py` | cas d'usage 1 : tirer, reconstruire, la loi du coefficient dispersé, tracer, comparer les plans |
 | `02_monte_carlo.py` | cas d'usage 2.1 et 2.2 : valider mille appels, synthétiser, ne tracer que les rejets |
 | `03_polaire_batch_plot.py` | cas d'usage 2.3 : la dispersion greffée sur `cfd_plot.batch_plot` |
 | `04_bande_et_correlation.py` | corrélé/indépendant, les trois remplissages, deux coefficients liés |
@@ -40,12 +40,23 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 ### `01_tirage.py` — un tirage, et ce qu'il devient
 
 Charge la table (dict Python **et** YAML), tire une réalisation, la reconstruit
-sous les quatre conventions, écrit la figure en trois panneaux par coefficient,
-puis compare les trois plans d'échantillonnage sur mille tirages.
+sous les cinq conventions, calcule la **loi du coefficient dispersé**, écrit les
+figures, puis compare les trois plans d'échantillonnage sur mille tirages.
 
-À regarder : `tirage_matrice.png`, et dans la sortie terminal l'écart entre les
-conventions — `relatif` donne ici un coefficient **deux fois** le nominal, alors
-que `lineaire` le déplace de 5 %. Rien sur une courbe ne trahirait l'erreur.
+Les figures s'écrivent d'elles-mêmes : `figure_tirage(..., chemin=…)` trace
+**et** enregistre, en SVG. `figure_tirage_matrice` pagine à quatre coefficients
+par figure — forcée ici à deux, pour montrer la numérotation `_01`, `_02`.
+
+À regarder :
+
+* `tirage_matrice.svg` — le troisième panneau de chaque ligne porte la loi du
+  coefficient dispersé, ses lignes ±1/2/3 σ, et un axe supérieur en pourcentage
+  d'écart au nominal ;
+* dans la sortie terminal, l'écart entre les conventions — `relatif` donne ici
+  un coefficient **deux fois** le nominal, alors que `lineaire` le déplace de
+  5 %. Rien sur une courbe ne trahirait l'erreur ;
+* toujours au terminal, `saturee` (relation non affine) est la seule à sortir en
+  `densité lissée (LHS n=20 000)` : les autres ont une loi exacte.
 
 ### `02_monte_carlo.py` — le tirage réalisé suit-il la loi demandée ?
 
