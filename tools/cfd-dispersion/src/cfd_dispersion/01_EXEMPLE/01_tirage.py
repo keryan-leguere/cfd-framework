@@ -15,6 +15,7 @@ Ce que le script montre, dans l'ordre :
 Sorties, dans SORTIE/ :
 
     tirage_<coefficient>.svg   trois panneaux : biais, FE, coefficient dispersé
+    tirage_sans_nominal.svg    le même, sans valeur nominale : deux panneaux sur trois
     tirage_matrice.svg         une ligne de trois par coefficient
     tirage_pagine_01.svg …     la même, paginée (deux coefficients par figure)
     lot.csv                    le lot, prêt à alimenter un modèle
@@ -185,6 +186,13 @@ def main() -> int:
         )
         plt.close(rendue.figure)
         console.print(f"[green]écrit :[/] {rendue.fichiers[0]}")
+
+    # `nominal` est facultatif : sans lui, les deux panneaux de composantes
+    # sont tracés comme d'habitude et le troisième reste vide en disant ce qui
+    # lui manque — la loi du coefficient dispersé se calcule en un point.
+    rendue = figure_tirage("CN", lois["CN"], tirage, chemin=args.sortie / "tirage_sans_nominal")
+    plt.close(rendue.figure)
+    console.print(f"[green]écrit :[/] {rendue.fichiers[0]}  (sans valeur nominale)")
 
     (page,) = figure_tirage_matrice(
         lois, tirage, nominaux=NOMINAUX, chemin=args.sortie / "tirage_matrice"

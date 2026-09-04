@@ -19,6 +19,7 @@ from cfd_dispersion.core.tirage import Tirage, tirer
 from cfd_dispersion.figures._base import nouvelle_figure
 from cfd_dispersion.figures.tirage import (
     MAX_COEFFICIENTS_PAR_FIGURE,
+    MESSAGE_SANS_NOMINAL,
     figure_tirage,
     figure_tirage_matrice,
     tracer_loi,
@@ -275,6 +276,57 @@ class TestFigureTirage:
             "Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5, convention_=tordue
         )
         assert any("lissée" in texte for texte in textes_de(rendue.figure))
+
+
+class TestSansNominal:
+    """Sans valeur nominale, les deux premiers panneaux valent toujours."""
+
+    def test_les_deux_premiers_panneaux_sont_traces(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage)
+        assert rendue.axes.shape == (3,)
+        assert rendue.axes[0].get_lines()
+        assert rendue.axes[1].get_lines()
+
+    def test_le_troisieme_reste_vide(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage)
+        assert not rendue.axes[2].get_lines()
+        assert not rendue.axes[2].patches
+
+    def test_il_explique_ce_qui_lui_manque(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        """Un panneau blanc muet se lirait comme un bogue."""
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage)
+        textes = textes_de(rendue.figure)
+        assert MESSAGE_SANS_NOMINAL.format(coefficient="Cm_alpha") in textes
+        assert any("Cm_alpha — coefficient dispersé" == texte for texte in textes)
+
+    def test_ses_axes_sont_eteints(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        """Une graduation sous un message d'absence ferait croire à un tracé."""
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage)
+        assert not rendue.axes[2].axison
+
+    def test_la_figure_s_ecrit_quand_meme(
+        self, lois: JeuDeLois, tirage: Tirage, tmp_path: Path
+    ) -> None:
+        rendue = figure_tirage(
+            "Cm_alpha", lois["Cm_alpha"], tirage, chemin=tmp_path / "sans_nominal"
+        )
+        assert rendue.fichiers[0].is_file()
+
+    def test_la_matrice_se_passe_de_nominaux(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        (page,) = figure_tirage_matrice(lois, tirage)
+        assert page.axes.shape == (3, 3)
+        assert all(not page.axes[ligne, 2].get_lines() for ligne in range(3))
+
+    def test_la_matrice_accepte_des_nominaux_incomplets(
+        self, lois: JeuDeLois, tirage: Tirage
+    ) -> None:
+        """Le coefficient renseigné garde son panneau ; l'autre s'explique."""
+        (page,) = figure_tirage_matrice(
+            lois, tirage, nominaux={"CA": 0.3}, coefficients=["CA", "Cm_alpha"]
+        )
+        assert page.axes[0, 2].get_lines()
+        assert not page.axes[1, 2].get_lines()
+        assert MESSAGE_SANS_NOMINAL.format(coefficient="Cm_alpha") in textes_de(page.figure)
 
 
 class TestEcriture:

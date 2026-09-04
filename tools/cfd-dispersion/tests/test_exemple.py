@@ -103,9 +103,11 @@ class TestExecution:
         resultat = self._lancer("01_tirage.py", tmp_path, "-n", "50")
         assert resultat.returncode == 0, resultat.stderr
         assert (tmp_path / "lot.csv").is_file()
-        # Trois coefficients, la matrice qui les empile, et ses deux pages
-        # forcées : six SVG, écrits par les figures elles-mêmes.
-        assert len(list(tmp_path.glob("tirage_*.svg"))) == 6
+        # Trois coefficients, celui sans valeur nominale, la matrice qui les
+        # empile, et ses deux pages forcées : sept SVG, écrits par les figures
+        # elles-mêmes.
+        assert len(list(tmp_path.glob("tirage_*.svg"))) == 7
+        assert (tmp_path / "tirage_sans_nominal.svg").is_file()
         assert (tmp_path / "tirage_pagine_02.svg").is_file()
         assert len(pd.read_csv(tmp_path / "lot.csv")) == 50
 

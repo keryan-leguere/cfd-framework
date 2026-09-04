@@ -164,3 +164,15 @@ pages = figure_tirage_matrice(
 
 Sans `chemin`, rien n'est écrit : `rendue.fichiers` est vide et la figure reste
 à l'appelant.
+
+`nominal` est **facultatif**. Sans lui, les deux panneaux de composantes sont
+tracés comme d'habitude — ce sont les lois du biais et du facteur d'échelle,
+elles ne dépendent de rien — et le troisième reste vide en expliquant pourquoi :
+la loi du coefficient dispersé se calcule en un point, faute de quoi la
+dispersion n'a pas d'échelle. `nominaux` peut de même être omis, ou ne couvrir
+qu'une partie des coefficients.
+
+```python
+figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage)  # deux panneaux sur trois
+figure_tirage_matrice(lois, tirage, nominaux={"CN": 0.85})  # les autres s'expliquent
+```

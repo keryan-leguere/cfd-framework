@@ -88,11 +88,14 @@ def _ecrire_figures_tirage(lois: Any, args: argparse.Namespace) -> None:
     for coefficient in lois:
         # Tracer et écrire ne font qu'un appel, et le fichier sort par le
         # gabarit d'export de cfd-plot — pas par un `savefig` de fortune.
+        # Sans `nominal` : la ligne de commande ne connaît pas vos valeurs
+        # nominales, et une loi de coefficient calculée sur un nominal inventé
+        # serait un chiffre faux présenté comme un résultat. Le troisième
+        # panneau le dit et reste vide.
         rendue = figure_tirage(
             coefficient,
             lois[coefficient],
             resultat,
-            nominal=1.0,
             chemin=args.figures / f"tirage_{coefficient}",
         )
         plt.close(rendue.figure)

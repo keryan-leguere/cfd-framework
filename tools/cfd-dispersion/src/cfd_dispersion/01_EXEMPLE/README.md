@@ -56,7 +56,10 @@ par figure — forcée ici à deux, pour montrer la numérotation `_01`, `_02`.
   un coefficient **deux fois** le nominal, alors que `lineaire` le déplace de
   5 %. Rien sur une courbe ne trahirait l'erreur ;
 * toujours au terminal, `saturee` (relation non affine) est la seule à sortir en
-  `densité lissée (LHS n=20 000)` : les autres ont une loi exacte.
+  `densité lissée (LHS n=20 000)` : les autres ont une loi exacte ;
+* `tirage_sans_nominal.svg` — le même coefficient sans valeur nominale : les
+  deux panneaux de composantes valent toujours, le troisième reste vide et dit
+  ce qui lui manque plutôt que d'inventer un nominal.
 
 ### `02_monte_carlo.py` — le tirage réalisé suit-il la loi demandée ?
 

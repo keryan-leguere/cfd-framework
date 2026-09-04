@@ -349,6 +349,13 @@ rendue.figure, rendue.axes, rendue.fichiers  # la figure, ses axes, ses fichiers
 le fichier part en **SVG**, par le gabarit d'export de cfd-plot. Sans `chemin`,
 rien n'est écrit et `rendue.fichiers` est vide.
 
+**`nominal` est facultatif.** Sans lui — vous ne l'avez pas encore, ou il ne
+vous intéresse pas — les deux panneaux de composantes sont tracés normalement et
+le troisième reste vide **en disant ce qui lui manque** : la loi du coefficient
+dispersé se calcule en un point, le facteur d'échelle multipliant le nominal.
+`nominaux` peut de même être omis ou incomplet ; chaque coefficient est traité
+pour lui-même.
+
 **Quatre coefficients par figure au plus** (`MAX_COEFFICIENTS_PAR_FIGURE`).
 Au-delà, `figure_tirage_matrice` passe à la figure suivante plutôt que de
 rétrécir des panneaux jusqu'à l'illisible, et numérote les fichiers
@@ -858,7 +865,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 571 tests
+pytest                                  # 578 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc

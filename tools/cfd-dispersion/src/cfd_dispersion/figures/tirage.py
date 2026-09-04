@@ -62,6 +62,7 @@ from ._base import (
 __all__ = [
     "FORMATS_DEFAUT",
     "MAX_COEFFICIENTS_PAR_FIGURE",
+    "MESSAGE_SANS_NOMINAL",
     "SIGMAS_DEFAUT",
     "FigureTirage",
     "axe_pourcentage",
@@ -359,7 +360,7 @@ def figure_tirage(
     loi: LoiCoefficient,
     tirage: Tirage,
     *,
-    nominal: Any,
+    nominal: Any = None,
     chemin: Any = None,
     formats: Sequence[str] = FORMATS_DEFAUT,
     x: Any = None,
@@ -382,6 +383,10 @@ def figure_tirage(
         Le tirage dont sont extraites les deux valeurs.
     nominal:
         La valeur nominale du coefficient — un scalaire, ou tout un balayage.
+        **Facultative** : sans elle, les deux panneaux de composantes sont
+        tracés et le troisième reste vide, en le disant. La loi du coefficient
+        dispersé n'est pas calculable sans son nominal, puisque le facteur
+        d'échelle le multiplie.
     chemin:
         Où écrire la figure, **sans extension**. Donné, la figure est écrite
         immédiatement : tracer et enregistrer ne font qu'un appel. Omis, rien
@@ -501,6 +506,10 @@ def _panneau_coefficient(
     sigmas: Sequence[int] | None,
 ) -> None:
     """Le troisième panneau : la loi du coefficient, biais et FE combinés."""
+    if nominal is None:
+        _panneau_sans_nominal(ax, coefficient)
+        return
+
     valeur_nominale, situation = _point_de_reference(nominal, x, reference)
     combinee = loi_combinee(loi, valeur_nominale, convention_=relation)
     disperse = float(np.asarray(relation(valeur_nominale, biais, fe), dtype=float).reshape(-1)[0])
@@ -514,6 +523,44 @@ def _panneau_coefficient(
         fontsize=7,
     )
     legende(ax, loc="upper right", fontsize=7)
+
+
+#: Ce que dit le troisième panneau quand il n'a pas de quoi être tracé.
+MESSAGE_SANS_NOMINAL: str = (
+    "Pas de valeur nominale pour {coefficient}.\n\n"
+    "La loi du coefficient dispersé se calcule en un point : le facteur\n"
+    "d'échelle multiplie le nominal, donc sans lui la dispersion n'a\n"
+    "pas d'échelle. Les deux panneaux de gauche restent valables tels\n"
+    "quels — ce sont les lois des composantes, elles ne dépendent de rien.\n\n"
+    "Pour l'obtenir : nominal=<valeur de {coefficient}>,\n"
+    'ou nominaux={{"{coefficient}": …}} en matrice.'
+)
+
+
+def _panneau_sans_nominal(ax: Axes, coefficient: str) -> None:
+    """Le troisième panneau, laissé vide et expliqué.
+
+    Un panneau blanc sans un mot se lit comme un bogue. Un panneau blanc qui
+    dit ce qui lui manque, et ce qu'il faudrait lui donner, se lit comme une
+    réponse — et les deux premiers panneaux, eux, restent entièrement lisibles.
+
+    Les axes sont éteints plutôt que laissés vides : une graduation de 0 à 1
+    sous un message d'absence ferait croire à une grandeur tracée.
+    """
+    titre(ax, f"{coefficient} — coefficient dispersé")
+    ax.set_axis_off()
+    ax.text(
+        0.5,
+        0.5,
+        MESSAGE_SANS_NOMINAL.format(coefficient=coefficient),
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=7.5,
+        color="0.35",
+        linespacing=1.5,
+        bbox={"facecolor": ax.get_facecolor(), "edgecolor": "0.75", "boxstyle": "round,pad=0.6"},
+    )
 
 
 def _point_de_reference(nominal: Any, x: Any, reference: float | None) -> tuple[float, str]:
@@ -592,7 +639,7 @@ def figure_tirage_matrice(
     lois: Any,
     tirage: Tirage,
     *,
-    nominaux: Any,
+    nominaux: Any = None,
     chemin: Any = None,
     formats: Sequence[str] = FORMATS_DEFAUT,
     x: Any = None,
@@ -619,7 +666,9 @@ def figure_tirage_matrice(
     tirage:
         Le tirage à illustrer.
     nominaux:
-        ``{coefficient: valeur nominale}``.
+        ``{coefficient: valeur nominale}``. **Facultatif**, et incomplet est
+        admis : les coefficients absents gardent leurs deux premiers panneaux,
+        et le troisième dit ce qui lui manque.
     chemin:
         Où écrire, **sans extension ni numéro** : la numérotation est ajoutée
         s'il y a plus d'une page.
@@ -667,7 +716,7 @@ def figure_tirage_matrice(
                     nom,
                     lois[nom],
                     tirage,
-                    nominal=nominaux[nom],
+                    nominal=(nominaux or {}).get(nom),
                     x=x,
                     reference=reference,
                     convention_=convention_,
