@@ -19,15 +19,19 @@ from cfd_plot import (
     batch_plot,
     build_compare_output_path,
     build_output_path,
+    config_extra_keys,
+    config_style_keys,
     discover_flight_point_values,
     format_axis_label,
     format_axis_title_label,
     format_flight_point_title_suffix,
     format_plot_title,
+    ignored_config_keys,
     iter_fixed_sweep_combinations,
     iter_flight_points,
     varying_flight_keys,
 )
+from cfd_plot.batch import _extract_plot_style_kwargs
 
 
 def _make_row(
@@ -768,3 +772,113 @@ class TestBackendIsNotHijacked:
             [sys.executable, "-c", code], capture_output=True, text=True, check=True
         )
         assert out.stdout.strip().lower() == "agg"
+
+
+class TestConfigurationExtraKeys:
+    """A configuration entry may carry the caller's own bookkeeping.
+
+    Everything that was not a Matplotlib keyword used to be forwarded to
+    ``ax.plot`` — ``{"masse": 1200}`` died with *Line2D has no property
+    'masse'*. Only real style keywords are sent now.
+    """
+
+    def test_unknown_keys_are_not_forwarded_to_plot_line(self):
+        kwargs = _extract_plot_style_kwargs(
+            {
+                "name": "KW",
+                "label": "KW",
+                "df": None,
+                "color": "C0",
+                "marker": "o",
+                "masse": 1200.0,
+                "maillage": "fin",
+            }
+        )
+        assert kwargs == {"color": "C0", "marker": "o"}
+
+    def test_matplotlib_aliases_still_pass(self):
+        kwargs = _extract_plot_style_kwargs({"c": "red", "lw": 2, "ls": "--", "ms": 4})
+        assert kwargs == {"c": "red", "lw": 2, "ls": "--", "ms": 4}
+
+    def test_the_data_keywords_are_never_forwarded(self):
+        """``data``/``xdata``/``ydata`` are Line2D setters but ours to supply."""
+        kwargs = _extract_plot_style_kwargs(
+            {"data": [1, 2], "xdata": [0], "ydata": [0], "color": "C0"}
+        )
+        assert kwargs == {"color": "C0"}
+
+    def test_style_sub_dict_is_forced_through(self):
+        """The escape hatch: never filtered, and it wins over the top level."""
+        kwargs = _extract_plot_style_kwargs(
+            {"color": "C0", "style": {"color": "C3", "path_effects": []}}
+        )
+        assert kwargs == {"color": "C3", "path_effects": []}
+
+    def test_style_must_be_a_dict(self):
+        with pytest.raises(TypeError, match="must be a dict"):
+            _extract_plot_style_kwargs({"style": "dashed"})
+
+    def test_key_classification_helpers(self):
+        config = {"name": "KW", "df": None, "color": "C0", "lw": 2, "masse": 1200}
+        assert config_style_keys(config) == ["color", "lw"]
+        assert config_extra_keys(config) == ["masse"]
+
+    def test_ignored_config_keys_lists_only_the_sources_concerned(self):
+        found = ignored_config_keys(
+            {
+                "KW": {"color": "C0", "masse": 1200, "maillage": "fin"},
+                "SA": {"color": "C1"},
+            }
+        )
+        assert found == {"KW": ["maillage", "masse"]}
+
+    def test_batch_plot_runs_with_extra_keys(self, sample_configuration_dict, tmp_path):
+        """End to end: the run that used to raise now writes its figures."""
+        for source, config in sample_configuration_dict.items():
+            config["masse"] = 1200.0
+            config["maillage"] = f"{source}_fin"
+            config["color"] = "C0" if source == "KW" else "C1"
+
+        colors: list[str] = []
+
+        def on_before_save(fig, ax, context):
+            colors.extend(line.get_color() for line in ax.lines)
+
+        written = batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=_CN_AXIS,
+            sweep_dict=_ALPHA_SWEEP,
+            flight_point_dict=_EMPTY_FLIGHT_POINTS,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            on_before_save=on_before_save,
+        )
+
+        assert len(written) == 2
+        assert all(path.exists() for path in written)
+        # The style keys next to them still reach the curves.
+        assert set(colors) == {"C0", "C1"}
+
+    def test_the_plan_names_the_keys_it_keeps_as_metadata(
+        self, sample_configuration_dict, tmp_path, capsys
+    ):
+        """A misspelt style keyword is still discoverable in the plan."""
+        sample_configuration_dict["KW"]["masse"] = 1200.0
+        sample_configuration_dict["KW"]["colour"] = "C0"
+
+        batch_plot(
+            configuration_dict=sample_configuration_dict,
+            y_axis_dict=_CN_AXIS,
+            sweep_dict=_ALPHA_SWEEP,
+            flight_point_dict=_EMPTY_FLIGHT_POINTS,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            dry_run=True,
+            verbose=True,
+        )
+
+        out = capsys.readouterr().out
+        assert "colour" in out
+        assert "masse" in out

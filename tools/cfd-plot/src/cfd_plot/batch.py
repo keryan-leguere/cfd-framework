@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Union
 
@@ -26,6 +27,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.artist import ArtistInspector
+from matplotlib.lines import Line2D
 
 from cfd_plot._compat import zip_strict
 
@@ -86,7 +89,11 @@ DEFAULT_FLIGHT_POINT_KEYS: tuple[str, ...] = (
     "DN",
 )
 
-_CONFIG_METADATA_KEYS = frozenset({"name", "label", "dir", "CDG", "df"})
+_CONFIG_METADATA_KEYS = frozenset({"name", "label", "dir", "CDG", "df", "style"})
+
+# Line2D setters that would collide with the data the batch itself supplies,
+# or with ax.plot's own "data" keyword mechanism.
+_NON_STYLE_LINE_PROPERTIES = frozenset({"data", "xdata", "ydata", "figure"})
 
 
 @dataclass(frozen=True)
@@ -405,8 +412,81 @@ def _filter_df_by_flight_point(
     return _filter_df_by_context(df, flight_point, flight_point_keys)
 
 
+@lru_cache(maxsize=1)
+def _line_style_keys() -> frozenset[str]:
+    """Every keyword ``ax.plot`` accepts for a ``Line2D``, aliases included.
+
+    Asked of Matplotlib rather than hardcoded, so the set follows whatever
+    version is installed (``gapcolor`` exists in 3.6, not in 3.4).
+    """
+    inspector = ArtistInspector(Line2D)
+    names = set(inspector.get_setters())
+    for prop, aliases in (getattr(inspector, "aliasd", None) or {}).items():
+        names.add(prop)
+        names.update(aliases)
+    names -= _NON_STYLE_LINE_PROPERTIES
+    names.update({"scalex", "scaley"})
+    return frozenset(names)
+
+
+def config_style_keys(config: dict[str, Any]) -> list[str]:
+    """Keys of one ``configuration_dict`` entry that reach ``plot_line``."""
+    return sorted(_extract_plot_style_kwargs(config))
+
+
+def config_extra_keys(config: dict[str, Any]) -> list[str]:
+    """Keys of one entry that are the caller's own, and are never plotted.
+
+    A configuration entry is also a natural place to record what the source
+    *is* — its mass, its mesh, its run directory. Those keys stay available
+    to the caller (they never leave the dict) and are listed here so a
+    misspelt style keyword is still discoverable.
+    """
+    allowed = _line_style_keys()
+    return sorted(
+        key
+        for key in config
+        if key not in _CONFIG_METADATA_KEYS and key not in allowed
+    )
+
+
+def ignored_config_keys(
+    configuration_dict: dict[str, dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Per source, the keys carried as metadata instead of plotted."""
+    found = {
+        source: config_extra_keys(config)
+        for source, config in configuration_dict.items()
+    }
+    return {source: keys for source, keys in found.items() if keys}
+
+
 def _extract_plot_style_kwargs(config: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in config.items() if key not in _CONFIG_METADATA_KEYS}
+    """Keep only what Matplotlib can actually draw with.
+
+    Callers routinely overload an entry with their own bookkeeping
+    (``"masse": 1200``, ``"maillage": "fin"``); forwarding that to ``ax.plot``
+    used to fail with *Line2D has no property 'masse'*. Anything Matplotlib
+    does not know is therefore left in the dict for the caller, and a
+    ``style`` sub-dict is the explicit escape hatch — it is merged last and
+    never filtered, so an exotic keyword can always be forced through.
+    """
+    allowed = _line_style_keys()
+    kwargs = {
+        key: value
+        for key, value in config.items()
+        if key not in _CONFIG_METADATA_KEYS and key in allowed
+    }
+    explicit = config.get("style")
+    if explicit is None:
+        return kwargs
+    if not isinstance(explicit, dict):
+        raise TypeError(
+            f"configuration entry 'style' must be a dict of plot keywords, "
+            f"got {type(explicit).__name__}."
+        )
+    kwargs.update(explicit)
+    return kwargs
 
 
 def format_axis_label(spec: dict[str, Any], default_name: str) -> str:
@@ -1570,6 +1650,14 @@ def _print_batch_plan(
         overview_lines.append(
             f"FP excluded  : {', '.join(excluded_from_flight_point)}  "
             "(listed in flight_point_dict but used as sweep vars)"
+        )
+    ignored_keys = sorted(
+        {key for keys in ignored_config_keys(configuration_dict).values() for key in keys}
+    )
+    if ignored_keys:
+        overview_lines.append(
+            f"Metadata keys: {', '.join(ignored_keys)}  "
+            "(kept in configuration_dict, not sent to plot_line)"
         )
     overview_lines.extend(
         [

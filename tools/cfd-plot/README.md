@@ -596,7 +596,8 @@ many flight points, and you want the same comparison figure for every combinatio
 ### The four dictionaries
 
 **`configuration_dict`** — one entry per data source. `df` is the loaded DataFrame; every key
-that is not metadata is forwarded to `plot_line` as a style keyword.
+Matplotlib recognises (`color`, `marker`, `linestyle`, the `lw`/`ls`/`ms` aliases, …) is
+forwarded to `plot_line` as a style keyword.
 
 ```python
 configuration_dict = {
@@ -605,6 +606,37 @@ configuration_dict = {
     "EXP": {"name": "REF", "label": "Ref.",          "df": df_exp, "color": "C2",
             "marker": "^", "linestyle": "--"},
 }
+```
+
+Every *other* key is yours. An entry is the natural place to record what the source actually
+is, and those keys are simply left alone — they never reach `ax.plot`:
+
+```python
+configuration_dict = {
+    "KW": {"name": "KW", "label": r"$k$-$\omega$", "df": df_kw,
+           "color": "C0", "marker": "o",     # → plot_line
+           "masse": 1200.0, "maillage": "fin", "run": "2026-02-11_A"},   # → yours
+}
+```
+
+The list of accepted keywords is asked of Matplotlib itself, so it follows the version you
+have installed. Three helpers say which side of the line a key falls on, and `verbose=True`
+prints a `Metadata keys` line naming everything kept aside — that is where a misspelt
+`colour` shows up, since an unknown keyword is now ignored instead of raising:
+
+```python
+from cfd_plot import config_style_keys, config_extra_keys, ignored_config_keys
+
+config_style_keys(configuration_dict["KW"])   # ['color', 'marker']
+config_extra_keys(configuration_dict["KW"])   # ['maillage', 'masse', 'run']
+ignored_config_keys(configuration_dict)       # {'KW': ['maillage', 'masse', 'run']}
+```
+
+If you ever need to force a keyword through untouched, put it under `style`: that sub-dict is
+merged last and never filtered.
+
+```python
+"KW": {"df": df_kw, "color": "C0", "style": {"path_effects": [...], "gapcolor": "w"}},
 ```
 
 **`y_axis_dict`** — the quantities of interest (one figure per entry).
