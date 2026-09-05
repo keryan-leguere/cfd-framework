@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from cfd_dispersion.core.lois import JeuDeLois, charger_lois
-from cfd_dispersion.core.tirage import tirer_lot
+from cfd_dispersion.core.tirage import tirer_tableau
 from cfd_dispersion.figures._base import nouvelle_figure
 from cfd_dispersion.figures.monte_carlo import figure_comparaison, figures_par_pdv
 from tests.conftest import textes_de
@@ -27,7 +27,7 @@ def sortie(lois: JeuDeLois) -> pd.DataFrame:
     """Une sortie de modèle conforme, sur deux points de vol."""
     morceaux = []
     for i, (mach, altitude) in enumerate([(0.7, 5000.0), (0.85, 10000.0)]):
-        lot = tirer_lot(lois, 400, graine=50 + i)
+        lot = tirer_tableau(lois, 400, graine=50 + i)
         lot["Mach"] = mach
         lot["Altitude_m"] = altitude
         morceaux.append(lot)
@@ -66,7 +66,7 @@ class TestFigureComparaison:
         """Un ET doublé doit ressortir dans la boîte, motif compris."""
         faux = {c: dict(s) for c, s in table.items()}
         faux["Cm_alpha"]["FE_ET"] = 0.20
-        lot = tirer_lot(charger_lois(faux), 800, graine=1)
+        lot = tirer_tableau(charger_lois(faux), 800, graine=1)
 
         figure, _ = figure_comparaison(_echantillons(lot, "Cm_alpha"), lois["Cm_alpha"])
         textes = textes_de(figure)

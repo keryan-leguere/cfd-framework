@@ -42,7 +42,7 @@ from cfd_dispersion import (
     nouvelle_figure,
     style,
     superposer_dispersion,
-    tirer_lot,
+    tirer_tableau,
     tracer_ligne,
 )
 
@@ -134,7 +134,7 @@ def main() -> int:
     with style("notebook"):
         figure, axes = nouvelle_figure(1, 2, figsize=(11.0, 4.6))
         for ax, jeu, nom in zip(np.ravel(axes), (lois, liees), ("indépendants", "ρ = 0.85")):
-            lot = tirer_lot(jeu, 1500, graine=5, methode="lhs")
+            lot = tirer_tableau(jeu, 1500, graine=5, methode="lhs")
             ax.scatter(lot["CN_Biais"], lot["Cm_alpha_Biais"], s=4, alpha=0.35, color="C0")
             correlation = float(np.corrcoef(lot["CN_Biais"], lot["Cm_alpha_Biais"])[0, 1])
             ax.set_title(f"{nom} — corrélation mesurée {correlation:+.2f}")

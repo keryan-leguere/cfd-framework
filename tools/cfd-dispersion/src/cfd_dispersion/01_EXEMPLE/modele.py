@@ -38,7 +38,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from cfd_dispersion import JeuDeLois, charger_lois, convention, plan_croise, tirer, tirer_lot
+from cfd_dispersion import (
+    JeuDeLois,
+    charger_lois,
+    convention,
+    plan_croise,
+    tirer,
+    tirer_lot,
+    tirer_tableau,
+)
 
 #: Les points de vol de l'étude.
 POINTS_DE_VOL: tuple[dict[str, float], ...] = (
@@ -107,7 +115,7 @@ def appeler_modele(
 
     for indice, point in enumerate(points_de_vol):
         mach = float(point["Mach"])
-        lot = tirer_lot(_lois_du_point(lois, mach, fausser), n, graine=graine + indice)
+        lot = tirer_tableau(_lois_du_point(lois, mach, fausser), n, graine=graine + indice)
 
         nominaux = coefficients_nominaux(mach)
         for coefficient, valeur in nominaux.items():
@@ -137,22 +145,23 @@ def appeler_modele_polaire(
     par (tirage × point du balayage), à regrouper en une courbe par tirage.
     """
     relation = convention(convention_)
-    lot = tirer_lot(lois, n, graine=graine)
     nominaux = coefficients_nominaux(mach)
 
     lignes = []
-    for indice, tirage in lot.iterrows():
+    # `tirer_lot` rend la liste des tirages : un modèle boucle dessus et reçoit
+    # à chaque tour le dictionnaire {coeff: {"Biais": …, "FE": …}} qu'il attend.
+    for tirage in tirer_lot(lois, n, graine=graine):
         colonnes: dict[str, Any] = {"alpha": alpha}
         for coefficient, valeur in nominaux.items():
             # Le coefficient nominal varie le long du balayage ; le tirage,
             # lui, est partagé sur toute la courbe — le cas corrélé.
             courbe = valeur * _forme(coefficient, alpha)
-            biais = float(tirage[f"{coefficient}_Biais"])
-            fe = float(tirage[f"{coefficient}_FE"])
+            biais = tirage[coefficient]["Biais"]
+            fe = tirage[coefficient]["FE"]
             colonnes[coefficient] = relation(courbe, biais, fe)
             colonnes[f"{coefficient}_Biais"] = biais
             colonnes[f"{coefficient}_FE"] = fe
-        colonnes["tirage"] = int(indice)  # type: ignore[call-overload]
+        colonnes["tirage"] = tirage.numero
         colonnes["Mach"] = mach
         lignes.append(pd.DataFrame(colonnes))
 

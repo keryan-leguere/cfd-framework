@@ -252,8 +252,9 @@ de colonnes. Un tableau à plat, une ligne par (point de vol × tirage) :
 | les clés de point de vol | si `par=` | `Mach`, `Altitude_m`, … |
 | `tirage` | pratique | le numéro d'appel |
 
-C'est exactement ce que `tirer_lot` produit déjà : en partant de lui, il n'y a
-rien à faire. `lois.colonnes` énumère les noms attendus.
+C'est exactement ce que `tableau_des_tirages` produit à partir de votre lot (ou
+`tirer_tableau` directement) : en partant de lui, il n'y a rien à faire.
+`lois.colonnes` énumère les noms attendus.
 
 Si votre modèle nomme ses colonnes autrement, ne renommez pas le tableau —
 donnez la correspondance :
@@ -313,8 +314,26 @@ charger_lois(table, *, correlation=None) -> JeuDeLois
 charger_lois_yaml(chemin, *, correlation=None) -> JeuDeLois
 
 tirer(lois, *, graine=None, convention_=None, methode="mc") -> Tirage
-tirer_lot(lois, n, *, graine=None, methode="mc") -> pd.DataFrame
+tirer_lot(lois, n, *, graine=None, convention_=None, methode="mc") -> list[Tirage]
+
+tableau_des_tirages(tirages) -> pd.DataFrame      # le même lot, à plat
+tirer_tableau(lois, n, ...) -> pd.DataFrame       # les deux d'un coup
 ```
+
+`tirer_lot` rend la **liste** des tirages, dans la forme qu'un modèle
+consomme — chaque élément est un `Mapping` `{coeff: {"Biais": …, "FE": …}}` :
+
+```python
+for tirage in tirer_lot(lois, 1000, graine=42, methode="lhs"):
+    resultats.append(mon_modele(L_MACH, L_ALPHA, tirage))  # tirage = DICT_DISP_DRAWN
+```
+
+C'est la même chose qu'une boucle `tirer(lois, graine=graine + i)`, à une
+différence près : le lot est tiré **d'un coup**, seule façon d'honorer une
+corrélation déclarée et seule où `"lhs"` et `"sobol"` apportent quelque chose —
+ce qu'ils améliorent est le remplissage conjoint, qui n'existe pas à l'échelle
+d'un tirage isolé. Chaque tirage porte son `numero` dans le lot, la `graine` du
+lot et le plan employé.
 
 `methode` vaut `"mc"`, `"lhs"` ou `"sobol"`. Le tirage passe par la loi
 **jointe** de toutes les composantes : c'est la seule façon d'honorer une
@@ -786,7 +805,7 @@ après huit heures de calcul.
 | `lire_sortie_modele`, `aplatir_tirage`, `lois_depuis_tableau`, `lire_dict` | le tableau du modèle |
 | `LIBELLES_TYPE`, `TYPES_VALIDES`, `CLES_ATTENDUES`, `COMPOSANTES` | les constantes |
 | `Convention`, `CONVENTIONS`, `CONVENTION_PAR_DEFAUT`, `convention` | la reconstruction |
-| `Tirage`, `tirer`, `tirer_lot`, `graine_temporaire` | le tirage |
+| `Tirage`, `tirer`, `tirer_lot`, `tirer_tableau`, `tableau_des_tirages`, `graine_temporaire` | le tirage |
 | `BandeDispersion`, `bande_depuis_loi`, `bande_depuis_points`, `INTERVALLES` | la propagation |
 | `Verdict`, `valider`, `valider_lot`, `alpha_corrige` | la validation |
 | `LoiCombinee`, `loi_combinee` | la loi du coefficient dispersé |
@@ -849,7 +868,7 @@ cfd-dispersion/
 │   │   ├── lois.py          la table {coeff: {Biais_*, FE_*}}, la corrélation
 │   │   ├── convention.py    les relations de reconstruction
 │   │   ├── combinaison.py   la loi du coefficient dispersé (exacte ou lissée)
-│   │   ├── tirage.py        tirer / tirer_lot
+│   │   ├── tirage.py        tirer / tirer_lot (la liste) / tableau_des_tirages
 │   │   ├── bande.py         propagation le long d'un balayage
 │   │   └── validation.py    support / moments / Kolmogorov–Smirnov
 │   ├── report/              theme.py, console.py, _plotting_lib.py
@@ -865,7 +884,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 578 tests
+pytest                                  # 590 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc

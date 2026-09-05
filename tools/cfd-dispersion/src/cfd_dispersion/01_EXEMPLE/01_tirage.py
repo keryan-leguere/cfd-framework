@@ -10,7 +10,8 @@ Ce que le script montre, dans l'ordre :
   3. reconstruire le coefficient dispersé sous les quatre conventions ;
   4. la loi du coefficient dispersé, biais et FE combinés ;
   5. les figures, qui s'écrivent d'elles-mêmes ;
-  6. tirer un lot de mille, et comparer les trois plans d'échantillonnage.
+  6. tirer un lot de mille : la liste de tirages à donner au modèle ;
+  7. le même lot à plat, et les trois plans d'échantillonnage compares.
 
 Sorties, dans SORTIE/ :
 
@@ -18,7 +19,7 @@ Sorties, dans SORTIE/ :
     tirage_sans_nominal.svg    le même, sans valeur nominale : deux panneaux sur trois
     tirage_matrice.svg         une ligne de trois par coefficient
     tirage_pagine_01.svg …     la même, paginée (deux coefficients par figure)
-    lot.csv                    le lot, prêt à alimenter un modèle
+    lot.csv                    le lot à plat, une ligne par tirage
 
 Les figures s'écrivent d'elles-mêmes : ``chemin=`` suffit, et le fichier sort
 en SVG par le gabarit d'export de cfd-plot.
@@ -46,6 +47,7 @@ from cfd_dispersion import (
     figure_tirage,
     figure_tirage_matrice,
     loi_combinee,
+    tableau_des_tirages,
     tirer,
     tirer_lot,
 )
@@ -215,22 +217,62 @@ def main() -> int:
         plt.close(page.figure)
         console.print(f"[green]écrit :[/] {page.fichiers[0]}  {list(page.coefficients)}")
 
-    # --- 6. le lot, et les trois plans ---------------------------------
+    # --- 6. le lot : n tirages, un par appel du modèle -------------------
+    #
+    # `tirer_lot` rend la LISTE des tirages, pas un tableau : chaque élément
+    # est le dictionnaire que votre modèle attend. Aucun modèle n'est appelé
+    # ici — seulement l'interface, pour montrer ce qu'on lui passerait.
+    lot = tirer_lot(lois, args.n, graine=args.graine, methode="lhs")
+    console.print(f"\n[bold]Le lot : {len(lot)} tirages[/]  (type : {type(lot).__name__})")
+
+    for tirage_i in lot[:3]:
+        # `tirage_i` EST le DICT_DISP_DRAWN : un Mapping {coeff: {Biais, FE}}.
+        # C'est lui qu'on passerait au modèle, tel quel :
+        #
+        #     resultats.append(mon_modele(L_MACH, L_ALPHA, tirage_i))
+        #
+        console.print(
+            f"  tirage {tirage_i.numero:<3} "
+            f"CN {tirage_i['CN']['Biais']:+.5f} / {tirage_i['CN']['FE']:.5f}   "
+            f"vu du modèle : {dict(tirage_i['CA'])}"
+        )
+    console.print(f"  … et {len(lot) - 3} autres, numérotés jusqu'à {lot[-1].numero}")
+
+    # Chaque tirage porte de quoi se décrire : la convention, le plan, la
+    # graine du lot et son propre rang. C'est ce que les figures impriment.
+    console.print(f"  résumé du dernier : {lot[-1].resume}")
+
+    # Deux façons d'obtenir les n tirages, et ce qui les sépare :
+    #
+    #   for i in range(n): tirer(lois, graine=graine + i)   -> n tirages MC
+    #   tirer_lot(lois, n, graine=graine, methode="lhs")    -> un plan conjoint
+    #
+    # La boucle donne bien n tirages Monte-Carlo indépendants, mais aucun plan
+    # ne peut y améliorer le remplissage : chaque tirage ignore les autres.
+    boucle = [tirer(lois, graine=args.graine + i) for i in range(3)]
+    console.print(
+        "  en boucle sur la graine : " + "  ".join(f"CN_FE {t['CN']['FE']:.5f}" for t in boucle)
+    )
+
+    # --- 7. le lot à plat, et les trois plans ---------------------------
+    #
+    # Pour un CSV ou une statistique, `tableau_des_tirages` remet le lot à
+    # plat ; `tirer_tableau` fait les deux d'un coup.
     console.print("\n[bold]Les trois plans d'échantillonnage[/]")
     for methode in ("mc", "lhs", "sobol"):
-        lot = tirer_lot(lois, args.n, graine=args.graine, methode=methode)
+        table = tableau_des_tirages(tirer_lot(lois, args.n, graine=args.graine, methode=methode))
         # Le plus gros trou laissé dans le support d'une composante : c'est
         # ce que LHS et Sobol améliorent, à effectif égal.
-        rangs = np.sort(lot["CN_FE"].to_numpy())
+        rangs = np.sort(table["CN_FE"].to_numpy())
         trou = float(np.max(np.diff(rangs)))
         console.print(
-            f"  {methode:<6} moyenne {lot['CN_FE'].mean():+.5f}  "
-            f"écart-type {lot['CN_FE'].std(ddof=1):.5f}  plus grand trou {trou:.5f}"
+            f"  {methode:<6} moyenne {table['CN_FE'].mean():+.5f}  "
+            f"écart-type {table['CN_FE'].std(ddof=1):.5f}  plus grand trou {trou:.5f}"
         )
         if methode == "lhs":
             chemin = args.sortie / "lot.csv"
-            lot.to_csv(chemin, index=False)
-            console.print(f"  [green]écrit :[/] {chemin}  ({len(lot)} tirages, plan LHS)")
+            table.to_csv(chemin, index=False)
+            console.print(f"  [green]écrit :[/] {chemin}  ({len(table)} tirages, plan LHS)")
 
     return 0
 

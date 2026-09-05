@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from cfd_dispersion.core.lois import JeuDeLois, charger_lois
-from cfd_dispersion.core.tirage import tirer_lot
+from cfd_dispersion.core.tirage import tirer_tableau
 from cfd_dispersion.core.validation import valider_lot
 from cfd_dispersion.figures.synthese import (
     colonnes_pdv,
@@ -37,7 +37,7 @@ def verdicts(lois: JeuDeLois, table: dict[str, dict[str, float]]) -> pd.DataFram
     morceaux = []
     for i, mach in enumerate([0.7, 0.8, 0.85, 0.9]):
         source = lois_fausses if i == 2 else lois
-        lot = tirer_lot(source, 600, graine=200 + i)
+        lot = tirer_tableau(source, 600, graine=200 + i)
         lot["Mach"] = mach
         morceaux.append(lot)
     return valider_lot(pd.concat(morceaux, ignore_index=True), lois, par=("Mach",))
@@ -48,7 +48,7 @@ class TestColonnesPdv:
         assert colonnes_pdv(verdicts) == ["Mach"]
 
     def test_sans_groupement_il_n_y_en_a_aucune(self, lois: JeuDeLois) -> None:
-        lot = tirer_lot(lois, 200, graine=1)
+        lot = tirer_tableau(lois, 200, graine=1)
         assert colonnes_pdv(valider_lot(lot, lois)) == []
 
 
@@ -116,7 +116,7 @@ class TestPdvRejetes:
         assert pdv_rejetes(verdicts, coefficient="Cn_beta", composante="FE") == [{"Mach": 0.85}]
 
     def test_sans_rejet_la_liste_est_vide(self, lois: JeuDeLois) -> None:
-        lot = tirer_lot(lois, 600, graine=1)
+        lot = tirer_tableau(lois, 600, graine=1)
         lot["Mach"] = 0.8
         assert pdv_rejetes(valider_lot(lot, lois, par=("Mach",))) == []
 
@@ -130,7 +130,7 @@ class TestPdvRejetes:
         faux["Cn_beta"]["FE_ET"] = 0.16
         morceaux = []
         for i, mach in enumerate([0.7, 0.8, 0.85, 0.9]):
-            lot = tirer_lot(charger_lois(faux) if i == 2 else lois, 600, graine=200 + i)
+            lot = tirer_tableau(charger_lois(faux) if i == 2 else lois, 600, graine=200 + i)
             lot["Mach"] = mach
             morceaux.append(lot)
         df = pd.concat(morceaux, ignore_index=True)

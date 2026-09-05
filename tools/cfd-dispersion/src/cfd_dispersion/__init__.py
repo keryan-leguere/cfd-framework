@@ -61,8 +61,10 @@ from .core.convention import (
 from .core.alea import graine_temporaire
 from .core.tirage import (
     Tirage,
+    tableau_des_tirages,
     tirer,
     tirer_lot,
+    tirer_tableau,
 )
 
 # --- La loi du coefficient dispersé ------------------------------------------
@@ -146,6 +148,8 @@ __all__ = [
     "Tirage",
     "tirer",
     "tirer_lot",
+    "tirer_tableau",
+    "tableau_des_tirages",
     "graine_temporaire",
     # La loi du coefficient dispersé
     "LoiCombinee",

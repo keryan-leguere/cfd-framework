@@ -40,7 +40,7 @@ ma_convention = Convention(
 ## 2.2 Tirer
 
 ```python
-from cfd_dispersion import charger_lois, tirer, tirer_lot
+from cfd_dispersion import charger_lois, tableau_des_tirages, tirer, tirer_lot
 
 lois = charger_lois(DICT_DISP_LAWS)
 
@@ -48,12 +48,22 @@ tirage = tirer(lois, graine=42)
 tirage["Cm_alpha"]["Biais"]  # -> un flottant
 tirage.appliquer({"Cm_alpha": -2.5})  # -> le coefficient dispersé
 
-lot = tirer_lot(lois, 1000, graine=42, methode="lhs")  # -> DataFrame
+lot = tirer_lot(lois, 1000, graine=42, methode="lhs")  # -> list[Tirage]
+
+for tirage in lot:  # chaque élément se passe tel quel au modèle
+    resultats.append(mon_modele(tirage))
+
+tableau_des_tirages(lot)  # -> DataFrame, pour le CSV et les statistiques
 ```
 
 `Tirage` est un `Mapping` : il se passe tel quel au modèle qui attend un
 `DICT_DISP_DRAWN`, tout en portant la convention, la graine et le plan
 d'échantillonnage — qui finissent dans les boîtes de paramètres des figures.
+
+Un lot ou une boucle `tirer(lois, graine=graine + i)` donnent tous deux *n*
+tirages ; le lot les tire **d'un coup**, ce qui est la seule façon d'honorer une
+corrélation déclarée et la seule où les plans de §2.3 apportent quelque chose.
+Chaque tirage y porte son `numero`, la `graine` du lot et le plan employé.
 
 `appliquer` accepte un scalaire **ou tout un balayage**. Dans le second cas, le
 même tirage s'applique en tout point : c'est le cas *corrélé*, celui d'une

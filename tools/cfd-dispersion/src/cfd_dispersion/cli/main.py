@@ -12,7 +12,7 @@ from rich.console import Console
 
 from .. import __version__
 from ..core.lois import charger_lois_yaml
-from ..core.tirage import tirer, tirer_lot
+from ..core.tirage import tirer, tirer_tableau
 from ..core.validation import valider_lot
 from ..paths import EXEMPLE_DIR
 from ..report import theme
@@ -58,7 +58,7 @@ def cmd_tirage(args: argparse.Namespace) -> int:
         resultat = tirer(lois, graine=args.graine, methode=args.methode)
         console.print(table_tirage(resultat))
     else:
-        lot = tirer_lot(lois, args.n, graine=args.graine, methode=args.methode)
+        lot = tirer_tableau(lois, args.n, graine=args.graine, methode=args.methode)
         console.print(
             f"[{theme.ACCENT}]{args.n} tirages[/] · plan {args.methode} · "
             f"graine {args.graine if args.graine is not None else 'libre'}"

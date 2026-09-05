@@ -11,7 +11,7 @@ import pytest
 
 from cfd_dispersion.core.loi import LoiDispersion
 from cfd_dispersion.core.lois import JeuDeLois
-from cfd_dispersion.core.tirage import tirer_lot
+from cfd_dispersion.core.tirage import tirer_tableau
 from cfd_dispersion.core.validation import MOTIFS, Verdict, valider, valider_lot
 
 
@@ -94,7 +94,7 @@ class TestCalibration:
         for etude in range(8):
             morceaux = []
             for point in range(12):
-                lot = tirer_lot(lois, 400, graine=5000 + 100 * etude + point)
+                lot = tirer_tableau(lois, 400, graine=5000 + 100 * etude + point)
                 lot["Mach"] = 0.6 + 0.03 * point
                 morceaux.append(lot)
             resultats = pd.concat(morceaux, ignore_index=True)
@@ -137,7 +137,7 @@ class TestCalibration:
         morceaux = []
         for point in range(12):
             source = realise if point == 5 else prescrit
-            lot = tirer_lot(source, 400, graine=9000 + point)
+            lot = tirer_tableau(source, 400, graine=9000 + point)
             lot["Mach"] = 0.6 + 0.03 * point
             morceaux.append(lot)
 
@@ -294,7 +294,7 @@ class TestValiderLot:
         """Simule une sortie de modèle : n tirages par point de vol."""
         morceaux = []
         for i, (mach, altitude) in enumerate(points):
-            lot = tirer_lot(lois, n, graine=100 + i)
+            lot = tirer_tableau(lois, n, graine=100 + i)
             lot["Mach"] = mach
             lot["Altitude_m"] = altitude
             morceaux.append(lot)

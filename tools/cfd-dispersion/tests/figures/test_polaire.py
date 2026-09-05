@@ -35,10 +35,10 @@ def polaire() -> tuple[Axes, np.ndarray, np.ndarray]:
 @pytest.fixture
 def nuage(lois: JeuDeLois, polaire: tuple[Axes, np.ndarray, np.ndarray]) -> np.ndarray:
     """400 courbes, comme un modèle appelé 400 fois en rendrait."""
-    from cfd_dispersion.core.tirage import tirer_lot
+    from cfd_dispersion.core.tirage import tirer_tableau
 
     _, _, CN = polaire
-    lot = tirer_lot(lois, 400, graine=7)
+    lot = tirer_tableau(lois, 400, graine=7)
     return np.array([b + f * CN for b, f in zip(lot["Cn_beta_Biais"], lot["Cn_beta_FE"])])
 
 
@@ -316,10 +316,10 @@ class TestCourbesParTirage:
 
     def test_grouper_sur_les_colonnes_du_tirage(self, lois: JeuDeLois) -> None:
         """Le cas réel : la clé est le tirage lui-même, pas un numéro."""
-        from cfd_dispersion.core.tirage import tirer_lot
+        from cfd_dispersion.core.tirage import tirer_tableau
 
         alpha = np.linspace(0.0, 10.0, 11)
-        lot = tirer_lot(lois, 6, graine=3)
+        lot = tirer_tableau(lois, 6, graine=3)
         lignes = []
         for _, tirage in lot.iterrows():
             morceau = pd.DataFrame({"alpha": alpha, "CN": tirage["Cn_beta_Biais"] + alpha})

@@ -27,7 +27,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 |:--|:--|
 | `LOIS.yaml` | la **table de lois** : six clés par coefficient, la corrélation en option |
 | `modele.py` | le **modèle jouet** — à remplacer par le vôtre ; c'est lui qui montre le contrat d'entrée/sortie |
-| `01_tirage.py` | cas d'usage 1 : tirer, reconstruire, la loi du coefficient dispersé, tracer, comparer les plans |
+| `01_tirage.py` | cas d'usage 1 : tirer, reconstruire, la loi du coefficient dispersé, tracer, le lot à donner au modèle, comparer les plans |
 | `02_monte_carlo.py` | cas d'usage 2.1 et 2.2 : valider mille appels, synthétiser, ne tracer que les rejets |
 | `03_polaire_batch_plot.py` | cas d'usage 2.3 : la dispersion greffée sur `cfd_plot.batch_plot` |
 | `04_bande_et_correlation.py` | corrélé/indépendant, les trois remplissages, deux coefficients liés |
@@ -41,7 +41,20 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 
 Charge la table (dict Python **et** YAML), tire une réalisation, la reconstruit
 sous les cinq conventions, calcule la **loi du coefficient dispersé**, écrit les
-figures, puis compare les trois plans d'échantillonnage sur mille tirages.
+figures, tire un **lot** de mille, puis compare les trois plans
+d'échantillonnage.
+
+`tirer_lot` rend la **liste** des tirages : chaque élément est le
+`DICT_DISP_DRAWN` que votre modèle attend, et il n'y a qu'à boucler dessus.
+Le script ne fait tourner aucun modèle à cet endroit — il montre l'interface,
+et ce qu'on lui passerait :
+
+```python
+for tirage in tirer_lot(lois, 1000, graine=42, methode="lhs"):
+    resultats.append(mon_modele(L_MACH, L_ALPHA, tirage))
+```
+
+`tableau_des_tirages(lot)` remet ensuite le lot à plat, pour le CSV.
 
 Les figures s'écrivent d'elles-mêmes : `figure_tirage(..., chemin=…)` trace
 **et** enregistre, en SVG. `figure_tirage_matrice` pagine à quatre coefficients

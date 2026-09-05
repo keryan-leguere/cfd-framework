@@ -358,6 +358,13 @@ not part of the Bash framework's runtime:
       that can move the limits. `batch.py`'s `HookDispersion` plugs all of it into
       `cfd_plot.batch_plot`'s `on_before_save`; it is a module-level class, not a closure, because
       `batch_plot` silently drops to `n_jobs=1` when its hook is not picklable.
+    - **`tirer_lot` returns `list[Tirage]`**, not a DataFrame — the shape a model consumes, one
+      `DICT_DISP_DRAWN` per element, so the caller just loops. `tableau_des_tirages(lot)` flattens
+      it back to the `<coeff>_Biais` / `<coeff>_FE` table (and `tirer_tableau` does both at once),
+      which is what CSV, `describe()` and `valider_lot` want. Each draw carries its `numero` in the
+      lot, the lot's `graine` and the plan; a lone `tirer()` has `numero=None`. Drawing the lot in
+      one go is the only thing a declared correlation and the LHS/Sobol plans can act on — a loop
+      over `tirer(lois, graine=graine + i)` gives n independent MC draws and nothing more.
     - **The law of the dispersed coefficient** (`core/combinaison.py`, `loi_combinee`) is what the
       third panel of every draw figure now shows — a computed density, not a histogram. Exact
       whenever the reconstruction relation is affine in (biais, FE) at a fixed nominal

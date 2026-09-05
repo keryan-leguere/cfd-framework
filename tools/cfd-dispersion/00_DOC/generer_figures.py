@@ -27,7 +27,7 @@ from cfd_dispersion import (
     bande_depuis_loi,
     charger_lois,
     tirer,
-    tirer_lot,
+    tirer_tableau,
     valider_lot,
 )
 from cfd_dispersion.batch import hook_dispersion
@@ -256,11 +256,11 @@ def figure_tirage_trois_panneaux() -> None:
 def figure_comparaison_mc() -> None:
     """Un cas conforme, puis le même coefficient mal tiré."""
     lois = charger_lois(TABLE)
-    conforme = tirer_lot(lois, 1000, graine=1)
+    conforme = tirer_tableau(lois, 1000, graine=1)
 
     faux_table = {nom: dict(spec) for nom, spec in TABLE.items()}
     faux_table["Cm_alpha"]["FE_ET"] = 0.20
-    fautif = tirer_lot(charger_lois(faux_table), 1000, graine=1)
+    fautif = tirer_tableau(charger_lois(faux_table), 1000, graine=1)
 
     for nom, lot in (("valide", conforme), ("rejete", fautif)):
         figure, _ = figure_comparaison(
@@ -288,7 +288,7 @@ def figure_synthese_etude() -> None:
     for indice, (mach, altitude) in enumerate(
         [(0.70, 5000.0), (0.80, 8000.0), (0.85, 10000.0), (0.90, 12000.0)]
     ):
-        lot = tirer_lot(fausses if indice == 2 else lois, 800, graine=indice)
+        lot = tirer_tableau(fausses if indice == 2 else lois, 800, graine=indice)
         lot["Mach"] = mach
         lot["Altitude_m"] = altitude
         morceaux.append(lot)
@@ -313,7 +313,7 @@ def figure_polaire_dispersee() -> None:
     lois = charger_lois(TABLE)
     alpha, CN = _polaire()
 
-    lot = tirer_lot(lois, 400, graine=7)
+    lot = tirer_tableau(lois, 400, graine=7)
     nuage = np.array([b + f * CN for b, f in zip(lot["CN_Biais"], lot["CN_FE"])])
 
     with style():
@@ -424,7 +424,7 @@ def figure_correlation() -> None:
         for ax, jeu, nom in zip(
             np.ravel(grille), (independantes, liees), ("indépendants", "ρ = 0.85")
         ):
-            lot = tirer_lot(jeu, 1500, graine=5, methode="lhs")
+            lot = tirer_tableau(jeu, 1500, graine=5, methode="lhs")
             ax.scatter(lot["CN_Biais"], lot["Cm_alpha_Biais"], s=4, alpha=0.35, color="C0")
             mesure = float(np.corrcoef(lot["CN_Biais"], lot["Cm_alpha_Biais"])[0, 1])
             ax.set_xlabel("biais de CN")
@@ -451,7 +451,7 @@ def figure_batch_plot() -> None:
     lois = charger_lois(TABLE)
     alpha, CN = _polaire()
 
-    lot = tirer_lot(lois, 300, graine=7)
+    lot = tirer_tableau(lois, 300, graine=7)
     nuage = np.array([b + f * CN for b, f in zip(lot["CN_Biais"], lot["CN_FE"])])
 
     donnees = pd.DataFrame({"alpha": alpha, "Mach": 0.80, "Altitude_m": 8000.0, "CN": CN})

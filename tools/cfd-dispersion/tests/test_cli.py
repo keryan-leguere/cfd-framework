@@ -11,7 +11,7 @@ import pytest
 
 from cfd_dispersion.cli.main import build_parser, main
 from cfd_dispersion.core.lois import JeuDeLois
-from cfd_dispersion.core.tirage import tirer_lot
+from cfd_dispersion.core.tirage import tirer_tableau
 from cfd_dispersion.paths import EXEMPLE_DIR
 
 LOIS_EXEMPLE = EXEMPLE_DIR / "LOIS.yaml"
@@ -117,7 +117,7 @@ class TestValider:
         # calibration est éprouvée dans tests/core/test_validation.py.
         morceaux = []
         for indice, mach in enumerate([0.7, 0.85]):
-            lot = tirer_lot(lois_exemple, 400, graine=indice)
+            lot = tirer_tableau(lois_exemple, 400, graine=indice)
             lot["Mach"] = mach
             morceaux.append(lot)
         chemin = tmp_path / "resultats.csv"
@@ -245,7 +245,7 @@ class TestValider:
                 },
             }
         )
-        lot = tirer_lot(faux, 500, graine=3)
+        lot = tirer_tableau(faux, 500, graine=3)
         lot["Mach"] = 0.8
         chemin = tmp_path / "faux.csv"
         lot.to_csv(chemin, index=False)

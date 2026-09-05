@@ -8,7 +8,13 @@ import pytest
 
 from cfd_dispersion.core.convention import Convention, convention
 from cfd_dispersion.core.lois import JeuDeLois
-from cfd_dispersion.core.tirage import Tirage, tirer, tirer_lot
+from cfd_dispersion.core.tirage import (
+    Tirage,
+    tableau_des_tirages,
+    tirer,
+    tirer_lot,
+    tirer_tableau,
+)
 
 
 class TestTirageUnique:
@@ -96,17 +102,54 @@ class TestApplication:
 
 
 class TestTirageEnLot:
-    def test_une_ligne_par_tirage_une_colonne_par_composante(self, lois: JeuDeLois) -> None:
+    """`tirer_lot` rend la liste des tirages : ce qu'un modèle consomme."""
+
+    def test_rend_une_liste_de_tirages(self, lois: JeuDeLois) -> None:
         lot = tirer_lot(lois, 50, graine=1)
-        assert lot.shape == (50, 6)
-        assert list(lot.columns) == list(lois.colonnes)
+        assert isinstance(lot, list)
+        assert len(lot) == 50
+        assert all(isinstance(tirage, Tirage) for tirage in lot)
+
+    def test_chaque_tirage_se_passe_tel_quel_au_modele(self, lois: JeuDeLois) -> None:
+        """Un Tirage EST le dictionnaire ``{coeff: {"Biais": …, "FE": …}}``."""
+        tirage = tirer_lot(lois, 3, graine=1)[0]
+        assert set(tirage) == set(lois)
+        assert set(tirage["Cm_alpha"]) == {"Biais", "FE"}
+        assert isinstance(tirage["Cm_alpha"]["Biais"], float)
+
+    def test_les_tirages_sont_numerotes(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 5, graine=1)
+        assert [tirage.numero for tirage in lot] == [0, 1, 2, 3, 4]
+
+    def test_un_tirage_isole_n_a_pas_de_numero(self, lois: JeuDeLois) -> None:
+        """Un « 0 » laisserait croire à un rang dans un lot qui n'existe pas."""
+        assert tirer(lois, graine=1).numero is None
+
+    def test_le_numero_apparait_dans_le_resume(self, lois: JeuDeLois) -> None:
+        assert "tirage 2" in tirer_lot(lois, 3, graine=1)[2].resume
+        assert "tirage" not in tirer(lois, graine=1).resume
+
+    def test_chaque_tirage_porte_la_graine_et_le_plan_du_lot(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 4, graine=7, methode="lhs")
+        assert {tirage.graine for tirage in lot} == {7}
+        assert {tirage.methode for tirage in lot} == {"lhs"}
+
+    def test_la_convention_se_choisit(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 2, graine=1, convention_="pourcentage")
+        assert all(tirage.convention.nom == "pourcentage" for tirage in lot)
+
+    def test_le_premier_du_lot_est_le_tirage_unique(self, lois: JeuDeLois) -> None:
+        """Boucler sur la graine ou tirer un lot : même loi, même flux."""
+        assert tirer_lot(lois, 1, graine=3)[0].vers_dict() == tirer(lois, graine=3).vers_dict()
 
     def test_meme_graine_meme_lot(self, lois: JeuDeLois) -> None:
-        pd.testing.assert_frame_equal(tirer_lot(lois, 20, graine=3), tirer_lot(lois, 20, graine=3))
+        premier = [tirage.vers_dict() for tirage in tirer_lot(lois, 20, graine=3)]
+        second = [tirage.vers_dict() for tirage in tirer_lot(lois, 20, graine=3)]
+        assert premier == second
 
     @pytest.mark.parametrize("methode", ["mc", "lhs", "sobol"])
     def test_les_trois_plans_respectent_les_supports(self, lois: JeuDeLois, methode: str) -> None:
-        lot = tirer_lot(lois, 500, graine=2, methode=methode)
+        lot = tableau_des_tirages(tirer_lot(lois, 500, graine=2, methode=methode))
         for coeff, loi_coeff in lois.items():
             for nom, loi in loi_coeff:
                 bas, haut = loi.support()
@@ -114,11 +157,12 @@ class TestTirageEnLot:
                 assert colonne.min() >= bas - 1e-9
                 assert colonne.max() <= haut + 1e-9
 
-    def test_une_colonne_degeneree_est_constante(self, lois: JeuDeLois) -> None:
-        assert tirer_lot(lois, 100, graine=1)["CA_Biais"].nunique() == 1
+    def test_une_composante_degeneree_est_constante(self, lois: JeuDeLois) -> None:
+        valeurs = {tirage["CA"]["Biais"] for tirage in tirer_lot(lois, 100, graine=1)}
+        assert len(valeurs) == 1
 
     def test_les_moments_du_lot_suivent_les_lois(self, lois: JeuDeLois) -> None:
-        lot = tirer_lot(lois, 20_000, graine=4)
+        lot = tirer_tableau(lois, 20_000, graine=4)
         for coeff, loi_coeff in lois.items():
             for nom, loi in loi_coeff:
                 colonne = lot[f"{coeff}_{nom}"]
@@ -133,14 +177,16 @@ class TestTirageEnLot:
         from cfd_dispersion.core.lois import charger_lois
 
         jeu = charger_lois(table, correlation={("Cm_alpha", "Cn_beta"): 0.7})
-        lot = tirer_lot(jeu, 20_000, graine=6)
+        lot = tirer_tableau(jeu, 20_000, graine=6)
         rho = lot["Cm_alpha_Biais"].corr(lot["Cn_beta_Biais"])
         assert rho == pytest.approx(0.7, abs=0.06)
 
     def test_lhs_couvre_mieux_que_le_monte_carlo(self, lois: JeuDeLois) -> None:
         """La raison de tirer la loi jointe plutôt que chaque loi séparément."""
         trous = {
-            m: np.diff(np.sort(tirer_lot(lois, 400, graine=9, methode=m)["Cn_beta_Biais"])).max()
+            m: np.diff(
+                np.sort(tirer_tableau(lois, 400, graine=9, methode=m)["Cn_beta_Biais"])
+            ).max()
             for m in ("mc", "lhs")
         }
         assert trous["lhs"] < trous["mc"]
@@ -163,3 +209,32 @@ class TestTirageEnLot:
         tirer_lot(lois, 100, graine=1234)
         apres = np.asarray(ot.Normal().getSample(3)).ravel()
         assert np.allclose(avant, apres)
+
+
+class TestTableauDesTirages:
+    """La mise à plat : une ligne par tirage, deux colonnes par coefficient."""
+
+    def test_une_ligne_par_tirage_une_colonne_par_composante(self, lois: JeuDeLois) -> None:
+        lot = tableau_des_tirages(tirer_lot(lois, 50, graine=1))
+        assert lot.shape == (50, 6)
+        assert list(lot.columns) == list(lois.colonnes)
+
+    def test_les_valeurs_sont_celles_des_tirages(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 5, graine=1)
+        table = tableau_des_tirages(lot)
+        assert table["Cm_alpha_FE"].iloc[3] == pytest.approx(lot[3]["Cm_alpha"]["FE"])
+
+    def test_tirer_tableau_fait_les_deux_d_un_coup(self, lois: JeuDeLois) -> None:
+        pd.testing.assert_frame_equal(
+            tirer_tableau(lois, 10, graine=5),
+            tableau_des_tirages(tirer_lot(lois, 10, graine=5)),
+        )
+
+    def test_un_lot_vide_est_refuse(self) -> None:
+        """Sans colonnes, un tableau vide ne dirait pas ce qui lui manque."""
+        with pytest.raises(ValueError, match="lot vide"):
+            tableau_des_tirages([])
+
+    def test_il_accepte_n_importe_quelle_sequence(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 4, graine=1)
+        assert len(tableau_des_tirages(tuple(lot))) == 4

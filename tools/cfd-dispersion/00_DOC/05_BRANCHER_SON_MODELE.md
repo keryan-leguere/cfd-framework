@@ -121,15 +121,24 @@ tirage.convention  # la relation employée
 tirage.graine, tirage.methode  # ce qui a produit ce tirage
 ```
 
-Pour appeler le modèle mille fois, ne bouclez pas sur `tirer` : `tirer_lot` rend
-directement un tableau, et c'est le seul chemin qui honore un plan LHS ou Sobol.
+Pour appeler le modèle mille fois, `tirer_lot` rend la **liste** des tirages —
+et c'est le seul chemin qui honore un plan LHS ou Sobol.
 
 ```python
-from cfd_dispersion import tirer_lot
+from cfd_dispersion import tableau_des_tirages, tirer_lot
 
-lot = tirer_lot(lois, 1000, graine=42, methode="lhs")
+lot = tirer_lot(lois, 1000, graine=42, methode="lhs")  # list[Tirage]
+
+for tirage in lot:
+    resultats.append(mon_modele(L_MACH, L_ALPHA, tirage))  # DICT_DISP_DRAWN
+
+tableau_des_tirages(lot)
 # DataFrame, 1000 lignes × colonnes "CN_Biais", "CN_FE", "CA_Biais", …
 ```
+
+Une boucle `tirer(lois, graine=graine + i)` donne aussi *n* tirages
+Monte-Carlo indépendants, et rien ne l'interdit ; mais aucun plan ne peut y
+améliorer le remplissage, puisque chaque tirage ignore les autres.
 
 ---
 
@@ -234,8 +243,8 @@ Un tableau, une ligne par appel :
 | les clés de point de vol | si `par=` | `Mach`, `Altitude_m`, … |
 | `tirage` | pour dédoublonner (§5.5) | un identifiant de tirage |
 
-C'est exactement ce que `tirer_lot` produit ; `lois.colonnes` énumère les noms
-attendus.
+C'est exactement ce que `tableau_des_tirages(lot)` produit ; `lois.colonnes`
+énumère les noms attendus.
 
 ### Forme 2 — le tableau large, à colonnes dictionnaires
 
