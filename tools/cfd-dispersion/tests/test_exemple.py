@@ -208,6 +208,8 @@ class TestExecution:
             "polaire_CN.svg",
             "polaire_options.svg",
             "polaire_enveloppes.svg",
+            "transsonique.svg",
+            "transsonique_trois_alpha.svg",
             "polaire_trois_coeffs.svg",
         ):
             assert (tmp_path / nom).is_file(), nom

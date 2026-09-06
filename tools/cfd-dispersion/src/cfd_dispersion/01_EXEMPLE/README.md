@@ -231,6 +231,16 @@ gagne aucune entrée : celle de la série devient `CN (100 LHS · 17.3 %)`.
   moyenne/nominal tombe à zéro — le biais devient invisible, ce qui est
   exactement le piège ;
 * `polaire_enveloppes.svg` — min/max, percentile 95 %, ±2σ ;
+* `transsonique.svg` — **un autre balayage** : en Mach, autour de la divergence
+  de traînée. CA double en dix centièmes de Mach, CN perd sa portance au choc,
+  Cm_alpha bascule. La dispersion relative n'a pas changé — les lois sont les
+  mêmes — mais l'enveloppe s'ouvre en valeur absolue à mesure que le
+  coefficient monte, et c'est ce qu'un dossier doit voir ;
+* `transsonique_trois_alpha.svg` — **trois séries dispersées sur les mêmes
+  axes**, dans trois couleurs de la palette « okabe_ito » de cfd-plot. Une
+  entrée de légende par série, la boîte coupée, et seulement les ±3σ : sur une
+  figure à trois faisceaux, la paire extérieure suffit et ne croise aucune
+  courbe ;
 * dans la sortie terminal, les chiffres sans figure : `resume_dispersion` réduit
   une bande à l'enveloppe maximale, son abscisse, le σ maximal et l'écart moyen.
 

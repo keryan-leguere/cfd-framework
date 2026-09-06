@@ -317,7 +317,7 @@ def etiqueter_ligne(
     couleur: Any = None,
     taille: float = 7.0,
     fond: Any = None,
-    fond_alpha: float = 0.6,
+    fond_alpha: float = 0.0,
     **kwargs: Any,
 ) -> Text:
     """Pose une étiquette **sur** une courbe, inclinée comme elle.
@@ -357,10 +357,11 @@ def etiqueter_ligne(
         Couleur du cartouche derrière le texte. Par défaut celle du fond des
         axes, ce qui détache l'étiquette de ce qu'il y a dessous.
     fond_alpha:
-        Opacité de ce cartouche. Translucide par défaut : un cartouche opaque
-        perce un trou blanc dans le faisceau qu'on venait regarder, alors
-        qu'une étiquette lisible n'a pas besoin d'effacer ce qu'elle couvre.
-        1.0 rend le fond plein, 0.0 le supprime.
+        Opacité de ce cartouche. **Nul par défaut** : aucun cartouche n'est
+        posé du tout. Le texte se lit sur ce qu'il nomme, et un fond — même
+        translucide — perce une tache claire dans le faisceau qu'on venait
+        regarder. Une valeur entre 0 et 1 remet un cartouche, 1.0 le rend
+        plein.
 
     Returns
     -------
@@ -397,10 +398,11 @@ def etiqueter_ligne(
     if fond is None:
         fond = ax.get_facecolor()
 
-    kwargs.setdefault(
-        "bbox",
-        {"facecolor": fond, "edgecolor": "none", "pad": 0.8, "alpha": fond_alpha},
-    )
+    if fond_alpha > 0.0:
+        kwargs.setdefault(
+            "bbox",
+            {"facecolor": fond, "edgecolor": "none", "pad": 0.8, "alpha": fond_alpha},
+        )
     return ax.text(
         float(x[indice]),
         float(y[indice]),

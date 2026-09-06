@@ -219,6 +219,70 @@ def _forme_riche(coefficient: str, alpha: np.ndarray) -> np.ndarray:
     return 1.0 + 0.02 * alpha - 0.06 * np.maximum(alpha - 14.0, 0.0)
 
 
+#: Le Mach de divergence : au-delà, l'onde de choc s'installe et tout bouge.
+MACH_DIVERGENCE = 0.78
+
+
+def _forme_transsonique(coefficient: str, mach: np.ndarray) -> np.ndarray:
+    """La dépendance en **Mach**, autour de la divergence de traînée.
+
+    Un balayage en incidence donne des courbes lisses ; un balayage en Mach en
+    donne une qui **casse**, et c'est un tout autre exercice pour une enveloppe.
+
+    * **CA** double en dix centièmes de Mach : c'est la divergence de traînée.
+      Une dispersion de 3 % y devient trois fois plus large en valeur absolue
+      sans que la loi ait changé — le genre de chose qu'un dossier doit voir.
+    * **CN** suit Prandtl–Glauert, puis **perd** au passage du choc.
+    * **Cm_alpha** bascule : c'est le *tuck* transsonique.
+    """
+    montee = np.maximum(mach - MACH_DIVERGENCE, 0.0)
+    if coefficient == "CA":
+        return np.asarray(1.0 + 0.03 * mach + 22.0 * montee**2, dtype=float)
+    if coefficient == "CN":
+        # Prandtl–Glauert, borné avant la singularité, puis perte de portance.
+        compressibilite = 1.0 / np.sqrt(np.maximum(1.0 - np.minimum(mach, 0.94) ** 2, 0.12))
+        return np.asarray(0.55 * compressibilite - 3.0 * montee**2, dtype=float)
+    return np.asarray(1.0 + 0.10 * mach - 6.0 * montee**2, dtype=float)
+
+
+def appeler_modele_transsonique(
+    lois: JeuDeLois,
+    mach: np.ndarray,
+    *,
+    n: int = 100,
+    alpha: float = 6.0,
+    convention_: str = "lineaire",
+    graine: int = 11,
+    tirages: Sequence[Tirage] | None = None,
+) -> pd.DataFrame:
+    """Le même modèle, balayé en **Mach** à incidence fixée.
+
+    Même contrat de sortie que :func:`appeler_modele_polaire` — une ligne par
+    (tirage × point du balayage) — mais la colonne de balayage est ``Mach`` et
+    les formes sont celles de :func:`_forme_transsonique`.
+    """
+    relation = convention(convention_)
+    lignes = []
+    lot = list(tirages) if tirages is not None else tirer_lot(lois, n, graine=graine)
+    for tirage in lot:
+        colonnes: dict[str, Any] = {"Mach": mach}
+        for coefficient in ("CN", "CA", "Cm_alpha"):
+            # Le nominal dépend du Mach par la forme, et de l'incidence par le
+            # niveau : deux dépendances, une seule courbe.
+            niveau = coefficients_nominaux(0.70)[coefficient]
+            courbe = niveau * _forme_transsonique(coefficient, mach) * (1.0 + 0.02 * alpha)
+            biais = tirage[coefficient]["Biais"]
+            fe = tirage[coefficient]["FE"]
+            colonnes[coefficient] = relation(courbe, biais, fe)
+            colonnes[f"{coefficient}_Biais"] = biais
+            colonnes[f"{coefficient}_FE"] = fe
+        colonnes["alpha"] = alpha
+        colonnes["tirage"] = 0 if tirage.numero is None else tirage.numero
+        lignes.append(pd.DataFrame(colonnes))
+
+    return pd.concat(lignes, ignore_index=True)
+
+
 def polaire_nominale(
     alpha: np.ndarray, *, mach: float = 0.80, riche: bool = False
 ) -> dict[str, np.ndarray]:

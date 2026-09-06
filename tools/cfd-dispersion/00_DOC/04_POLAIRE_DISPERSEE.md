@@ -128,8 +128,13 @@ Enfin, la légende ne gagne aucune entrée : c'est celle de la série qui est
 complétée, `CN` devenant `CN (100 LHS · 17.3 %)` — effectif, plan
 d'échantillonnage (`plan=`) et hauteur maximale de l'enveloppe.
 
-Les étiquettes ±kσ sont enfin posées sur un cartouche **translucide** : opaque,
-il percerait un trou blanc dans le faisceau qu'on venait regarder.
+Les étiquettes ±kσ sont enfin posées **sans cartouche** : le texte se lit sur le
+trait qu'il nomme, et un fond — même translucide — percerait une tache claire
+dans le faisceau qu'on venait regarder.
+
+Sur une figure qui porte **plusieurs séries dispersées**, `sigmas=(3,)` ne garde
+que la paire extérieure : elle longe le bord de l'enveloppe et ne croise aucune
+courbe, là où trois séries × trois σ font dix-huit lignes.
 
 ---
 

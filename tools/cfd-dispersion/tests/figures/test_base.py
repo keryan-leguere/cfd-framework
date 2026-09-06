@@ -152,10 +152,10 @@ class TestEtiqueterLigne:
         assert debut == pytest.approx(0.0)
         assert fin == pytest.approx(10.0)
 
-    def test_l_etiquette_porte_un_cartouche(self, axes: Axes) -> None:
-        """Le fond interrompt la courbe au lieu de la laisser traverser le texte."""
+    def test_l_etiquette_n_a_pas_de_cartouche(self, axes: Axes) -> None:
+        """Un fond percerait une tache claire dans le faisceau qu'on regarde."""
         x = np.linspace(0, 10, 20)
-        assert etiqueter_ligne(axes, x, x, "a").get_bbox_patch() is not None
+        assert etiqueter_ligne(axes, x, x, "a").get_bbox_patch() is None
 
     def test_les_formes_doivent_correspondre(self, axes: Axes) -> None:
         with pytest.raises(ValueError, match="même forme"):
@@ -222,9 +222,9 @@ class TestLignesReference:
 
 
 class TestFondDesEtiquettes:
-    def test_le_cartouche_est_translucide(self, axes: Axes) -> None:
-        """Un cartouche opaque perce un trou blanc dans le faisceau."""
-        cartouche = etiqueter_ligne(axes, [0, 1], [0, 1], "±1σ").get_bbox_patch()
+    def test_un_cartouche_se_redemande(self, axes: Axes) -> None:
+        """Il n'y en a plus par défaut, mais il reste à portée de main."""
+        cartouche = etiqueter_ligne(axes, [0, 1], [0, 1], "±1σ", fond_alpha=0.6).get_bbox_patch()
         assert cartouche is not None
         opacite = cartouche.get_alpha()
         assert opacite is not None and 0.0 < opacite < 1.0

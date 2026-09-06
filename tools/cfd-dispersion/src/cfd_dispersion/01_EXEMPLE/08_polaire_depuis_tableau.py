@@ -61,15 +61,19 @@ Ce que le script montre :
   1. le tableau de départ, et sa référence ;
   2. la figure complète, en une ligne ;
   3. le catalogue des options : une par panneau, et les trois enveloppes ;
+  3 bis. un autre balayage — en Mach, autour de la divergence de traînée — et
+     trois séries dispersées sur les mêmes axes ;
   4. les trois coefficients sur une figure ;
   5. les chiffres seuls, sans figure — pour un compte rendu.
 
 Sorties, dans SORTIE/ :
 
-    polaire_CN.svg              la figure complète
-    polaire_options.svg         le catalogue : une option par panneau
-    polaire_enveloppes.svg      min/max, percentile, ±kσ
-    polaire_trois_coeffs.svg    les trois coefficients, chacun sa teinte
+    polaire_CN.svg                 la figure complète
+    polaire_options.svg            le catalogue : une option par panneau
+    polaire_enveloppes.svg         min/max, percentile, ±kσ
+    transsonique.svg               un balayage en MACH : la divergence de traînée
+    transsonique_trois_alpha.svg   trois séries dispersées sur les mêmes axes
+    polaire_trois_coeffs.svg       les trois coefficients, chacun sa teinte
 """
 
 from __future__ import annotations
@@ -101,7 +105,7 @@ from cfd_dispersion import (
 ICI = Path(__file__).resolve().parent
 sys.path.insert(0, str(ICI))
 
-from modele import appeler_modele_polaire  # noqa: E402
+from modele import appeler_modele_polaire, appeler_modele_transsonique  # noqa: E402
 
 #: Le balayage : de −4 à 20 degrés, décrochage compris. Un balayage court et
 #: droit ne met rien à l'épreuve — c'est là où la courbe se casse que le rendu
@@ -111,6 +115,14 @@ ALPHA = np.linspace(-4.0, 20.0, 25)
 #: Le plan d'échantillonnage, tel qu'il apparaîtra en légende. Un tableau de
 #: sortie ne dit pas lequel l'a produit : c'est à l'appelant de le nommer.
 PLAN = "LHS"
+
+#: Le balayage en Mach, de subsonique à la divergence de traînée.
+MACH = np.linspace(0.50, 0.94, 23)
+
+#: Les couleurs, prises dans une palette de cfd-plot plutôt qu'au cycle par
+#: défaut : « okabe_ito » est conçue pour rester distinguable en daltonisme et
+#: en noir et blanc, ce qu'un dossier finit toujours par exiger.
+COULEURS = cplt.palette_colors("okabe_ito", 8)
 
 #: Les libellés d'axes, montés par cfd-plot à partir du nom, du symbole et de
 #: l'unité — la même mise en forme que sur les figures de `batch_plot`.
@@ -324,6 +336,108 @@ def main() -> int:
     )
     console.print(f"[green]écrit :[/] {args.sortie / 'polaire_enveloppes.svg'}")
 
+    # --- 3 ter. un autre balayage : le transsonique -----------------------
+    #
+    # Une polaire en incidence donne des courbes lisses. Un balayage en MACH en
+    # donne une qui casse : au-delà de M = 0.78 l'onde de choc s'installe, CA
+    # double en dix centièmes de Mach, CN perd sa portance et Cm_alpha bascule.
+    #
+    # C'est un tout autre exercice pour une enveloppe : la dispersion relative
+    # ne change pas — les lois sont les mêmes — mais l'enveloppe s'ouvre en
+    # valeur absolue à mesure que le coefficient monte. La boîte le chiffre :
+    # « enveloppe max … à x = 0.94 ».
+    #
+    # Rien à changer côté figure : la colonne de balayage s'appelle « Mach » au
+    # lieu de « alpha », et c'est tout.
+    df_mach = appeler_modele_transsonique(lois, MACH, n=args.n)
+    df_mach_reference = appeler_modele_transsonique(lois, MACH, tirages=[tirage_neutre(lois)])
+
+    with cplt.style_context("notebook"):
+        figure, grille = cplt.new_figure(1, 3, figsize=(16.0, 4.6))
+        # Une couleur par coefficient, prise dans la palette.
+        for panneau, coefficient, teinte in zip(
+            np.ravel(grille),
+            ("CA", "CN", "Cm_alpha"),
+            (COULEURS[6], COULEURS[5], COULEURS[3]),
+        ):
+            cplt.plot_line(
+                panneau,
+                MACH,
+                df_mach_reference[coefficient].to_numpy(),
+                label=coefficient,
+                color=teinte,
+                marker="",
+            )
+            superposer_depuis_tableau(
+                panneau,
+                df_mach,
+                x="Mach",  # le balayage n'est plus l'incidence
+                y=coefficient,
+                reference=df_mach_reference,
+                serie=coefficient,
+                plan=PLAN,
+            )
+            cplt.set_title(panneau, coefficient)
+            panneau.set_xlabel("Mach")
+        np.ravel(grille)[0].set_ylabel("coefficient")
+
+        (chemin,) = cplt.save_figure(figure, args.sortie / "transsonique", formats=("svg",))
+        plt.close(figure)
+    console.print(f"[green]écrit :[/] {chemin}")
+
+    # --- 3 quater. trois séries dispersées sur les mêmes axes --------------
+    #
+    # Le cas qui met les couleurs à l'épreuve : trois incidences, trois
+    # faisceaux, trois enveloppes sur une seule figure. Chacune garde la teinte
+    # de sa courbe — `serie=` suffit — et la légende garde UNE entrée par série,
+    # complétée de son effectif et de sa dispersion.
+    #
+    # Deux réglages font toute la lisibilité ici :
+    #
+    #   * la boîte est coupée — trois boîtes de paramètres sur une figure ne se
+    #     liraient pas, et les chiffres sont déjà en légende ;
+    #   * `sigmas=(3,)` ne garde que la paire extérieure. Trois séries × trois
+    #     σ font dix-huit lignes ; la ±3σ, elle, longe le bord de l'enveloppe
+    #     et ne croise aucune courbe.
+    with cplt.style_context("notebook"):
+        figure, ax = cplt.new_figure(figsize=(8.5, 5.5))
+        for indice, incidence in enumerate((2.0, 6.0, 10.0)):
+            libelle = f"CA à α = {incidence:g}°"
+            disperse = appeler_modele_transsonique(
+                lois, MACH, n=args.n, alpha=incidence, graine=11 + indice
+            )
+            reference = appeler_modele_transsonique(
+                lois, MACH, alpha=incidence, tirages=[tirage_neutre(lois)]
+            )
+            cplt.plot_line(
+                ax,
+                MACH,
+                reference["CA"].to_numpy(),
+                label=libelle,
+                color=COULEURS[indice + 5],
+                marker="",
+            )
+            superposer_depuis_tableau(
+                ax,
+                disperse,
+                x="Mach",
+                y="CA",
+                reference=reference,
+                serie=libelle,
+                plan=PLAN,
+                boite_parametres=False,
+                sigmas=(3,),
+            )
+        ax.set_xlabel("Mach")
+        ax.set_ylabel(cplt.format_axis_label({"literal_name": "traînée", "symbol": "$C_A$"}, "CA"))
+        cplt.set_title(ax, "Divergence de traînée — trois incidences")
+
+        (chemin,) = cplt.save_figure(
+            figure, args.sortie / "transsonique_trois_alpha", formats=("svg",)
+        )
+        plt.close(figure)
+    console.print(f"[green]écrit :[/] {chemin}")
+
     # --- 4. les trois coefficients sur une figure ------------------------
     #
     # Chaque coefficient garde sa teinte : `serie=` suffit, et il n'y a rien à
@@ -336,7 +450,7 @@ def main() -> int:
                 alpha,
                 df_reference[coefficient].to_numpy(),
                 label=coefficient,
-                color=f"C{indice}",
+                color=COULEURS[indice + 5],
                 marker="",
             )
             superposer_depuis_tableau(
@@ -351,7 +465,7 @@ def main() -> int:
                 boite_parametres=False,
                 etiquettes_sigma=False,
                 max_tirages=40,
-                label=coefficient,
+                plan=PLAN,
             )
         ax.set_xlabel(LIBELLE_ALPHA)
         ax.set_ylabel("coefficient")

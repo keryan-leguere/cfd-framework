@@ -760,8 +760,9 @@ couleur déjà lue.
 Les teintes ne sont pas décoratives : le faisceau est **éclairci** (il porte la
 texture), les bords de l'enveloppe légèrement assombris (sans quoi, à teinte
 égale, on ne les verrait pas), les ±kσ plus sombres et fins. Leurs étiquettes
-sont posées sur un cartouche **translucide** : opaque, il percerait un trou
-blanc dans le faisceau qu'on venait regarder.
+sont posées **sans cartouche** : le texte se lit sur le trait qu'il nomme, et un
+fond — même translucide — percerait une tache claire dans le faisceau qu'on
+venait regarder. `fond_alpha=` en remet un si besoin.
 
 Cinq choses s'y superposent, et chacune s'enlève :
 
