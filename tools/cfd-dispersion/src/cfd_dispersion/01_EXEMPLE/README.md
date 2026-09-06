@@ -205,7 +205,11 @@ coefficient, chacun superposé à la loi qui le prescrivait.
 
 Vous avez isolé une polaire dans un tableau à plat — une ligne par (tirage ×
 incidence) — et vous tracez votre courbe de référence sur une figure cfd-plot.
-La dispersion se pose dessus en une ligne :
+
+**La figure est la vôtre** : le script la monte avec `cfd_plot` appelé
+directement — `style_context`, `new_figure`, `plot_line`, `format_axis_label`,
+`set_title`. cfd-dispersion n'ajoute qu'une ligne, sur des axes qui existent
+déjà :
 
 ```python
 superposer_depuis_tableau(ax, df_disperse, x="alpha", y="CN", reference=df_reference, serie="CN")

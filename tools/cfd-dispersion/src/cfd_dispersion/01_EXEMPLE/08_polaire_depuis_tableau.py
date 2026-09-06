@@ -12,15 +12,26 @@ La situation : vous avez isolé une polaire dans un tableau à plat —
 
 soit **une ligne par (tirage × incidence)** : cent tirages sur treize
 incidences font 1300 lignes. Et vous avez, à côté, la polaire de **référence**
-— le même modèle tourné une fois sans dispersion — que vous tracez sur une
-figure cfd-plot.
+— le même modèle tourné une fois sans dispersion.
 
-Reste à poser la dispersion par-dessus. C'est une ligne :
+La figure est la vôtre
+----------------------
+Tout ce qui la construit vient de **cfd-plot**, appelé directement : le style,
+les axes, la courbe de référence, les libellés, le titre, l'export.
+
+    import cfd_plot as cplt
+
+    with cplt.style_context("notebook"):
+        figure, ax = cplt.new_figure(figsize=(8.0, 5.0))
+        cplt.plot_line(ax, alpha, cn_reference, label="CN", color="C0")
+        cplt.set_title(ax, "CN — M = 0.80")
+
+cfd-dispersion n'ajoute qu'une chose, sur des axes qui existent déjà :
 
     superposer_depuis_tableau(ax, df_disperse, x="alpha", y="CN",
                               reference=df_reference, serie="CN")
 
-et elle ajoute, dans cet ordre :
+et cette ligne pose, dans cet ordre :
 
   * les **cent courbes** obtenues, en teinte claire au fond ;
   * le **faisceau min/max**, rempli dans la teinte de la série ;
@@ -28,12 +39,20 @@ et elle ajoute, dans cet ordre :
   * les lignes **±1σ, ±2σ, ±3σ**, étiquetées *sur* la courbe ;
   * la **boîte** qui chiffre tout cela, et le chiffre de tête en légende.
 
+Elle appelle elle-même ``cfd_plot.make_legend`` pour refaire la légende : les
+artistes qu'elle vient d'ajouter y seraient sinon absents.
+
+> La même chose, automatisée sur toute une campagne, c'est
+> ``cfd_plot.batch_plot`` avec le hook du script 03. Ici la figure est montée à
+> la main, parce que c'est comme cela qu'on prépare une planche pour un dossier.
+
 Ce que le script montre :
 
   1. le tableau de départ, et sa référence ;
   2. la figure complète, en une ligne ;
   3. les variantes : sans référence, en percentile, sans les tirages ;
-  4. les chiffres seuls, sans figure — pour un compte rendu.
+  4. les trois coefficients sur une figure ;
+  5. les chiffres seuls, sans figure — pour un compte rendu.
 
 Sorties, dans SORTIE/ :
 
@@ -49,11 +68,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import cfd_plot as cplt
 import matplotlib
 import numpy as np
 from rich.console import Console
 
-# Agg : on dessine dans des fichiers, pas dans des fenêtres.
+# Agg : on dessine dans des fichiers, pas dans des fenêtres. À poser avant
+# d'importer pyplot.
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -62,12 +83,9 @@ from cfd_dispersion import (
     charger_lois_yaml,
     courbes_par_tirage,
     enregistrer,
-    nouvelle_figure,
     resume_dispersion,
-    style,
     superposer_depuis_tableau,
     tirage_neutre,
-    tracer_ligne,
 )
 
 ICI = Path(__file__).resolve().parent
@@ -77,6 +95,13 @@ from modele import appeler_modele_polaire  # noqa: E402
 
 #: Le balayage : treize incidences, de 0 à 12 degrés.
 ALPHA = np.linspace(0.0, 12.0, 13)
+
+#: Les libellés d'axes, montés par cfd-plot à partir du nom, du symbole et de
+#: l'unité — la même mise en forme que sur les figures de `batch_plot`.
+LIBELLE_ALPHA = cplt.format_axis_label(
+    {"literal_name": "incidence", "symbol": "α", "unit": "°"}, "alpha"
+)
+LIBELLE_CN = cplt.format_axis_label({"literal_name": "coefficient normal", "symbol": "$C_N$"}, "CN")
 
 
 def main() -> int:
@@ -109,26 +134,33 @@ def main() -> int:
     console.print(f"  colonnes : {sorted(df_disperse.columns)}")
     console.print(f"[bold]Référence[/] : {len(df_reference)} lignes, une par incidence")
 
+    alpha = df_reference["alpha"].to_numpy()
+
     # --- 2. la figure ---------------------------------------------------
     #
-    # On trace d'abord la référence comme n'importe quelle courbe — c'est votre
-    # figure, avec vos primitives cfd-plot — puis on pose la dispersion dessus.
+    # La figure est montée **avec cfd-plot** : `style_context` pose le profil
+    # (police, marges, palette) sans toucher aux rcParams globaux de personne,
+    # `new_figure` crée les axes au gabarit, `plot_line` trace la référence, et
+    # `set_title` emploie la police de titre du framework.
     #
-    # `serie="CN"` va chercher la couleur de la courbe intitulée ainsi : le
-    # faisceau et le remplissage la reprennent, la moyenne dispersée la reprend
-    # en plus sombre. La dispersion se lit alors comme appartenant à cette
-    # courbe-là, sans légende supplémentaire — ce qui compte dès qu'il y a
-    # trois séries sur la même figure.
-    with style():
-        figure, ax = nouvelle_figure(figsize=(8.0, 5.0))
-        tracer_ligne(
+    # Puis cfd-dispersion pose la dispersion dessus. `serie="CN"` va chercher
+    # la couleur de la courbe intitulée ainsi : le faisceau et le remplissage la
+    # reprennent, la moyenne dispersée la reprend en plus sombre. La dispersion
+    # se lit alors comme appartenant à cette courbe-là, sans légende
+    # supplémentaire — ce qui compte dès qu'il y a trois séries sur la figure.
+    with cplt.style_context("notebook"):
+        figure, ax = cplt.new_figure(figsize=(8.0, 5.0))
+        cplt.plot_line(
             ax,
-            df_reference["alpha"].to_numpy(),
+            alpha,
             df_reference["CN"].to_numpy(),
             label="CN",
             color="C0",
-            marker="",
+            marker="o",
         )
+        ax.set_xlabel(LIBELLE_ALPHA)
+        ax.set_ylabel(LIBELLE_CN)
+        cplt.set_title(ax, "Polaire dispersée — M = 0.80")
 
         artistes = superposer_depuis_tableau(
             ax,
@@ -139,8 +171,11 @@ def main() -> int:
             serie="CN",  # reprendre la couleur de la courbe "CN"
         )
 
-        ax.set_xlabel("alpha [deg]")
-        ax.set_ylabel("CN")
+        # `enregistrer` est `cfd_plot.save_figure` plus un garde-fou : ce
+        # dernier compose son fichier avec `Path.with_suffix`, qui remplace
+        # tout ce qui suit le dernier point — un nom aussi banal que
+        # « polaire_M0.85 » y perdrait son « .85 », et toute une série de
+        # points de vol s'écraserait dans un seul fichier.
         (chemin,) = enregistrer(figure, args.sortie / "polaire_CN", formats=("svg",))
         plt.close(figure)
 
@@ -156,22 +191,25 @@ def main() -> int:
     #   * sans `reference=` : la MOYENNE des tirages tient lieu de nominal.
     #     Correct tant que les lois sont centrées, faux dès qu'elles ne le sont
     #     pas — la bande se centre alors sur elle-même et le biais devient
-    #     invisible ;
+    #     invisible. Le chiffre « écart moyen/nominal » tombe à zéro, et c'est
+    #     ainsi qu'on s'en aperçoit ;
     #   * `remplissage="percentile"` : l'enveloppe à 95 % au lieu du min/max,
     #     qui ne dépend pas des deux tirages les plus extrêmes ;
-    #   * `max_tirages=0` : le faisceau sans les courbes, quand elles noircissent
-    #     la figure.
-    with style():
-        figure, grille = nouvelle_figure(1, 3, figsize=(15.0, 4.2))
+    #   * `max_tirages=0` : le faisceau sans les courbes, quand elles
+    #     noircissent la figure.
+    #
+    # `new_figure(1, 3)` rend une grille d'axes, comme `plt.subplots`.
+    with cplt.style_context("notebook"):
+        figure, grille = cplt.new_figure(1, 3, figsize=(15.0, 4.2))
         variantes: tuple[tuple[str, dict[str, Any]], ...] = (
             ("sans référence", {"reference": None}),
             ("percentile 95 %", {"remplissage": "percentile", "couverture": 0.95}),
             ("sans les tirages", {"max_tirages": 0}),
         )
         for panneau, (nom, options) in zip(np.ravel(grille), variantes):
-            tracer_ligne(
+            cplt.plot_line(
                 panneau,
-                df_reference["alpha"].to_numpy(),
+                alpha,
                 df_reference["CN"].to_numpy(),
                 label="CN",
                 color="C0",
@@ -182,9 +220,10 @@ def main() -> int:
             superposer_depuis_tableau(
                 panneau, df_disperse, x="alpha", y="CN", serie="CN", **reglages
             )
-            panneau.set_title(nom)
-            panneau.set_xlabel("alpha [deg]")
-        np.ravel(grille)[0].set_ylabel("CN")
+            cplt.set_title(panneau, nom)
+            panneau.set_xlabel(LIBELLE_ALPHA)
+        np.ravel(grille)[0].set_ylabel(LIBELLE_CN)
+
         (chemin,) = enregistrer(figure, args.sortie / "polaire_variantes", formats=("svg",))
         plt.close(figure)
     console.print(f"[green]écrit :[/] {chemin}")
@@ -193,12 +232,12 @@ def main() -> int:
     #
     # Chaque coefficient garde sa teinte : `serie=` suffit, et il n'y a rien à
     # accorder à la main.
-    with style():
-        figure, ax = nouvelle_figure(figsize=(8.0, 5.0))
+    with cplt.style_context("notebook"):
+        figure, ax = cplt.new_figure(figsize=(8.0, 5.0))
         for indice, coefficient in enumerate(("CN", "CA", "Cm_alpha")):
-            tracer_ligne(
+            cplt.plot_line(
                 ax,
-                df_reference["alpha"].to_numpy(),
+                alpha,
                 df_reference[coefficient].to_numpy(),
                 label=coefficient,
                 color=f"C{indice}",
@@ -218,8 +257,10 @@ def main() -> int:
                 max_tirages=40,
                 label=coefficient,
             )
-        ax.set_xlabel("alpha [deg]")
+        ax.set_xlabel(LIBELLE_ALPHA)
         ax.set_ylabel("coefficient")
+        cplt.set_title(ax, "Trois coefficients dispersés — M = 0.80")
+
         (chemin,) = enregistrer(figure, args.sortie / "polaire_trois_coeffs", formats=("svg",))
         plt.close(figure)
     console.print(f"[green]écrit :[/] {chemin}")
