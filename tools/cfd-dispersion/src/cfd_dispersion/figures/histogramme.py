@@ -311,7 +311,10 @@ def _description_obtenu(
 ) -> str:
     """La boîte du troisième panneau : obtenu contre prescrit, en clair."""
     moyenne = float(np.mean(valeurs))
-    ecart_type = float(np.std(valeurs, ddof=1)) if valeurs.size > 1 else 0.0
+    # `ddof=0`, comme partout dans le paquet — `core.validation` et
+    # `BandeDispersion.ecart_type` en font autant. Deux boîtes qu'on compare
+    # doivent compter pareil, même si l'écart est de 0.5 % à n = 100.
+    ecart_type = float(np.std(valeurs)) if valeurs.size > 1 else 0.0
 
     # Des lignes courtes : la boîte partage sa largeur avec la légende, et le
     # pourcentage — la seule lecture qui se retient — a sa ligne à lui.
