@@ -358,6 +358,23 @@ not part of the Bash framework's runtime:
       that can move the limits. `batch.py`'s `HookDispersion` plugs all of it into
       `cfd_plot.batch_plot`'s `on_before_save`; it is a module-level class, not a closure, because
       `batch_plot` silently drops to `n_jobs=1` when its hook is not picklable.
+    - **`hook_dispersion_tableau(df_disperse)` is the short way onto `batch_plot`**: the
+      `configuration_dict` carries the *reference* table (the model run once with a neutral draw),
+      the hook carries the *dispersed* one, and nothing is pre-shaped. Per figure it reads the
+      flight point and the quantity off the `BatchPlotContext` (`y_spec["col_name"]`, not the key)
+      and slices the dispersed table **with `batch_plot`'s own filter** — strict equality on the
+      flight-point keys and the fixed sweeps — so the subset provably matches the drawn curve, with
+      no tolerance to tune. The nominal is read back off the axes and handed to
+      `superposer_depuis_tableau` as a two-column DataFrame, so `nominal_depuis_tableau` checks the
+      band sits on the draws' abscissa rather than beside it. Three deliberate refusals: a missing
+      flight-point *column* (every figure would otherwise get every draw), and a flight point absent
+      from the dispersed table — raised on the *first* figure, because two hundred undecorated
+      figures read as a model without dispersion (`absent="ignorer"` for a deliberately partial
+      study); several labelled curves with no `serie=`. Fold sheets are skipped (their curves are
+      relabelled and stacked bundles would not read); compare panels are decorated one call each.
+      `lois=` adds the prescribed band over the obtained cloud, which is the only place a model
+      dispersing more than asked shows up. `01_EXEMPLE/09_batch_plot_dispersion.py` is the runnable
+      version, and README §10.1 the documented one.
     - **`tirer_lot` returns `list[Tirage]`**, not a DataFrame — the shape a model consumes, one
       `DICT_DISP_DRAWN` per element, so the caller just loops. `tableau_des_tirages(lot)` flattens
       it back to the `<coeff>_Biais` / `<coeff>_FE` table (and `tirer_tableau` does both at once),

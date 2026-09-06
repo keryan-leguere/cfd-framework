@@ -622,7 +622,59 @@ flight_point_dict = {
 }
 ```
 
-### Le hook
+### Le hook, la voie courte
+
+Deux tableaux de même forme, et rien à mettre en forme : le nominal dans le
+`configuration_dict`, le dispersé dans le hook.
+
+```python
+from cfd_plot import batch_plot
+from cfd_dispersion import tirage_neutre
+from cfd_dispersion.batch import hook_dispersion_tableau
+
+# le nominal : le modèle tourné UNE fois, tirage neutre (biais 0, FE 1)
+df_reference = mon_modele(lois, tirages=[tirage_neutre(lois)])
+# le dispersé : le même modèle tourné n fois, à plat, tous points de vol
+df_disperse = mon_modele(lois, n=300)
+
+batch_plot(
+    configuration_dict={"CFD": {"name": "CFD", "label": "CFD", "df": df_reference}},
+    y_axis_dict=y_axis_dict,
+    sweep_dict=sweep_dict,
+    flight_point_dict=flight_point_dict,
+    output_base="09_POST_TRAITEMENT/FIGURE",
+    formats=("png",),
+    on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD"),
+)
+```
+
+Pour chaque figure, le hook lit sur le `context` le point de vol et la grandeur,
+découpe `df_disperse` **du même filtre que `batch_plot` a appliqué à la
+référence**, regroupe en une courbe par tirage (`par=("tirage",)`), et superpose.
+
+Les colonnes attendues sont celles du contrat de sortie (§5.4) : les clés de
+point de vol, la colonne de balayage, une colonne par coefficient, et la colonne
+qui identifie le tirage. `coefficients={"CN": "CN_total"}` quand la grandeur de
+`y_axis_dict` ne porte pas dans le tableau dispersé le nom que `batch_plot` lui
+donne.
+
+Quatre options qui reviennent :
+
+```python
+hook_dispersion_tableau(
+    df_disperse,
+    serie="CFD",  # facultatif s'il n'y a qu'une source sur les axes
+    lois=lois,  # ajoute la bande PRESCRITE par-dessus l'obtenue
+    absent="ignorer",  # tolère un point de vol absent du tableau dispersé
+    sigmas=(),  # …et tout ce qu'accepte superposer_dispersion
+)
+```
+
+`01_EXEMPLE/09_batch_plot_dispersion.py` fait le tour : le lot ordinaire, les
+options d'affichage, la bande prescrite, la figure de comparaison, et ce que le
+hook refuse.
+
+### Le hook, depuis les lois
 
 ```python
 from cfd_plot import batch_plot
@@ -669,6 +721,10 @@ disperser trois.
 ---
 
 ## 5.10 Le dictionnaire `tirages` et sa clé
+
+> Cette section ne concerne que `hook_dispersion`. `hook_dispersion_tableau`
+> fait ce découpage lui-même, à partir du tableau à plat : il n'y a alors ni
+> dictionnaire ni clé à construire.
 
 `batch_plot` produit une figure par (grandeur × balayage × point de vol) ; le
 hook, lui, reçoit un seul dictionnaire. Il faut donc une **clé** pour retrouver

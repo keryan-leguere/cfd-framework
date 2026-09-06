@@ -30,7 +30,7 @@ from cfd_dispersion import (
     tirer_tableau,
     valider_lot,
 )
-from cfd_dispersion.batch import hook_dispersion
+from cfd_dispersion.batch import hook_dispersion_tableau
 from cfd_dispersion.figures._base import enregistrer, nouvelle_figure, style, tracer_ligne
 from cfd_dispersion.figures.monte_carlo import figure_comparaison
 from cfd_dispersion.figures.polaire import superposer_dispersion
@@ -442,7 +442,7 @@ def figure_batch_plot() -> None:
     """Une vraie sortie de ``batch_plot`` décorée par le hook.
 
     La figure n'est pas une imitation : elle est produite par ``batch_plot``
-    avec ``on_before_save=hook_dispersion(...)``, puis renommée. Une
+    avec ``on_before_save=hook_dispersion_tableau(...)``, puis renommée. Une
     illustration reconstituée à la main finirait par diverger de ce que la
     greffe produit vraiment.
     """
@@ -451,10 +451,19 @@ def figure_batch_plot() -> None:
     lois = charger_lois(TABLE)
     alpha, CN = _polaire()
 
-    lot = tirer_tableau(lois, 300, graine=7)
-    nuage = np.array([b + f * CN for b, f in zip(lot["CN_Biais"], lot["CN_FE"])])
-
+    # Le tableau de référence : le nominal, une ligne par point du balayage.
     donnees = pd.DataFrame({"alpha": alpha, "Mach": 0.80, "Altitude_m": 8000.0, "CN": CN})
+
+    # Le tableau dispersé : une ligne par (tirage × point du balayage), la
+    # forme même que rend un modèle appelé cent cinquante fois.
+    lot = tirer_tableau(lois, 150, graine=7)
+    disperse = pd.concat(
+        [
+            donnees.assign(tirage=numero, CN=biais + facteur * CN)
+            for numero, (biais, facteur) in enumerate(zip(lot["CN_Biais"], lot["CN_FE"]))
+        ],
+        ignore_index=True,
+    )
     temporaire = FIGURES / "_batch"
     ecrits = batch_plot(
         configuration_dict={
@@ -489,14 +498,7 @@ def figure_batch_plot() -> None:
         style_profile="paper",
         formats=("png",),
         report=False,
-        on_before_save=hook_dispersion(
-            lois,
-            serie="CFD",
-            tirages={("CN", "alpha"): nuage},
-            n=6000,
-            graine=1,
-            max_tirages=150,
-        ),
+        on_before_save=hook_dispersion_tableau(disperse, serie="CFD"),
     )
 
     cible = FIGURES / "11_batch_plot.png"

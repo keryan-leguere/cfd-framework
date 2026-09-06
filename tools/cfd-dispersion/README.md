@@ -12,7 +12,7 @@ produit déjà.
 
 *Cette figure n'est pas une illustration reconstituée : c'est une sortie de
 `cfd_plot.batch_plot` avec une seule ligne en plus,
-`on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages)`.*
+`on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD")`.*
 
 ---
 
@@ -36,6 +36,8 @@ produit déjà.
   - [8. Propager le long d'un balayage](#8-propager-le-long-dun-balayage)
   - [9. La polaire dispersée](#9-la-polaire-dispersée)
   - [10. La greffe sur `batch_plot`](#10-la-greffe-sur-batch_plot)
+    - [10.1 Depuis le tableau du modèle](#101-depuis-le-tableau-du-modèle)
+    - [10.2 Depuis les lois](#102-depuis-les-lois)
   - [11. Corréler deux coefficients](#11-corréler-deux-coefficients)
   - [12. La ligne de commande](#12-la-ligne-de-commande)
   - [13. Les figures, et leur format](#13-les-figures-et-leur-format)
@@ -814,6 +816,66 @@ C'est le livrable. `batch_plot` (paquet [cfd-plot](../cfd-plot)) prend quatre
 dictionnaires et écrit tout un arbre de figures ; la dispersion s'y ajoute par
 son unique point de greffe.
 
+#### 10.1 Depuis le tableau du modèle
+
+La voie la plus courte, et celle qui part de ce qu'on a réellement sous la main
+après une étude : deux tableaux de même forme, le nominal et le dispersé.
+
+```python
+from cfd_plot import batch_plot
+from cfd_dispersion.batch import hook_dispersion_tableau
+
+batch_plot(
+    configuration_dict={"CFD": {"df": df_reference, "color": "C0"}},   # les COURBES
+    y_axis_dict=…, sweep_dict=…, flight_point_dict=…,
+    output_base="09_POST_TRAITEMENT/FIGURE",
+    on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD"),  # la DISPERSION
+)
+```
+
+`df_reference` est le modèle tourné **une fois** avec un tirage neutre
+(`tirage_neutre(lois)` — biais 0, FE 1) : c'est le nominal, donc les courbes.
+`df_disperse` est le même modèle tourné **n fois**, à plat, pour **tous** les
+points de vol : une ligne par (tirage × point du balayage).
+
+Aucune mise en forme préalable. Pour chaque figure, le hook lit sur le
+`context` le point de vol et la grandeur, découpe le tableau dispersé **du même
+filtre que `batch_plot` a appliqué à la référence** — égalité stricte sur les
+clés de point de vol et les balayages figés — regroupe en une courbe par tirage,
+et superpose. Les options d'affichage (`sigmas`, `remplir`, `montrer_tirages`,
+`bordures`, `boite_parametres`…) valent pour tout le lot :
+
+```python
+hook_dispersion_tableau(df_disperse, serie="CFD", montrer_tirages=False, sigmas=())
+```
+
+Trois comportements à connaître :
+
+* **`serie=` est facultatif** quand le `configuration_dict` n'a qu'une source :
+  le hook prend la seule courbe des axes. Avec plusieurs, il faut dire laquelle
+  porte le nominal, sinon il refuse en les nommant ;
+* **un point de vol absent du tableau dispersé lève une erreur**, dès la
+  première figure. Un lot de deux cents figures nues se lit comme un modèle sans
+  dispersion, ce qui est le pire des silences ; `absent="ignorer"` est là pour
+  l'étude volontairement partielle ;
+* **`lois=` ajoute la bande théorique** par-dessus le nuage obtenu — prescrit
+  contre obtenu, sur la même figure. C'est là, et nulle part ailleurs, qu'un
+  modèle qui disperse plus que demandé se voit.
+
+Les **planches repliées** (`fold=`) ne sont pas décorées : elles rassemblent
+plusieurs conditions sur les mêmes axes en renommant leurs courbes, et autant de
+faisceaux superposés ne se liraient pas. Les figures ordinaires et les panneaux
+de `batch_compare_flight_points` le sont — le hook y est appelé une fois par
+panneau, avec le point de vol de ce panneau.
+
+`01_EXEMPLE/09_batch_plot_dispersion.py` en est la version exécutable, avec les
+quatre dictionnaires écrits au complet.
+
+#### 10.2 Depuis les lois
+
+L'autre entrée : la bande **théorique**, calculée depuis les lois, et des
+tirages déjà mis en forme `{(y_key, sweep_key): (n_tirages, npts)}`.
+
 ```python
 from cfd_plot import batch_plot
 from cfd_dispersion.batch import hook_dispersion
@@ -888,7 +950,8 @@ rapport PDF, `on_before_save` étant appelé juste avant l'enregistrement.
 
 Le détail clé par clé des quatre dictionnaires est dans
 [00_DOC/05 §5.9](00_DOC/05_BRANCHER_SON_MODELE.md#59-la-greffe-sur-batch_plot) ;
-`01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable.
+`01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable, et
+`01_EXEMPLE/09_batch_plot_dispersion.py` celle du hook de tableau.
 
 ### 11. Corréler deux coefficients
 
@@ -1028,7 +1091,8 @@ après huit heures de calcul.
 | `superposer_dispersion`, `superposer_depuis_tableau`, `courbes_par_tirage`, `nominal_depuis_tableau` | la polaire dispersée |
 | `bande_depuis_courbes`, `resume_dispersion`, `ResumeDispersion` | la bande obtenue, et ses chiffres |
 | `style`, `nouvelle_figure`, `tracer_ligne`, `enregistrer` | les primitives de tracé |
-| `cfd_dispersion.batch` : `hook_dispersion`, `HookDispersion`, `cle_par_defaut` | la greffe sur `batch_plot` |
+| `cfd_dispersion.batch` : `hook_dispersion_tableau`, `HookDispersionTableau` | la greffe sur `batch_plot`, depuis le tableau du modèle |
+| `cfd_dispersion.batch` : `hook_dispersion`, `HookDispersion`, `cle_par_defaut` | la même, depuis les lois |
 
 ---
 
@@ -1089,7 +1153,7 @@ cfd-dispersion/
 │   ├── report/              theme.py, console.py, _plotting_lib.py
 │   ├── figures/             _base, tirage, par_pdv, densite, histogramme,
 │   │                        monte_carlo, synthese, polaire
-│   ├── batch.py             la greffe sur cfd_plot.batch_plot
+│   ├── batch.py             la greffe sur cfd_plot.batch_plot (tableau ou lois)
 │   ├── cli/main.py
 │   └── 01_EXEMPLE/          livré comme donnée de paquet
 └── tests/                   miroir de src/
@@ -1100,7 +1164,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 707 tests
+pytest                                  # 762 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc

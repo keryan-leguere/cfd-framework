@@ -22,6 +22,7 @@ FICHIERS = (
     "03_polaire_batch_plot.py",
     "04_bande_et_correlation.py",
     "05_modele_croise.py",
+    "09_batch_plot_dispersion.py",
     "RUN_EXEMPLE.sh",
 )
 
@@ -215,6 +216,20 @@ class TestExecution:
             assert (tmp_path / nom).is_file(), nom
         # Les chiffres, sans figure : l'enveloppe et son abscisse.
         assert "enveloppe max" in resultat.stdout
+
+    def test_09_batch_plot_dispersion(self, tmp_path: Path) -> None:
+        """Le lot entier de batch_plot, décoré depuis le tableau dispersé."""
+        pytest.importorskip("cfd_plot", reason="cet exemple exige cfd-plot")
+        resultat = self._lancer("09_batch_plot_dispersion.py", tmp_path, "-n", "8", "--jobs", "1")
+        assert resultat.returncode == 0, resultat.stderr
+        # Trois lots ordinaires de 3 points de vol × 3 coefficients…
+        for lot in ("ORDINAIRE", "SOBRE", "PRESCRIT"):
+            figures = list((tmp_path / lot).rglob("*_vs_alpha.png"))
+            assert len(figures) == 9, (lot, figures)
+        # …et une planche de comparaison par coefficient.
+        assert len(list((tmp_path / "COMPARAISON").rglob("*_vs_alpha.png"))) == 3
+        # Le tableau dispersé amputé d'un point de vol doit être refusé.
+        assert "aucun tirage dans le tableau dispersé" in resultat.stdout
 
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""

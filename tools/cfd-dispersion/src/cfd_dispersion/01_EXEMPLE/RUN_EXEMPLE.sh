@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exécute les huit exemples de cfd-dispersion, dans l'ordre.
+# Exécute les neuf exemples de cfd-dispersion, dans l'ordre.
 #
 #     bash RUN_EXEMPLE.sh              # tout
 #     bash RUN_EXEMPLE.sh -n 200       # plus vite, moins de tirages
@@ -54,6 +54,11 @@ echo "== 7. Histogrammes : tous les tirages d'un point de vol ========="
 echo
 echo "== 8. Polaire dispersée, depuis le tableau ====================="
 "$PY" 08_polaire_depuis_tableau.py "$@"
+
+echo
+echo "== 9. Le lot de batch_plot, dispersé par un hook ================"
+# Nécessite cfd-plot ; écrit quatre lots de neuf figures.
+"$PY" 09_batch_plot_dispersion.py "$@"
 
 echo
 echo "Terminé. Résultats dans $ICI/SORTIE/"

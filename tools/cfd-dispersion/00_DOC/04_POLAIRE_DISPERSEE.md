@@ -232,11 +232,12 @@ qui est pourtant l'affirmation qu'on croit faire.
 ## 4.8 Greffe sur `cfd_plot.batch_plot`
 
 ```python
-from cfd_dispersion.batch import hook_dispersion
+from cfd_dispersion.batch import hook_dispersion_tableau
 
 batch_plot(
+    configuration_dict={"CFD": {"df": df_reference, "color": "C0"}},   # les COURBES
     ...,
-    on_before_save=hook_dispersion(lois, serie="CFD", tirages=tirages, n=6000),
+    on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD"),  # la DISPERSION
 )
 ```
 
@@ -250,6 +251,41 @@ va chercher la série nommée, en lit l'abscisse et l'ordonnée, et disperse
 celles-là. Une divergence entre les données tracées et les données dispersées
 devient impossible.
 
+### Deux hooks, deux entrées
+
+| | part de | donne |
+|:--|:--|:--|
+| `hook_dispersion_tableau(df_disperse)` | le **tableau dispersé** du modèle, à plat, tous points de vol confondus | le faisceau, l'enveloppe et les σ **obtenus** |
+| `hook_dispersion(lois, tirages=…)` | les **lois**, et des tirages déjà mis en forme `{(y_key, sweep_key): (n, npts)}` | la bande **prescrite** |
+
+Le premier est la voie courte, et celle qui part de ce qu'on a réellement sous
+la main après une étude. Le second sert quand la bande théorique est le sujet —
+et `lois=` sur le premier trace les deux, ce qui est la seule façon de voir un
+modèle disperser plus que demandé.
+
+### Le découpage par point de vol
+
+`batch_plot` produit une figure par point de vol et filtre sa source à l'égalité
+stricte, `df[clé] == valeur`, sur les clés de point de vol et les balayages
+figés. `hook_dispersion_tableau` applique **le même filtre, aux mêmes valeurs**,
+lues sur le `context` : le sous-tableau dispersé correspond donc exactement à la
+courbe tracée, sans tolérance à régler ni arrondi à craindre.
+
+Trois conséquences :
+
+* une **colonne de point de vol absente** du tableau dispersé est refusée — sans
+  elle, toutes les figures recevraient tous les tirages. `colonnes_point_de_vol=()`
+  supprime le filtrage, ce qui n'est juste que pour un seul point de vol ;
+* un **point de vol absent** du tableau dispersé lève, dès la première figure.
+  Un lot entier de figures nues se lit comme un modèle sans dispersion, ce qui
+  est le pire des silences ; `absent="ignorer"` est là pour l'étude
+  volontairement partielle ;
+* les **planches repliées** (`fold=`) ne sont pas décorées : elles rassemblent
+  plusieurs conditions sur les mêmes axes sous des libellés recomposés, et
+  autant de faisceaux superposés ne se liraient pas. Les panneaux de
+  `batch_compare_flight_points`, eux, le sont — un appel du hook par panneau,
+  avec le point de vol de ce panneau.
+
 ### Pourquoi une classe et non une fermeture
 
 `batch_plot` sérialise le hook pour l'envoyer à ses processus de travail, et
@@ -258,8 +294,9 @@ il n'y parvient pas. Une fermeture capturant un `DataFrame` coûterait tous les
 cœurs de la machine sans rien dire de plus qu'un avertissement noyé dans la
 sortie.
 
-`HookDispersion` est une classe de niveau module dont tous les attributs sont
-des données simples : elle est sérialisable, et un test le vérifie. Seule
+`HookDispersion` et `HookDispersionTableau` sont des classes de niveau module
+dont tous les attributs sont des données simples — un `DataFrame` en fait
+partie : elles sont sérialisables, et un test le vérifie. Seule
 réserve, une `Convention` maison bâtie sur une `lambda` ne l'est pas — passer
 son nom, ou définir sa relation comme une fonction de niveau module.
 
@@ -270,7 +307,8 @@ superposition — **toutes** les figures du paquet passent par cfd-plot, qui
 définit le format du framework. Seul le calcul (lois, tirage, validation,
 synthèse chiffrée) tourne sans lui.
 
-`hook_dispersion` le vérifie à la construction du hook et lève un `ImportError`
+`hook_dispersion` et `hook_dispersion_tableau` le vérifient à la construction
+du hook et lèvent un `ImportError`
 nommant la commande d'installation, pour que l'échec survienne à la ligne où on
 le construit et non au milieu d'un lot de deux cents figures.
 
@@ -278,5 +316,7 @@ le construit et non au milieu d'un lot de deux cents figures.
 
 Ils sont écrits au complet, clé par clé, dans
 [05 §5.9](05_BRANCHER_SON_MODELE.md#59-la-greffe-sur-batch_plot), avec la
-construction du dictionnaire `tirages` et de sa clé. L'exemple livré
-(`01_EXEMPLE/03_polaire_batch_plot.py`) est le même code, exécutable.
+construction du dictionnaire `tirages` et de sa clé. Deux exemples livrés en
+sont la version exécutable : `01_EXEMPLE/09_batch_plot_dispersion.py` pour le
+hook de tableau — options d'affichage, bande prescrite, figure de comparaison —
+et `01_EXEMPLE/03_polaire_batch_plot.py` pour celui qui part des lois.

@@ -1,11 +1,11 @@
 # Exemple cfd-dispersion — prêt à tourner
 
 Tout est là : une table de lois, un modèle jouet, un exemple de tableau de
-sortie, et huit scripts qui
+sortie, et neuf scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les huit, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les neuf, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -37,6 +37,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `06_tirages_par_pdv.py` | le parcours des points de vol : une figure par (PDV × tirage × coefficient) |
 | `07_histogrammes_par_pdv.py` | le même parcours, mais **tous les tirages d'un coup** : une figure d'histogrammes par (PDV × coefficient) |
 | `08_polaire_depuis_tableau.py` | une **polaire dispersée** posée sur votre figure, à partir du tableau à plat |
+| `09_batch_plot_dispersion.py` | le **lot entier de `batch_plot`** dispersé par un hook : le nominal dans la config, le dispersé dans `on_before_save` |
 
 ---
 
@@ -243,6 +244,46 @@ gagne aucune entrée : celle de la série devient `CN (100 LHS · 17.3 %)`.
   courbe ;
 * dans la sortie terminal, les chiffres sans figure : `resume_dispersion` réduit
   une bande à l'enveloppe maximale, son abscisse, le σ maximal et l'écart moyen.
+
+### `09_batch_plot_dispersion.py` — le lot entier, dispersé
+
+Le script 08 décore **une** figure que vous montez vous-même. Celui-ci décore
+**tout un arbre** de figures que `cfd_plot.batch_plot` produit, sans en monter
+aucune.
+
+Le partage tient en deux lignes, et c'est tout l'intérêt :
+
+```python
+batch_plot(
+    configuration_dict={"CFD": {"df": df_reference}},  # les COURBES (tirage neutre)
+    on_before_save=hook_dispersion_tableau(df_disperse),  # la DISPERSION (n tirages)
+    ...,
+)
+```
+
+Aucune mise en forme préalable : pour chaque figure, le hook lit sur le
+`context` le point de vol et la grandeur, découpe le tableau dispersé du **même
+filtre** que `batch_plot` a appliqué à la référence, regroupe en une courbe par
+tirage, et superpose.
+
+Trois points de vol × trois coefficients = neuf figures par lot, et le script en
+écrit quatre lots pour montrer les variantes. À regarder :
+
+* `ORDINAIRE/…/CN_vs_alpha.png` — le rendu complet : faisceau, enveloppe
+  min/max, ±1/2/3 σ, boîte de paramètres, et la légende qui porte l'effectif et
+  la dispersion sur l'entrée de la série ;
+* `SOBRE/…` — la lecture qui tient dans un dossier : `montrer_tirages=False`,
+  `sigmas=()`, la seule enveloppe et son cerne. `bordures` n'est pas à régler,
+  il suit les σ ;
+* `PRESCRIT/…` — `lois=` ajoute la bande **prescrite** par-dessus le nuage
+  **obtenu**. Un modèle qui disperse plus que demandé se voit là et nulle part
+  ailleurs ;
+* `COMPARAISON/…` — `batch_compare_flight_points` met les trois points de vol
+  côte à côte : le hook est appelé une fois par panneau, chacun reçoit ses
+  propres tirages ;
+* dans la sortie terminal, le refus d'un tableau dispersé **amputé** d'un point
+  de vol — l'alternative étant un lot entier de figures nues, qui se lisent
+  comme un modèle sans dispersion.
 
 ---
 
