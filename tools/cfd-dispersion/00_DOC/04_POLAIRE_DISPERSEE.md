@@ -97,9 +97,9 @@ Tout ce que la superposition dessine est une option :
 |:--|:--|
 | `remplissage=None` | toute l'enveloppe |
 | `remplir=False` | l'intérieur peint ; les deux bords restent |
-| `bordures=False` | les deux bords ; le remplissage reste |
+| `bordures=True/False` | force les deux bords ; par défaut, seulement s'il n'y a pas de ±kσ |
 | `montrer_tirages=False` | le faisceau des courbes individuelles |
-| `montrer_moyenne=False` | la moyenne dispersée |
+| `montrer_moyenne=True` | *ajoute* la moyenne dispersée (coupée par défaut) |
 | `sigmas=()` | les lignes ±kσ |
 | `etiquettes_sigma=False` | leurs étiquettes |
 | `boite_parametres=False` | la boîte de paramètres |
@@ -115,8 +115,18 @@ qui fait la lisibilité :
   bord ne se voit pas sur son propre remplissage ;
 * les **±kσ** sont franchement plus sombres, et discontinus : ils passent *sur*
   le remplissage ;
-* la **moyenne dispersée** est la ligne la plus marquée. C'est celle qu'on
-  cherche.
+* la **moyenne dispersée** n'est plus tracée par défaut : elle se confond avec
+  le nominal dès que les lois sont centrées, et la boîte chiffre l'écart. C'est
+  la courbe **nominale** qu'on cherche, et tout le reste passe sous elle — sous
+  le plan par défaut d'une courbe Matplotlib.
+
+Deux lignes disent la même chose — jusqu'où la dispersion va : les **bords** de
+l'enveloppe et les **±kσ**. Par défaut, les bords ne sortent donc que
+lorsqu'il n'y a pas de σ.
+
+Enfin, la légende ne gagne aucune entrée : c'est celle de la série qui est
+complétée, `CN` devenant `CN (100 LHS · 17.3 %)` — effectif, plan
+d'échantillonnage (`plan=`) et hauteur maximale de l'enveloppe.
 
 Les étiquettes ±kσ sont enfin posées sur un cartouche **translucide** : opaque,
 il percerait un trou blanc dans le faisceau qu'on venait regarder.

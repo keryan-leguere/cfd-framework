@@ -60,7 +60,7 @@ class TestSuperposerDispersion:
         ax, alpha, CN = polaire
         artistes = superposer_dispersion(ax, alpha, CN, loi=lois["Cn_beta"], n=500, graine=1)
         assert artistes["bande"] is not None
-        assert artistes["moyenne"] is not None
+        assert artistes["moyenne"] is None  # coupée par défaut
         assert artistes["objet_bande"] is not None
         assert len(artistes["sigmas"]) == 6  # trois sigmas, deux branches
         assert len(artistes["etiquettes"]) == 6
@@ -116,7 +116,14 @@ class TestRattachementALaSerie:
         """C'est ce qui rattache la dispersion à sa série sans légende."""
         ax, alpha, CN = polaire
         artistes = superposer_dispersion(
-            ax, alpha, CN, loi=lois["Cn_beta"], serie="KW", n=300, graine=1
+            ax,
+            alpha,
+            CN,
+            loi=lois["Cn_beta"],
+            serie="KW",
+            n=300,
+            graine=1,
+            montrer_moyenne=True,
         )
         import matplotlib.colors as mcolors
 
@@ -469,7 +476,7 @@ class TestChiffresDeLaDispersion:
     def test_la_legende_porte_le_chiffre_de_tete(self, axes_traces: Any) -> None:
         ax, x, nominal, courbes = axes_traces
         artistes = superposer_dispersion(ax, x, nominal, tirages=courbes)
-        assert "50.0 % max" in str(artistes["bande"].get_label())
+        assert "50.0 %" in str(artistes["bande"].get_label())
 
     def test_il_se_coupe(self, axes_traces: Any) -> None:
         ax, x, nominal, courbes = axes_traces
@@ -495,21 +502,48 @@ class TestOptionsDAffichage:
         courbes = np.vstack([nominal - 0.05 * x, nominal, nominal + 0.05 * x])
         return x, nominal, courbes
 
-    def test_par_defaut_tout_est_la(self, nuage: Any) -> None:
+    def test_par_defaut(self, nuage: Any) -> None:
+        """Le remplissage, le faisceau, les ±kσ et la boîte — pas plus."""
         x, nominal, courbes = nuage
         _, ax = nouvelle_figure()
         artistes = superposer_dispersion(ax, x, nominal, tirages=courbes)
         assert artistes["bande"] is not None
-        assert len(artistes["bordures"]) == 2
         assert len(artistes["tirages"]) == 3
-        assert artistes["moyenne"] is not None
         assert artistes["sigmas"]
         assert artistes["boite"] is not None
+        # La moyenne dispersée concurrencerait la courbe nominale ; les bords
+        # diraient ce que les ±kσ disent déjà.
+        assert artistes["moyenne"] is None
+        assert artistes["bordures"] == []
+
+    def test_les_bords_sortent_quand_il_n_y_a_pas_de_sigma(self, nuage: Any) -> None:
+        """Les deux disent jusqu'où cela va : l'un ou l'autre, pas les deux."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, sigmas=())
+        assert len(artistes["bordures"]) == 2
+
+    def test_les_bords_se_demandent_explicitement(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, bordures=True)
+        assert len(artistes["bordures"]) == 2
+
+    def test_tout_passe_sous_les_courbes_de_l_appelant(self, nuage: Any) -> None:
+        """La courbe nominale reste au premier plan : c'est elle qu'on lit."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        tracer_ligne(ax, x, nominal, label="CN", color="C0")
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, serie="CN")
+        dessous = [*artistes["tirages"], *artistes["sigmas"], artistes["bande"]]
+        assert all(artiste.get_zorder() < 2.0 for artiste in dessous if artiste is not None)
 
     def test_sans_remplir_il_reste_les_bords(self, nuage: Any) -> None:
         x, nominal, courbes = nuage
         _, ax = nouvelle_figure()
-        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, remplir=False)
+        artistes = superposer_dispersion(
+            ax, x, nominal, tirages=courbes, remplir=False, bordures=True
+        )
         assert artistes["bande"] is None
         assert len(artistes["bordures"]) == 2
 
@@ -524,7 +558,9 @@ class TestOptionsDAffichage:
         """Un bord de la teinte exacte du remplissage ne se verrait pas."""
         x, nominal, courbes = nuage
         _, ax = nouvelle_figure()
-        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C0")
+        artistes = superposer_dispersion(
+            ax, x, nominal, tirages=courbes, couleur="C0", bordures=True
+        )
         bord = artistes["bordures"][0].get_color()
         assert bord == pytest.approx(assombrir("C0", 0.15), abs=1e-6)
 
@@ -564,7 +600,6 @@ class TestOptionsDAffichage:
             nominal,
             tirages=courbes,
             montrer_tirages=False,
-            montrer_moyenne=False,
             bordures=False,
             sigmas=(),
             boite_parametres=False,
@@ -586,3 +621,54 @@ class TestOptionsDAffichage:
         _, ax = nouvelle_figure()
         artistes = superposer_depuis_tableau(ax, pd.DataFrame(lignes), x="alpha", y="CN")
         assert len(artistes["tirages"]) == 300
+
+
+class TestAnnotationDeLegende:
+    """La dispersion complète l'entrée de sa série ; elle n'en ajoute pas."""
+
+    @pytest.fixture
+    def axes_avec_serie(self) -> tuple[Axes, np.ndarray, np.ndarray, np.ndarray]:
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        courbes = np.vstack([nominal - 0.05 * x, nominal, nominal + 0.05 * x])
+        _, ax = nouvelle_figure()
+        tracer_ligne(ax, x, nominal, label="CN", color="C0")
+        return ax, x, nominal, courbes
+
+    def _libelles(self, ax: Axes) -> list[str]:
+        legende_ = ax.get_legend()
+        assert legende_ is not None
+        return [str(texte.get_text()) for texte in legende_.get_texts()]
+
+    def test_une_seule_entree_de_legende(self, axes_avec_serie: Any) -> None:
+        """Trois lignes de plus ne répéteraient qu'une couleur déjà lue."""
+        ax, x, nominal, courbes = axes_avec_serie
+        superposer_dispersion(ax, x, nominal, tirages=courbes, serie="CN")
+        assert len(self._libelles(ax)) == 1
+
+    def test_elle_porte_l_effectif_et_le_chiffre(self, axes_avec_serie: Any) -> None:
+        ax, x, nominal, courbes = axes_avec_serie
+        superposer_dispersion(ax, x, nominal, tirages=courbes, serie="CN")
+        (libelle,) = self._libelles(ax)
+        assert libelle.startswith("CN (3 tirages")
+        assert "50.0 %" in libelle
+
+    def test_le_plan_se_nomme(self, axes_avec_serie: Any) -> None:
+        """Un tableau de sortie ne dit pas quel plan l'a produit."""
+        ax, x, nominal, courbes = axes_avec_serie
+        superposer_dispersion(ax, x, nominal, tirages=courbes, serie="CN", plan="LHS")
+        assert "CN (3 LHS" in self._libelles(ax)[0]
+
+    def test_les_chiffres_se_coupent(self, axes_avec_serie: Any) -> None:
+        ax, x, nominal, courbes = axes_avec_serie
+        superposer_dispersion(ax, x, nominal, tirages=courbes, serie="CN", chiffres_legende=False)
+        assert self._libelles(ax) == ["CN (3 tirages)"]
+
+    def test_sans_serie_le_remplissage_garde_son_etiquette(self, nuage: Any = None) -> None:
+        """Autonome, il n'y a rien à quoi accrocher l'annotation."""
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        courbes = np.vstack([nominal - 0.05 * x, nominal, nominal + 0.05 * x])
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C3")
+        assert "min/max" in str(artistes["bande"].get_label())

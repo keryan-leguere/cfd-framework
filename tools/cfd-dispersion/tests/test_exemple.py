@@ -204,7 +204,12 @@ class TestExecution:
         """La dispersion d'une polaire, posée sur une figure depuis le tableau."""
         resultat = self._lancer("08_polaire_depuis_tableau.py", tmp_path, "-n", "30")
         assert resultat.returncode == 0, resultat.stderr
-        for nom in ("polaire_CN.svg", "polaire_options.svg", "polaire_trois_coeffs.svg"):
+        for nom in (
+            "polaire_CN.svg",
+            "polaire_options.svg",
+            "polaire_enveloppes.svg",
+            "polaire_trois_coeffs.svg",
+        ):
             assert (tmp_path / nom).is_file(), nom
         # Les chiffres, sans figure : l'enveloppe et son abscisse.
         assert "enveloppe max" in resultat.stdout

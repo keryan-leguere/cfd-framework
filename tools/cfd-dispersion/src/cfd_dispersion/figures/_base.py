@@ -39,6 +39,7 @@ __all__ = [
     "enregistrer",
     "etiqueter_ligne",
     "legende",
+    "ligne_de_serie",
     "lignes_reference",
     "nouvelle_figure",
     "remplir_entre",
@@ -271,11 +272,12 @@ def eclaircir(couleur: Any, facteur: float = 0.35) -> tuple[float, float, float]
     )
 
 
-def couleur_de_serie(ax: Axes, label: str) -> Any:
-    """Retrouve la couleur d'une courbe déjà tracée, par son libellé.
+def ligne_de_serie(ax: Axes, label: str) -> Any:
+    """Retrouve une courbe déjà tracée, par son libellé.
 
-    C'est ainsi qu'une superposition de dispersion se rattache visuellement à
-    la série qu'elle décrit, sans que l'appelant ait à répéter la couleur.
+    C'est ainsi qu'une superposition de dispersion se rattache à la série
+    qu'elle décrit : elle en reprend la couleur, et complète son entrée de
+    légende plutôt que d'en ajouter une.
 
     Raises
     ------
@@ -286,13 +288,18 @@ def couleur_de_serie(ax: Axes, label: str) -> Any:
     for ligne in ax.get_lines():
         courant = ligne.get_label()
         if courant == label:
-            return ligne.get_color()
+            return ligne
         if not str(courant).startswith("_"):
             disponibles.append(str(courant))
     raise ValueError(
         f"aucune courbe intitulée {label!r} sur ces axes ; "
         f"libellés présents : {disponibles or 'aucun'}"
     )
+
+
+def couleur_de_serie(ax: Axes, label: str) -> Any:
+    """La couleur d'une courbe déjà tracée, par son libellé."""
+    return ligne_de_serie(ax, label).get_color()
 
 
 # ---------------------------------------------------------------------------

@@ -736,20 +736,32 @@ Chaque élément se coupe séparément :
 |:--|:--|
 | `remplissage=None` | toute l'enveloppe |
 | `remplir=False` | l'intérieur peint ; les deux bords restent |
-| `bordures=False` | les deux bords ; le remplissage reste |
+| `bordures=True/False` | force les deux bords ; par défaut ils ne sortent que s'il n'y a pas de ±kσ |
 | `montrer_tirages=False` | le faisceau des courbes individuelles |
-| `montrer_moyenne=False` | la moyenne dispersée |
+| `montrer_moyenne=True` | *ajoute* la moyenne dispersée (coupée par défaut) |
 | `sigmas=()` | les lignes ±kσ |
 | `etiquettes_sigma=False` | leurs étiquettes, en gardant les lignes |
 | `boite_parametres=False` | la boîte qui chiffre la dispersion |
 | `chiffres_legende=False` | le pourcentage accolé à l'étiquette du remplissage |
 
+**La courbe nominale reste au premier plan.** Tout ce que la superposition
+dessine passe sous le plan par défaut d'une courbe Matplotlib : c'est la courbe
+qu'on lit, la dispersion est ce qu'il y a autour. Pour la même raison la
+moyenne dispersée n'est plus tracée par défaut — elle se confond avec le
+nominal dès que les lois sont centrées, et la boîte chiffre l'écart de toute
+façon.
+
+**La légende ne gagne aucune entrée.** C'est celle de la série qui est
+complétée : `CN` devient **`CN (100 LHS · 17.3 %)`** — l'effectif, le plan
+d'échantillonnage (`plan="LHS"`, qu'un tableau de sortie ne dit pas) et la
+hauteur maximale de l'enveloppe. Trois lignes de plus n'auraient répété qu'une
+couleur déjà lue.
+
 Les teintes ne sont pas décoratives : le faisceau est **éclairci** (il porte la
 texture), les bords de l'enveloppe légèrement assombris (sans quoi, à teinte
-égale, on ne les verrait pas), les ±kσ franchement plus sombres, et la moyenne
-dispersée est la ligne la plus marquée — c'est celle qu'on cherche. Les
-étiquettes ±kσ sont posées sur un cartouche **translucide** : opaque, il
-percerait un trou blanc dans le faisceau qu'on venait regarder.
+égale, on ne les verrait pas), les ±kσ plus sombres et fins. Leurs étiquettes
+sont posées sur un cartouche **translucide** : opaque, il percerait un trou
+blanc dans le faisceau qu'on venait regarder.
 
 Cinq choses s'y superposent, et chacune s'enlève :
 

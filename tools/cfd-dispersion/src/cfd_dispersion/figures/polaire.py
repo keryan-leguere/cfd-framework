@@ -46,10 +46,10 @@ from ..core.lois import LoiCoefficient
 from ._base import (
     assombrir,
     boite_texte,
-    couleur_de_serie,
     eclaircir,
     etiqueter_ligne,
     legende,
+    ligne_de_serie,
     remplir_entre,
     tracer_ligne,
 )
@@ -84,14 +84,19 @@ _ASSOMBRISSEMENT_BORDS = 0.15
 _ASSOMBRISSEMENT_SIGMAS = 0.40
 
 #: Les plans, du fond vers la surface. Ils sont écrits ici plutôt que semés
-#: dans le code parce que c'est leur ORDRE qui fait la lisibilité : le
-#: remplissage sous les courbes qu'il enveloppe, les bords au-dessus des deux,
-#: les ±kσ par-dessus, et la moyenne au sommet — c'est la ligne qu'on cherche.
-_PLAN_REMPLISSAGE = 2.0
-_PLAN_TIRAGES = 2.5
-_PLAN_BORDURES = 3.0
-_PLAN_SIGMAS = 3.5
-_PLAN_MOYENNE = 4.0
+#: dans le code parce que c'est leur ORDRE qui fait la lisibilité.
+#:
+#: Tout passe **sous 2.0**, le plan par défaut d'une courbe Matplotlib : la
+#: courbe nominale, tracée par l'appelant, reste ainsi au premier plan. C'est
+#: elle qu'on lit ; la dispersion est ce qu'il y a autour.
+_PLAN_REMPLISSAGE = 0.6
+_PLAN_TIRAGES = 0.9
+_PLAN_BORDURES = 1.2
+_PLAN_SIGMAS = 1.5
+_PLAN_MOYENNE = 1.8
+
+#: Les étiquettes ±kσ, elles, passent au-dessus de tout : ce sont de petits
+#: cartouches translucides, et elles ne masquent rien.
 _PLAN_ETIQUETTES = 6.0
 
 #: Positions par défaut des étiquettes ±kσ le long de la courbe.
@@ -322,7 +327,7 @@ def superposer_dispersion(
     couleur: Any = None,
     remplissage: str | None = "minmax",
     remplir: bool = True,
-    bordures: bool = True,
+    bordures: bool | None = None,
     montrer_tirages: bool = True,
     sigmas: Sequence[float] = (1, 2, 3),
     etiquettes_sigma: bool = True,
@@ -332,8 +337,9 @@ def superposer_dispersion(
     position_boite: str = "lower right",
     max_tirages: int | None = 200,
     alpha_tirages: float = ALPHA_TIRAGES,
-    montrer_moyenne: bool = True,
+    montrer_moyenne: bool = False,
     label: str | None = None,
+    plan: str | None = None,
     n: int = 20_000,
     graine: int | None = None,
     methode: str = "mc",
@@ -368,6 +374,9 @@ def superposer_dispersion(
     bordures:
         Tracer les deux bords de l'enveloppe, dans la teinte de la série
         légèrement assombrie. Sans eux, un faisceau pâle se perd sur le fond.
+        **Par défaut, seulement s'il n'y a pas de ±kσ** : les deux disent la
+        même chose — jusqu'où cela va — et les tracer ensemble double les
+        lignes sans rien ajouter.
     montrer_tirages:
         Tracer les courbes individuelles au fond.
     sigmas:
@@ -381,14 +390,23 @@ def superposer_dispersion(
         l'enveloppe : sa plus grande hauteur, où elle est atteinte, le σ
         maximal et l'écart moyenne/nominal.
     chiffres_legende:
-        Ajouter à l'étiquette du remplissage sa hauteur maximale en pourcentage
-        du nominal — le chiffre qu'on cherche d'abord.
+        Ajouter à l'annotation de légende la hauteur maximale de l'enveloppe,
+        en pourcentage du nominal — le chiffre qu'on cherche d'abord.
+    plan:
+        Le plan d'échantillonnage, tel qu'il doit apparaître en légende :
+        ``"MC"``, ``"LHS"``, ``"Sobol"``… Un tableau de sortie ne dit pas
+        lequel l'a produit, et rien ne l'invente à sa place.
     max_tirages:
         Plafond de courbes individuelles dessinées. Au-delà, elles sont
         échantillonnées : mille courbes opaques ne montrent rien de plus que
         deux cents, et coûtent un fichier vectoriel dix fois plus lourd.
     montrer_moyenne:
-        Tracer la moyenne dispersée, dans la teinte assombrie.
+        Tracer la moyenne dispersée, dans la teinte assombrie. **Faux par
+        défaut** : la courbe nominale est déjà là, tracée par l'appelant, et
+        une seconde ligne au milieu du faisceau la concurrence pour rien — les
+        deux se confondent dès que les lois sont centrées, qui est le cas
+        courant. La demander reste utile quand on soupçonne un biais, et la
+        boîte le chiffre de toute façon.
     n, graine, methode, correle, couverture, k:
         Passés à :func:`cfd_dispersion.core.bande.bande_depuis_loi`.
 
@@ -420,6 +438,12 @@ def superposer_dispersion(
             "les deux doivent correspondre"
         )
 
+    # Les bords et les ±kσ disent tous deux jusqu'où la dispersion va : les
+    # superposer double les lignes sans rien apprendre. Par défaut, les bords
+    # ne sortent donc que lorsqu'il n'y a pas de σ.
+    if bordures is None:
+        bordures = not len(sigmas)
+
     teinte = _teinte(ax, serie=serie, couleur=couleur)
     teinte_sombre = assombrir(teinte, _ASSOMBRISSEMENT)
     prefixe = f"{label} " if label else ""
@@ -427,6 +451,7 @@ def superposer_dispersion(
     artistes: dict[str, Any] = {
         "bande": None,
         "bordures": [],
+        "serie": None,
         "moyenne": None,
         "tirages": [],
         "sigmas": [],
@@ -469,6 +494,7 @@ def superposer_dispersion(
             eclaircir(teinte, _ECLAIRCISSEMENT_TIRAGES),
             max_tirages,
             alpha_tirages,
+            etiquette=None if serie is not None else f"{prefixe}{nuage.shape[0]} tirages",
         )
 
     # --- 2. le remplissage ---------------------------------------------
@@ -482,19 +508,20 @@ def superposer_dispersion(
     # (`resume_dispersion`), et il ne peut pas la refaire à moins de refaire le
     # regroupement.
     artistes["objet_bande"] = reference
+    etendue = None if reference is None else resume_dispersion(reference)
+    annotation = _annotation(bande, nuage, plan, etendue, chiffres_legende)
+
     if remplissage is not None and reference is not None:
-        # L'étiquette porte le chiffre de tête : une légende qui dit « min/max »
-        # ne dit pas de combien, et c'est la première question.
-        etendue = resume_dispersion(reference)
-        # La hauteur pleine, comme dans la boîte : deux chiffres pour la même
-        # chose, l'un moitié de l'autre, se lisent comme une contradiction.
-        chiffre = (
-            ""
-            if not chiffres_legende or etendue.enveloppe_relative is None
-            else f" ({etendue.enveloppe_relative:.1f} % max)"
-        )
-        libelle = f"{prefixe}{reference.label}{chiffre}"
         teinte_bords = assombrir(teinte, _ASSOMBRISSEMENT_BORDS)
+        # Rattachée à une série, la dispersion complète l'entrée de CELLE-CI :
+        # une figure à trois coefficients n'a pas besoin de neuf lignes de
+        # légende qui répètent trois couleurs. Autonome, le remplissage garde
+        # son étiquette — il n'y a rien à quoi l'accrocher.
+        libelle = (
+            "_nolegend_"
+            if serie is not None
+            else f"{prefixe}{reference.label}" + (f" ({annotation})" if annotation else "")
+        )
 
         if remplir:
             resultat = remplir_entre(
@@ -509,8 +536,6 @@ def superposer_dispersion(
                 label=libelle,
                 zorder=_PLAN_REMPLISSAGE,
                 lignes=bordures,
-                # `linewidth` et non `lw` : cfd-plot pose déjà un `linewidth`
-                # par défaut, et Matplotlib refuse les deux alias à la fois.
                 options_lignes={
                     "color": teinte_bords,
                     "linewidth": 1.0,
@@ -547,7 +572,7 @@ def superposer_dispersion(
             color=teinte_sombre,
             lw=1.6,
             marker="",
-            label=f"{prefixe}moyenne dispersée",
+            label="_nolegend_" if serie is not None else f"{prefixe}moyenne dispersée",
             zorder=_PLAN_MOYENNE,
         )
 
@@ -565,6 +590,14 @@ def superposer_dispersion(
             loc=position_boite,
             fontsize=6.5,
         )
+
+    # L'entrée de la série reçoit l'annotation : « CN » devient
+    # « CN (100 LHS · 16.7 %) ». Elle est posée avant la légende, qui lit les
+    # libellés au moment où on la construit.
+    if serie is not None and annotation:
+        ligne = ligne_de_serie(ax, serie)
+        ligne.set_label(f"{serie} ({annotation})")
+        artistes["serie"] = ligne
 
     legende(ax, fontsize=7)
 
@@ -584,10 +617,40 @@ def _teinte(ax: Axes, *, serie: str | None, couleur: Any) -> Any:
     if serie is not None and couleur is not None:
         raise ValueError("passer serie= ou couleur=, pas les deux")
     if serie is not None:
-        return couleur_de_serie(ax, serie)
+        return ligne_de_serie(ax, serie).get_color()
     if couleur is not None:
         return couleur
     return "C0"
+
+
+def _annotation(
+    bande: BandeDispersion | None,
+    nuage: np.ndarray | None,
+    plan: str | None,
+    etendue: Any,
+    chiffres: bool,
+) -> str:
+    """Ce qui complète l'entrée de légende de la série : « (100 MC · 16.7 %) ».
+
+    L'effectif, le plan d'échantillonnage quand on le connaît, et la hauteur
+    maximale de l'enveloppe. Trois choses dans une parenthèse, plutôt que trois
+    lignes de légende qui répètent la couleur déjà lue.
+    """
+    if nuage is not None:
+        effectif = int(nuage.shape[0])
+        # Un tableau de sortie ne dit pas quel plan l'a produit : sans `plan=`,
+        # on ne l'invente pas.
+        methode = plan or "tirages"
+    elif bande is not None:
+        effectif = bande.n_tirages
+        methode = plan or "MC"
+    else:  # pragma: no cover - il faut loi= ou tirages=
+        return ""
+
+    morceaux = [f"{effectif} {methode}"]
+    if chiffres and etendue is not None and etendue.enveloppe_relative is not None:
+        morceaux.append(f"{etendue.enveloppe_relative:.1f} %")
+    return " · ".join(morceaux)
 
 
 def _tracer_tirages(
@@ -597,6 +660,7 @@ def _tracer_tirages(
     teinte: Any,
     max_tirages: int | None,
     alpha: float,
+    etiquette: str | None = None,
 ) -> list[Any]:
     """Les courbes individuelles, en faisceau translucide au fond."""
     total = nuage.shape[0]
@@ -617,7 +681,7 @@ def _tracer_tirages(
             lw=0.6,
             alpha=alpha,
             zorder=_PLAN_TIRAGES,
-            label=f"{total} tirages" if i == 0 else "_nolegend_",
+            label=etiquette if (i == 0 and etiquette) else "_nolegend_",
         )
         lignes.append(ligne)
     return lignes
@@ -664,7 +728,7 @@ def _tracer_sigmas(
                 courbe,
                 color=teinte,
                 ls=style_,
-                lw=0.9,
+                lw=0.7,
                 alpha=0.9,
                 zorder=_PLAN_SIGMAS,
                 label="_nolegend_",

@@ -176,13 +176,11 @@ class TestAppelDirect:
         hook_dispersion(lois, serie="KW", n=300, graine=1)(
             figure, ax, _Contexte("Cm_alpha", "alpha")
         )
-        moyenne = [
-            ligne
-            for ligne in ax.get_lines()
-            if ligne not in artistes_avant and "moyenne" in str(ligne.get_label())
-        ]
-        assert moyenne
-        assert moyenne[0].get_xdata() == pytest.approx(artistes_avant[0].get_xdata())
+        # Les lignes ajoutées — les ±kσ — sont posées sur l'abscisse de la
+        # courbe tracée : c'est d'elle que le hook a lu le nominal.
+        ajoutees = [ligne for ligne in ax.get_lines() if ligne not in artistes_avant]
+        assert ajoutees
+        assert ajoutees[0].get_xdata() == pytest.approx(artistes_avant[0].get_xdata())
 
     def test_les_tirages_sont_retrouves_par_la_cle(self, lois: JeuDeLois) -> None:
         figure, ax = self._axes()

@@ -140,6 +140,7 @@ def appeler_modele_polaire(
     convention_: str = "lineaire",
     graine: int = 7,
     tirages: Sequence[Tirage] | None = None,
+    riche: bool = False,
 ) -> pd.DataFrame:
     """Appelle le modèle *n* fois sur un balayage en incidence.
 
@@ -150,6 +151,11 @@ def appeler_modele_polaire(
     qu'on obtient la **polaire de référence** : un seul tirage, neutre.
 
         appeler_modele_polaire(lois, alpha, tirages=[tirage_neutre(lois)])
+
+    *riche* emploie les formes de :func:`_forme_riche` — décrochage, polaire de
+    traînée, cassure de Cm_alpha — au lieu des paraboles douces. C'est le jeu
+    de données sur lequel on juge un rendu : une enveloppe qui garde la même
+    largeur d'un bout à l'autre ne met rien à l'épreuve.
     """
     relation = convention(convention_)
     nominaux = coefficients_nominaux(mach)
@@ -163,7 +169,8 @@ def appeler_modele_polaire(
         for coefficient, valeur in nominaux.items():
             # Le coefficient nominal varie le long du balayage ; le tirage,
             # lui, est partagé sur toute la courbe — le cas corrélé.
-            courbe = valeur * _forme(coefficient, alpha)
+            forme = _forme_riche if riche else _forme
+            courbe = valeur * forme(coefficient, alpha)
             biais = tirage[coefficient]["Biais"]
             fe = tirage[coefficient]["FE"]
             colonnes[coefficient] = relation(courbe, biais, fe)
@@ -185,7 +192,36 @@ def _forme(coefficient: str, alpha: np.ndarray) -> np.ndarray:
     return 1.0 + 0.02 * alpha
 
 
-def polaire_nominale(alpha: np.ndarray, *, mach: float = 0.80) -> dict[str, np.ndarray]:
+def _forme_riche(coefficient: str, alpha: np.ndarray) -> np.ndarray:
+    """La même chose, mais avec ce qui rend une polaire intéressante à tracer.
+
+    Trois accidents, et ils ne sont pas décoratifs : ils font varier la largeur
+    de l'enveloppe le long du balayage, ce qu'une polaire droite ne montre
+    jamais.
+
+    * **CN** part linéaire puis **s'aplatit** — un décrochage. La dispersion
+      relative, elle, ne s'aplatit pas : l'enveloppe s'ouvre là où la pente
+      tombe, et c'est exactement ce qu'un dossier doit voir.
+    * **CA** suit une **polaire de traînée** : un creux vers zéro, puis une
+      croissance en CN². Il change d'un facteur trois sur le balayage.
+    * **Cm_alpha** **casse** après le décrochage : la marge statique s'effondre.
+
+    Le balayage va aussi dans les incidences négatives, où CN passe par zéro —
+    de quoi vérifier que rien ne divise par lui.
+    """
+    if coefficient == "CN":
+        # a·tanh(b·α) : pente 0.11 à l'origine (a·b), saturation vers 1.45.
+        return 1.45 * np.tanh(0.0759 * alpha)
+    if coefficient == "CA":
+        portance = 1.45 * np.tanh(0.0759 * alpha)
+        return 1.0 + 0.9 * portance**2
+    # Marge statique constante, puis effondrement au-delà de 14 degrés.
+    return 1.0 + 0.02 * alpha - 0.06 * np.maximum(alpha - 14.0, 0.0)
+
+
+def polaire_nominale(
+    alpha: np.ndarray, *, mach: float = 0.80, riche: bool = False
+) -> dict[str, np.ndarray]:
     """Les polaires non dispersées, pour servir de référence sur les figures."""
     nominaux = coefficients_nominaux(mach)
     return {

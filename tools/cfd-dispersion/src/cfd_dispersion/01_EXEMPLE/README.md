@@ -215,17 +215,22 @@ déjà :
 superposer_depuis_tableau(ax, df_disperse, x="alpha", y="CN", reference=df_reference, serie="CN")
 ```
 
-et elle ajoute les cent courbes en teinte claire, le faisceau min/max rempli, la
-moyenne dispersée plus sombre, les lignes ±1/2/3 σ étiquetées sur la courbe, la
-boîte qui chiffre l'enveloppe, et le chiffre de tête en légende.
+et elle ajoute les cent courbes en teinte claire, le faisceau min/max rempli,
+les lignes ±1/2/3 σ étiquetées sur la courbe, et la boîte qui chiffre
+l'enveloppe. La **courbe nominale reste au premier plan**, et la légende ne
+gagne aucune entrée : celle de la série devient `CN (100 LHS · 17.3 %)`.
 
 À regarder :
 
-* `polaire_CN.svg` — la figure complète ;
-* `polaire_variantes.svg` — trois réglages côte à côte. Celui de gauche est
-  tracé **sans référence** : la moyenne des tirages tient lieu de nominal, et
-  l'écart moyenne/nominal tombe à zéro — le biais devient invisible, ce qui est
+* `polaire_CN.svg` — la figure complète, sur un balayage qui va de −4 à 20°,
+  décrochage compris : CN s'aplatit, CA suit sa polaire de traînée, Cm_alpha
+  casse à 14°. Une enveloppe se juge là où la courbe se casse ;
+* `polaire_options.svg` — **le catalogue** : une option par panneau, toujours la
+  même figure avec un seul réglage changé. Le dernier est tracé **sans
+  référence** : la moyenne des tirages tient lieu de nominal, et l'écart
+  moyenne/nominal tombe à zéro — le biais devient invisible, ce qui est
   exactement le piège ;
+* `polaire_enveloppes.svg` — min/max, percentile 95 %, ±2σ ;
 * dans la sortie terminal, les chiffres sans figure : `resume_dispersion` réduit
   une bande à l'enveloppe maximale, son abscisse, le σ maximal et l'écart moyen.
 
