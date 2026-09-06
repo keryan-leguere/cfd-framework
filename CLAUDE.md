@@ -403,6 +403,13 @@ not part of the Bash framework's runtime:
       `modele`, `ecart`, `accord`). It is the only check in the package aimed at the *model* rather
       than the draw, and it catches the three silent ones: a different convention on either side,
       a reference the model never saw, dispersion applied somewhere else than assumed.
+    - **The law table and the output columns need not name the same coefficients**, and the two
+      directions differ. A `CX0` the model *consumes* has laws but no output column: it keeps its
+      two component panels — those laws depend on no nominal — and its third says what is missing.
+      A `CA` the model *returns* without laws is not plotted at all (no draw, no draw figure), and
+      asking for it in `coefficients=` is refused by name. An **ambiguous reference** — two `CN`
+      values for what `points_de_vol` calls one flight point — also raises, naming the columns that
+      would disambiguate, rather than picking one or silently dropping the nominal.
     - **The built-in `CONVENTIONS` are module-level functions, not lambdas**, so a `Tirage` — and
       anything carrying one — survives `pickle`. Before that, `pickle.dumps(tirer_lot(...))` failed,
       which quietly cost a `multiprocessing.Pool` the draws it was being handed and dropped

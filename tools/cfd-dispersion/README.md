@@ -500,6 +500,7 @@ figures sont fermées au fur et à mesure ; un parcours en écrit des centaines.
 | **15 tirages par point de vol** | quatre cents figures par coefficient, personne ne les regarde. `max_tirages=None` les prend toutes |
 | **la valeur nominale vient de `reference=`** | la sortie du **même modèle**, tourné une fois avec un tirage neutre (`tirage_neutre`) : ses coefficients *sont* les nominaux. À défaut, `nominaux=` ou une colonne `<coeff>_nominal`. Sans elle, le troisième panneau le dit |
 | **la colonne `<coeff>` est la sortie dispersée** | pas un nominal. Le paquet recalcule `convention(nominal, biais, FE)` et confronte les deux ; le verdict est sur la figure et dans l'inventaire (`calcul`, `modele`, `ecart`, `accord`) |
+| **lois et sorties peuvent différer** | la table de lois disperse ce que le modèle *consomme*, le tableau rend ce qu'il *produit*. Un `CX0` interne garde ses deux premiers panneaux et un troisième qui dit ce qui lui manque ; un `CA` rendu sans loi n'est pas tracé, et le demander est refusé en le nommant |
 | **une figure coûte 0.5 s** | la police du gabarit est vectorisée glyphe par glyphe. 240 fichiers : une minute sur tous les cœurs, quatre en séquence |
 
 **Pourquoi pas `batch_plot` directement ?** Son point de greffe
@@ -964,7 +965,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 654 tests
+pytest                                  # 660 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc

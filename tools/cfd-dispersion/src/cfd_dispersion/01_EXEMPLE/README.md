@@ -173,7 +173,12 @@ contrôle qui porte sur le modèle lui-même.
   verdict (`calcul`, `modele`, `ecart`, `accord`) ;
 * `tirage_desaccord.svg` — **un désaccord volontaire de 1 %** : la boîte de
   paramètres passe au rouge et chiffre l'écart. C'est ce qu'on verrait si le
-  modèle et le paquet n'appliquaient pas la même convention.
+  modèle et le paquet n'appliquaient pas la même convention ;
+* `ASYMETRIQUE/…` — le cas où **lois et sorties ne parlent pas des mêmes
+  coefficients** : les lois dispersent un `CX0` interne au modèle, le tableau
+  rend un `CA`. `CX0` garde ses deux premiers panneaux et un troisième qui dit
+  ce qui lui manque ; `CA` n'est pas tracé, faute de tirage, et le demander est
+  refusé en le nommant.
 
 ---
 

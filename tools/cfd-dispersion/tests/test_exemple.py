@@ -172,6 +172,14 @@ class TestExecution:
         # Et le désaccord volontaire, lui, doit être vu.
         assert (tmp_path / "tirage_desaccord.svg").is_file()
         assert "modèle ≠ calcul" in resultat.stdout
+        # Section 6 : des lois sur CX0, une sortie sur CA. CX0 garde ses deux
+        # premiers panneaux, CA n'est pas tracé, et le demander est refusé.
+        # Un seul point de vol demandé : aucune clé ne varie, donc aucun
+        # dossier de point de vol — la règle de cfd-plot.
+        asymetrique = tmp_path / "ASYMETRIQUE" / "tirage_000"
+        assert (asymetrique / "CX0.svg").is_file()
+        assert not (asymetrique / "CA.svg").exists()
+        assert "absent(s) du jeu de lois" in resultat.stdout
 
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""

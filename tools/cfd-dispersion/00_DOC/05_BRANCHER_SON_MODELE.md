@@ -408,6 +408,18 @@ Trois points d'attention :
   modèle, ou un modèle qui n'applique pas la dispersion là où on croit. Le
   verdict est écrit sur la figure (en rouge s'il y a désaccord) et dans
   l'inventaire, colonnes `calcul`, `modele`, `ecart`, `accord`.
+* **Lois et sorties ne parlent pas forcément des mêmes coefficients.** La table
+  de lois disperse ce que le modèle *consomme* ; le tableau rend ce qu'il
+  *produit*. Un `CX0` interne au modèle a donc des lois mais aucune colonne de
+  sortie, et un `CA` rendu par le modèle peut n'avoir ni biais ni FE. Les deux
+  cas sont traités, et différemment : `CX0` garde ses **deux premiers
+  panneaux** — les lois de ses composantes ne dépendent d'aucun nominal — et son
+  troisième dit ce qui lui manque ; `CA` n'est pas tracé du tout, faute de
+  tirage, et le demander en `coefficients=` est **refusé en le nommant**.
+* **Une référence ambiguë est refusée.** Si le tableau de référence donne deux
+  valeurs de `CN` pour ce que `points_de_vol` appelle un point de vol, c'est que
+  le point de vol est sous-défini : le message nomme les colonnes qui le
+  distingueraient plutôt que d'en choisir une au hasard.
 * **Une figure coûte une demi-seconde** à écrire — la police du gabarit est
   vectorisée glyphe par glyphe. Un parcours de 4 × 15 tirages écrit 240 fichiers
   en une minute sur tous les cœurs, quatre en séquence. D'où `n_jobs`.

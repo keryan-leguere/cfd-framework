@@ -20,7 +20,8 @@ Ce que le script montre :
      ``batch_plot``, et une figure par (point de vol × tirage × coefficient) ;
   4. l'inventaire, et l'**accord** entre ce que le modèle a rendu et ce que le
      paquet recalcule ;
-  5. à quoi ressemble un désaccord.
+  5. à quoi ressemble un désaccord ;
+  6. le cas où les lois et les sorties ne parlent pas des mêmes coefficients.
 
 Quatre cents tirages font quatre cents figures par coefficient, que personne ne
 regardera : ``max_tirages`` en garde quinze par point de vol — soit ici
@@ -32,6 +33,8 @@ Sorties, dans SORTIE/TIRAGES/ :
     M_0.7/Z_0/tirage_000/matrice.svg     les trois coefficients empilés
     …
     SORTIE/INVENTAIRE_TIRAGES.csv        ce qui a été écrit, ligne par ligne
+    SORTIE/tirage_desaccord.svg          un désaccord modèle / calcul, en rouge
+    SORTIE/ASYMETRIQUE/…                 lois sur CX0, sortie sur CA
 
 Chez vous
 ---------
@@ -55,6 +58,7 @@ import time
 from pathlib import Path
 
 import matplotlib
+import pandas as pd
 from rich.console import Console
 
 # Agg = « dessine dans un fichier, n'ouvre pas de fenêtre ». À poser AVANT
@@ -111,6 +115,32 @@ POINTS_DE_VOL_DICT = {
         "unit": " m",
     },
 }
+
+
+def renommer_dans_les_dicts(table: pd.DataFrame, ancien: str, nouveau: str) -> pd.DataFrame:
+    """Rebaptise un coefficient **dans les lois et les tirages seulement**.
+
+    Sert à fabriquer, à partir du tableau d'exemple, le cas de la section 6 :
+    des lois qui parlent de ``CX0`` — un coefficient interne au modèle — et des
+    colonnes de sortie qui parlent de ``CA``. Les colonnes du tableau ne sont
+    pas touchées : c'est tout l'intérêt.
+
+    Chez vous il n'y a rien à faire de tel : votre table de lois et votre
+    modèle portent déjà les noms qu'ils portent.
+    """
+    copie = table.copy()
+    for colonne in ("DICT_LAW_DISPERSION", "DICT_TIRAGE"):
+        # Chaque case de ces deux colonnes est un dictionnaire ; on le recopie
+        # en changeant une seule de ses clés.
+        copie[colonne] = pd.Series(
+            [
+                {(nouveau if cle == ancien else cle): valeur for cle, valeur in dico.items()}
+                for dico in table[colonne]
+            ],
+            index=copie.index,
+            dtype=object,
+        )
+    return copie
 
 
 def main() -> int:
@@ -313,6 +343,73 @@ def main() -> int:
     assert faux.accord is not None
     console.print(f"\n[bold]Désaccord volontaire[/] : {faux.accord.resume}")
     console.print(f"[green]écrit :[/] {faux.fichiers[0]}")
+
+    # --- 6. quand lois et sorties ne parlent pas des mêmes coefficients ---
+    #
+    # Cas courant : la table de lois disperse ce que le MODÈLE consomme, et le
+    # tableau rend ce que le modèle PRODUIT. Les deux listes ne coïncident pas.
+    #
+    #   CX0  a des lois (le modèle s'en sert), mais n'est pas une colonne de
+    #        sortie : ni valeur nominale, ni valeur de modèle ;
+    #   CA   est une colonne de sortie (le CA dispersé), mais n'a ni biais ni
+    #        FE : aucune loi ne le décrit.
+    #
+    # Ce qui se passe alors, et c'est le comportement voulu :
+    #
+    #   CX0  garde ses DEUX PREMIERS panneaux — ce sont les lois de ses
+    #        composantes, elles ne dépendent d'aucun nominal — et le troisième
+    #        dit ce qui lui manque, au lieu d'inventer une valeur ;
+    #   CA   n'est pas tracé du tout : sans tirage, il n'y a pas de figure de
+    #        tirage à faire. Le demander explicitement est refusé, en le
+    #        nommant.
+    #
+    # Ici on fabrique ce cas en rebaptisant CA en CX0 dans les seuls
+    # dictionnaires ; les colonnes du tableau, elles, gardent CA.
+    console.print("\n[bold]Lois et sorties décalées[/] : lois sur CX0, sortie sur CA")
+    df_asym = renommer_dans_les_dicts(df, "CA", "CX0")
+    reference_asym = renommer_dans_les_dicts(reference, "CA", "CX0")
+
+    console.print(f"  lois du tableau : {list(dict(df_asym.iloc[0])['DICT_LAW_DISPERSION'])}")
+    console.print("  colonnes de sortie : ['CN', 'CA', 'Cm_alpha']")
+
+    # Un seul point de vol, un seul tirage : quatre figures suffisent à voir
+    # les trois cas de figure. Le point de vol est donné EN ENTIER (Mach et
+    # altitude) : la référence porte quatre lignes, et n'en désigner qu'une
+    # partie rendrait le nominal ambigu — le paquet refuserait, en le disant.
+    inventaire_asym = figures_tirage_par_pdv(
+        df_asym,
+        points_de_vol={
+            "Mach": {"values": [0.85], "label": "M", "save_name": "M"},
+            "Altitude_m": {"values": [10_000.0], "label": "Z", "save_name": "Z", "unit": " m"},
+        },
+        racine=args.sortie / "ASYMETRIQUE",
+        reference=reference_asym,
+        max_tirages=1,
+        nettoyer=True,
+        n_jobs=1,
+    )
+
+    # `fillna("—")` remplace les cases vides par un tiret, pour la lecture.
+    lisible = inventaire_asym.loc[:, ["figure", "calcul", "modele", "accord"]].fillna("—")
+    console.print("  " + lisible.to_string(index=False).replace("\n", "\n  "))
+    console.print(
+        "  CX0 : deux panneaux sur trois — pas de nominal, donc pas de loi du "
+        "coefficient\n"
+        "  CA  : aucune figure — il n'a ni biais ni FE"
+    )
+
+    # Et si on insiste pour tracer CA, le refus nomme le coupable plutôt que
+    # de rendre une figure vide.
+    try:
+        figures_tirage_par_pdv(
+            df_asym,
+            points_de_vol={"Mach": [0.85]},
+            racine=args.sortie / "ASYMETRIQUE",
+            coefficients=["CA"],
+        )
+    except ValueError as erreur:
+        console.print(f"  demander CA explicitement : [red]{erreur}[/]")
+
     return 0
 
 

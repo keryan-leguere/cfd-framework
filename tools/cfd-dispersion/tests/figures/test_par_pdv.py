@@ -315,6 +315,129 @@ class TestAccordAvecLeModele:
         assert coefficients["accord"].isna().all()
 
 
+def _renommer_dans_les_dicts(table: pd.DataFrame, ancien: str, nouveau: str) -> pd.DataFrame:
+    """Rebaptise un coefficient dans les lois et les tirages, pas les colonnes."""
+    copie = table.copy()
+    for colonne in ("DICT_LAW_DISPERSION", "DICT_TIRAGE"):
+        copie[colonne] = pd.Series(
+            [
+                {(nouveau if cle == ancien else cle): valeur for cle, valeur in dico.items()}
+                for dico in table[colonne]
+            ],
+            index=copie.index,
+            dtype=object,
+        )
+    return copie
+
+
+class TestLoisEtSortiesDecalees:
+    """Les lois dispersent ce que le modèle consomme, pas ce qu'il rend.
+
+    Un coefficient interne — ``CX0`` — a des lois mais aucune colonne de
+    sortie ; le coefficient rendu — ``CA`` — a une colonne mais aucune loi. Les
+    deux listes ne coïncident pas, et c'est le cas courant.
+    """
+
+    @pytest.fixture
+    def decale(self, tableau: pd.DataFrame) -> pd.DataFrame:
+        return _renommer_dans_les_dicts(tableau, "CA", "CX0")
+
+    @pytest.fixture
+    def decale_reference(self, reference: pd.DataFrame) -> pd.DataFrame:
+        return _renommer_dans_les_dicts(reference, "CA", "CX0")
+
+    def test_un_coefficient_sans_sortie_garde_ses_deux_premiers_panneaux(
+        self, decale: pd.DataFrame, decale_reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Les lois de ses composantes ne dépendent d'aucun nominal."""
+        inventaire = figures_tirage_par_pdv(
+            decale,
+            points_de_vol={"Mach": [0.85], "Altitude_m": [10_000.0]},
+            racine=tmp_path,
+            reference=decale_reference,
+            max_tirages=1,
+        )
+        assert "CX0" in set(inventaire["figure"])
+        assert (tmp_path / "tirage_000" / "CX0.svg").is_file()
+
+    def test_il_n_a_ni_nominal_ni_verdict(
+        self, decale: pd.DataFrame, decale_reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Pas de colonne de sortie : rien à comparer, et la figure le dit."""
+        inventaire = figures_tirage_par_pdv(
+            decale,
+            points_de_vol={"Mach": [0.85], "Altitude_m": [10_000.0]},
+            racine=tmp_path,
+            reference=decale_reference,
+            max_tirages=1,
+        ).set_index("figure")
+        assert pd.isna(inventaire.loc["CX0", "accord"])
+        # Les autres, eux, sont bien confrontés au modèle.
+        assert inventaire.loc["CN", "accord"]
+
+    def test_un_coefficient_de_sortie_sans_lois_n_est_pas_trace(
+        self, decale: pd.DataFrame, decale_reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Sans biais ni FE, il n'y a pas de figure de tirage à faire."""
+        inventaire = figures_tirage_par_pdv(
+            decale,
+            points_de_vol={"Mach": [0.85], "Altitude_m": [10_000.0]},
+            racine=tmp_path,
+            reference=decale_reference,
+            max_tirages=1,
+        )
+        assert "CA" not in set(inventaire["figure"])
+
+    def test_le_demander_explicitement_est_refuse(self, decale: pd.DataFrame) -> None:
+        """Nommer le coupable vaut mieux que rendre une figure vide."""
+        with pytest.raises(ValueError, match=r"\['CA'\] absent"):
+            figures_tirage_par_pdv(
+                decale,
+                points_de_vol={"Mach": [0.85]},
+                racine="/tmp/x",
+                coefficients=["CA"],
+            )
+
+
+class TestReferenceAmbigue:
+    def test_deux_nominaux_pour_un_point_de_vol_sont_refuses(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Le point de vol est sous-défini : le dire, plutôt qu'en choisir un."""
+        double = pd.DataFrame(
+            [
+                {"Mach": 0.85, "Altitude_m": 0.0, "CN": 0.80, "CA": 0.03},
+                {"Mach": 0.85, "Altitude_m": 10_000.0, "CN": 0.87, "CA": 0.03},
+            ]
+        )
+        with pytest.raises(ValueError, match="2 valeurs de 'CN'"):
+            figures_tirage_par_pdv(
+                tableau,
+                points_de_vol={"Mach": [0.85]},
+                racine=tmp_path,
+                reference=double,
+                max_tirages=1,
+            )
+
+    def test_le_message_nomme_les_cles_qui_manquent(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        double = pd.DataFrame(
+            [
+                {"Mach": 0.85, "Altitude_m": 0.0, "CN": 0.80},
+                {"Mach": 0.85, "Altitude_m": 10_000.0, "CN": 0.87},
+            ]
+        )
+        with pytest.raises(ValueError, match="Altitude_m"):
+            figures_tirage_par_pdv(
+                tableau,
+                points_de_vol={"Mach": [0.85]},
+                racine=tmp_path,
+                reference=double,
+                max_tirages=1,
+            )
+
+
 class TestFormesDeTableau:
     def test_le_tableau_large_est_relu(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
         """Les lois viennent du tableau : personne n'a redonné la table."""

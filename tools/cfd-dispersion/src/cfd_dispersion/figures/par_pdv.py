@@ -392,6 +392,7 @@ def figures_tirage_par_pdv(
             noms,
             nominaux,
             _selectionner(reference, point) if reference is not None else None,
+            point=point,
         )
 
         for numero, ligne in _tirages_du_point(lignes, colonne_tirage, max_tirages):
@@ -594,6 +595,8 @@ def _nominaux_du_point(
     coefficients: Sequence[str],
     imposes: Mapping[str, Any] | None,
     reference: pd.DataFrame | None = None,
+    *,
+    point: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Les valeurs nominales d'un point de vol, ou rien quand elles manquent.
 
@@ -614,10 +617,20 @@ def _nominaux_du_point(
         if imposes is not None and nom in imposes:
             valeurs[nom] = imposes[nom]
             continue
-        if reference is not None and not reference.empty:
-            depuis_reference = _valeur_constante(reference, nom)
-            if depuis_reference is not None:
-                valeurs[nom] = depuis_reference
+        if reference is not None and not reference.empty and nom in reference.columns:
+            candidates = reference[nom].dropna()
+            if candidates.nunique() > 1:
+                # Deux nominaux pour ce qu'on appelle un point de vol : c'est
+                # que le point de vol est sous-défini. Le dire, plutôt que de
+                # choisir l'un des deux ou de tracer un panneau muet.
+                raise ValueError(
+                    f"la référence donne {candidates.nunique()} valeurs de {nom!r} "
+                    f"pour le point de vol {dict(point or {})} ; préciser le point de vol "
+                    f"(candidates : {_cles_discriminantes(reference, coefficients)}) "
+                    "ou passer nominaux="
+                )
+            if not candidates.empty:
+                valeurs[nom] = float(candidates.iloc[0])
                 continue
         constante = _valeur_constante(lignes, f"{nom}_nominal")
         if constante is not None:
@@ -633,6 +646,29 @@ def _lisible(valeur: Any) -> bool:
         return bool(pd.notna(valeur)) and not isinstance(valeur, str)
     except (TypeError, ValueError):  # pragma: no cover - valeur exotique
         return False
+
+
+def _cles_discriminantes(
+    reference: pd.DataFrame,
+    coefficients: Sequence[str],
+) -> list[str]:
+    """Les colonnes qui distinguent encore les lignes d'un point de vol.
+
+    Ce sont elles qui manquent au ``points_de_vol`` quand une référence rend
+    deux nominaux là où on en attendait un — et les nommer vaut mieux que de
+    lister toutes les colonnes du tableau.
+    """
+    exclues = {*coefficients, COLONNE_TIRAGE, COLONNE_LOIS, COLONNE_NUMERO}
+    variables = []
+    for colonne in reference.columns:
+        if colonne in exclues:
+            continue
+        try:
+            if reference[colonne].nunique() > 1:
+                variables.append(str(colonne))
+        except TypeError:  # pragma: no cover - colonne non comparable
+            continue
+    return sorted(variables)
 
 
 def _valeur_constante(lignes: pd.DataFrame, colonne: str) -> float | None:
