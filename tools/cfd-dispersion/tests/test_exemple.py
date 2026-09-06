@@ -153,6 +153,31 @@ class TestExecution:
         # Une polaire par point de vol, et la cle par PDV du hook.
         assert len(list(tmp_path.rglob("*_vs_alpha.png"))) == 6
 
+    def test_06_tirages_par_pdv(self, tmp_path: Path) -> None:
+        """Le parcours des points de vol, en tout petit : chaque figure coûte."""
+        resultat = self._lancer(
+            "06_tirages_par_pdv.py", tmp_path, "-n", "6", "--max-tirages", "1", "--jobs", "1"
+        )
+        assert resultat.returncode == 0, resultat.stderr
+        assert (tmp_path / "INVENTAIRE_TIRAGES.csv").is_file()
+
+        inventaire = pd.read_csv(tmp_path / "INVENTAIRE_TIRAGES.csv")
+        # 4 points de vol × 1 tirage × (3 coefficients + 1 matrice).
+        assert len(inventaire) == 16
+        assert set(inventaire["figure"]) == {"CN", "CA", "Cm_alpha", "matrice"}
+        assert (tmp_path / "TIRAGES" / "M_0.7" / "Z_0" / "tirage_000" / "matrice.svg").is_file()
+
+    def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
+        """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""
+        resultat = self._lancer("sortie_modele.py", tmp_path, "-n", "10")
+        assert resultat.returncode == 0, resultat.stderr
+
+        table = pd.read_csv(tmp_path / "SORTIE_MODELE.csv")
+        assert len(table) == 4 * 10
+        assert {"DICT_LAW_DISPERSION", "DICT_TIRAGE", "tirage", "CN_nominal"} <= set(table.columns)
+        # Le tirage 3 est le même aux quatre points de vol.
+        assert table.loc[table["tirage"] == 3, "DICT_TIRAGE"].nunique() == 1
+
     def test_04_bande_et_correlation(self, tmp_path: Path) -> None:
         resultat = self._lancer("04_bande_et_correlation.py", tmp_path, "-n", "400")
         assert resultat.returncode == 0, resultat.stderr

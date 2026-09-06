@@ -65,7 +65,9 @@ class Tirage(Mapping[str, "dict[str, float]"]):
     graine:
         La graine posée pour ce tirage, ou None.
     methode:
-        Le plan d'échantillonnage employé.
+        Le plan d'échantillonnage employé, ou None quand il n'est pas connu —
+        le cas d'un tirage relu d'un tableau, qui ne dit pas comment il a été
+        produit.
     numero:
         Le rang du tirage dans son lot, à partir de 0 — ou None pour un tirage
         isolé. C'est la colonne ``"tirage"`` que porte la sortie d'un modèle,
@@ -75,7 +77,7 @@ class Tirage(Mapping[str, "dict[str, float]"]):
     valeurs: dict[str, dict[str, float]]
     convention: Convention
     graine: int | None = None
-    methode: str = "mc"
+    methode: str | None = "mc"
     numero: int | None = None
     _cle: tuple[Any, ...] = field(default=(), repr=False, compare=False)
 
@@ -157,9 +159,18 @@ class Tirage(Mapping[str, "dict[str, float]"]):
     @property
     def resume(self) -> str:
         """Description compacte pour une boîte de paramètres."""
-        graine = "libre" if self.graine is None else str(self.graine)
-        rang = "" if self.numero is None else f" · tirage {self.numero}"
-        return f"{self.convention.formule} · plan {self.methode} · graine {graine}{rang}"
+        morceaux = [self.convention.formule]
+        # Un tirage relu d'un tableau ne sait ni son plan ni sa graine : le
+        # tableau ne les porte pas. Se taire vaut mieux qu'annoncer « plan mc,
+        # graine libre » sur un tirage qui fut LHS et semé.
+        if self.methode is not None:
+            morceaux.append(f"plan {self.methode}")
+            morceaux.append(f"graine {'libre' if self.graine is None else self.graine}")
+        elif self.graine is not None:
+            morceaux.append(f"graine {self.graine}")
+        if self.numero is not None:
+            morceaux.append(f"tirage {self.numero}")
+        return " · ".join(morceaux)
 
 
 def tirer(

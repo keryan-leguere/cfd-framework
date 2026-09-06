@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pickle
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -209,6 +211,30 @@ class TestTirageEnLot:
         tirer_lot(lois, 100, graine=1234)
         apres = np.asarray(ot.Normal().getSample(3)).ravel()
         assert np.allclose(avant, apres)
+
+
+class TestSerialisation:
+    """Un tirage doit survivre à ``pickle`` : il part souvent chez un ouvrier."""
+
+    def test_un_lot_se_serialise(self, lois: JeuDeLois) -> None:
+        lot = tirer_lot(lois, 3, graine=1)
+        copie = pickle.loads(pickle.dumps(lot))
+        assert [t.vers_dict() for t in copie] == [t.vers_dict() for t in lot]
+
+    def test_la_convention_survit_au_voyage(self, lois: JeuDeLois) -> None:
+        """Une lambda ne se sérialise pas : les conventions livrées n'en sont pas."""
+        copie = pickle.loads(pickle.dumps(tirer(lois, graine=1, convention_="pourcentage")))
+        assert copie.convention.nom == "pourcentage"
+        assert copie.appliquer({"Cm_alpha": -2.5})["Cm_alpha"] == pytest.approx(
+            float(
+                tirer(lois, graine=1, convention_="pourcentage").appliquer({"Cm_alpha": -2.5})[
+                    "Cm_alpha"
+                ]
+            )
+        )
+
+    def test_le_jeu_de_lois_se_serialise(self, lois: JeuDeLois) -> None:
+        assert list(pickle.loads(pickle.dumps(lois))) == list(lois)
 
 
 class TestTableauDesTirages:

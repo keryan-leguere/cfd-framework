@@ -44,7 +44,9 @@ from typing import Any
 
 import pandas as pd
 
+from .convention import ConventionArg, convention
 from .lois import COMPOSANTES, Correlation, JeuDeLois, charger_lois
+from .tirage import Tirage
 
 __all__ = [
     "COLONNE_LOIS",
@@ -55,6 +57,7 @@ __all__ = [
     "lire_sortie_modele",
     "lois_depuis_tableau",
     "plan_croise",
+    "tirage_depuis_ligne",
 ]
 
 #: Nom par défaut de la colonne portant le tirage appliqué à la ligne.
@@ -376,4 +379,88 @@ def lire_sortie_modele(
     """
     return aplatir_tirage(df, colonne=tirage, numero=numero), lois_depuis_tableau(
         df, colonne=lois, correlation=correlation
+    )
+
+
+def tirage_depuis_ligne(
+    ligne: Mapping[str, Any],
+    coefficients: Iterable[str],
+    *,
+    colonne: str = COLONNE_TIRAGE,
+    convention_: ConventionArg = None,
+    numero: int | None = None,
+) -> Tirage:
+    """Reconstruit le :class:`Tirage` que porte **une ligne** de la sortie.
+
+    Une ligne de tableau n'est pas un tirage : c'est un tirage plus un point de
+    vol, des coefficients et des métadonnées. Cette fonction en extrait le
+    tirage seul, pour le rendre aux figures — qui, elles, ne connaissent que
+    lui.
+
+    Les deux formes de sortie sont acceptées, dans cet ordre : les colonnes à
+    plat ``"<coeff>_Biais"`` / ``"<coeff>_FE"`` d'abord, puis la colonne de
+    dictionnaires. Un tableau passé par :func:`lire_sortie_modele` porte les
+    deux, et la première est la moins chère à lire.
+
+    Parameters
+    ----------
+    ligne:
+        Une ligne, telle que rendue par ``df.iloc[i]`` ou ``dict(row)``.
+    coefficients:
+        Les coefficients à extraire.
+    colonne:
+        La colonne de dictionnaires, employée si les colonnes à plat manquent.
+    convention_:
+        La relation de reconstruction portée par le tirage rendu.
+    numero:
+        Le rang à donner au tirage — typiquement la colonne ``"tirage"``.
+
+    Returns
+    -------
+    Tirage
+
+    Raises
+    ------
+    ValueError
+        Si un coefficient est introuvable, sous l'une comme sous l'autre forme.
+    """
+    noms = list(coefficients)
+    depuis_dict: dict[tuple[str, str], float] | None = None
+
+    valeurs: dict[str, dict[str, float]] = {}
+    for nom in noms:
+        plates = [f"{nom}_{composante}" for composante in COMPOSANTES]
+        if all(cle in ligne for cle in plates):
+            valeurs[nom] = {
+                composante: float(ligne[f"{nom}_{composante}"]) for composante in COMPOSANTES
+            }
+            continue
+
+        if depuis_dict is None:
+            if colonne not in ligne:
+                raise ValueError(
+                    f"coefficient {nom!r} introuvable : ni les colonnes {plates} "
+                    f"ni la colonne de tirage {colonne!r} ne sont là"
+                )
+            depuis_dict = _normaliser_tirage(
+                lire_dict(ligne[colonne]), ligne=numero if numero is not None else 0
+            )
+
+        manquantes = [c for c in COMPOSANTES if (nom, c) not in depuis_dict]
+        if manquantes:
+            presents = sorted({coefficient for coefficient, _ in depuis_dict})
+            raise ValueError(
+                f"coefficient {nom!r} absent du tirage de cette ligne ; il porte {presents}"
+            )
+        valeurs[nom] = {
+            composante: float(depuis_dict[(nom, composante)]) for composante in COMPOSANTES
+        }
+
+    # `methode=None` : un tableau ne dit pas quel plan a produit ses tirages,
+    # et le résumé des figures s'abstient plutôt que d'annoncer un plan faux.
+    return Tirage(
+        valeurs=valeurs,
+        convention=convention(convention_),
+        methode=None,
+        numero=numero,
     )

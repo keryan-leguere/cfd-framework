@@ -16,11 +16,20 @@ imprimée dans chaque boîte de paramètres et chaque légende.
 
 Une relation maison s'écrit directement ::
 
+    def ma_relation(c, biais, fe):
+        return biais + fe * c * (1 + c**2)
+
     ma_convention = Convention(
         nom="tabulee",
         formule="biais + FE · c · (1 + c²)",
-        appliquer=lambda c, biais, fe: biais + fe * c * (1 + c**2),
+        appliquer=ma_relation,
     )
+
+Une fonction de module, et non une ``lambda`` : les relations livrées en sont
+aussi, pour que tout ce qui porte une convention — un :class:`Tirage`, un hook
+de ``batch_plot`` — se **sérialise**. Une lambda ferait échouer un
+``multiprocessing.Pool`` sur le tirage qu'on voulait lui donner, et retomber
+``batch_plot`` sur un seul cœur, sans rien dire.
 """
 
 from __future__ import annotations
@@ -66,22 +75,47 @@ class Convention:
         return np.asarray(resultat, dtype=float)
 
 
+# Des fonctions de module, et non des ``lambda`` : une lambda ne se sérialise
+# pas, et une convention non sérialisable rend tout ce qui la porte — un
+# `Tirage`, un hook de `batch_plot` — impossible à envoyer à un processus
+# ouvrier. Le symptôme est muet : `batch_plot` retombe sur un seul cœur, et un
+# `multiprocessing.Pool` refuse le tirage qu'on voulait lui donner.
+
+
+def _lineaire(c: object, biais: object, fe: object) -> np.ndarray:
+    nominal = np.asarray(c, dtype=float)
+    valeurs = np.asarray(biais, dtype=float) + np.asarray(fe, dtype=float) * nominal
+    return np.asarray(valeurs, dtype=float)
+
+
+def _pourcentage(c: object, biais: object, fe: object) -> np.ndarray:
+    nominal = np.asarray(c, dtype=float)
+    valeurs = np.asarray(biais, dtype=float) + (1.0 + np.asarray(fe, dtype=float) / 100.0) * nominal
+    return np.asarray(valeurs, dtype=float)
+
+
+def _relatif(c: object, biais: object, fe: object) -> np.ndarray:
+    nominal = np.asarray(c, dtype=float)
+    valeurs = np.asarray(biais, dtype=float) + (1.0 + np.asarray(fe, dtype=float)) * nominal
+    return np.asarray(valeurs, dtype=float)
+
+
 #: Les relations livrées, par nom.
 CONVENTIONS: dict[str, Convention] = {
     "lineaire": Convention(
         nom="lineaire",
         formule="biais + FE · c",
-        appliquer=lambda c, biais, fe: biais + fe * c,
+        appliquer=_lineaire,
     ),
     "pourcentage": Convention(
         nom="pourcentage",
         formule="biais + (1 + FE/100) · c",
-        appliquer=lambda c, biais, fe: biais + (1.0 + fe / 100.0) * c,
+        appliquer=_pourcentage,
     ),
     "relatif": Convention(
         nom="relatif",
         formule="biais + (1 + FE) · c",
-        appliquer=lambda c, biais, fe: biais + (1.0 + fe) * c,
+        appliquer=_relatif,
     ),
 }
 

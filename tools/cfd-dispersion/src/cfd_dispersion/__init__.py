@@ -47,6 +47,7 @@ from .core.tableau import (
     lire_sortie_modele,
     lois_depuis_tableau,
     plan_croise,
+    tirage_depuis_ligne,
 )
 
 # --- La reconstruction -------------------------------------------------------
@@ -108,6 +109,10 @@ from .figures.synthese import (
     table_rich,
     tableau_par_pdv,
 )
+from .figures.par_pdv import (
+    MAX_TIRAGES_DEFAUT,
+    figures_tirage_par_pdv,
+)
 from .figures.tirage import (
     MAX_COEFFICIENTS_PAR_FIGURE,
     FigureTirage,
@@ -136,6 +141,7 @@ __all__ = [
     "aplatir_tirage",
     "lois_depuis_tableau",
     "lire_dict",
+    "tirage_depuis_ligne",
     "COLONNE_TIRAGE",
     "COLONNE_LOIS",
     "COLONNE_NUMERO",
@@ -175,6 +181,8 @@ __all__ = [
     "MAX_COEFFICIENTS_PAR_FIGURE",
     "figure_tirage",
     "figure_tirage_matrice",
+    "figures_tirage_par_pdv",
+    "MAX_TIRAGES_DEFAUT",
     "figure_comparaison",
     "figures_par_pdv",
     "synthese",

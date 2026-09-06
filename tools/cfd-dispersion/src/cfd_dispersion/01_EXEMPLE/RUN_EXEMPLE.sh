@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exécute les cinq exemples de cfd-dispersion, dans l'ordre.
+# Exécute les six exemples de cfd-dispersion, dans l'ordre.
 #
 #     bash RUN_EXEMPLE.sh              # tout
 #     bash RUN_EXEMPLE.sh -n 200       # plus vite, moins de tirages
@@ -40,6 +40,12 @@ echo "== 4. Bandes, corrélation, remplissages ========================"
 echo
 echo "== 5. Modele croise : listes d'axes et tableau large ==========="
 "$PY" 05_modele_croise.py "$@"
+
+echo
+echo "== 6. Figures de tirage, point de vol par point de vol =========="
+# Celui-ci écrit 240 figures (4 PDV × 15 tirages × 4 figures) : compter une
+# minute sur toutes les mèches, quelques-unes sur un seul cœur.
+"$PY" 06_tirages_par_pdv.py "$@"
 
 echo
 echo "Terminé. Résultats dans $ICI/SORTIE/"

@@ -366,6 +366,7 @@ def figure_tirage(
     x: Any = None,
     reference: float | None = None,
     convention_: ConventionArg = None,
+    etiquette: str | None = None,
     sigmas: Sequence[int] | None = SIGMAS_DEFAUT,
     axes: Sequence[Axes] | None = None,
     profil: str = PROFIL_DEFAUT,
@@ -401,6 +402,10 @@ def figure_tirage(
         si *x* est donné, un indice sinon. Par défaut, le milieu du balayage.
     convention_:
         La relation de reconstruction. Par défaut celle que porte le tirage.
+    etiquette:
+        Ce qui situe la figure — le point de vol, typiquement. Repris dans le
+        titre général : un fichier sorti de son dossier doit encore dire d'où
+        il vient.
     sigmas:
         Les multiples de σ marqués sur chaque panneau ; None pour aucun.
     axes:
@@ -472,7 +477,11 @@ def figure_tirage(
         )
 
         if axes is None:
-            surtitre(figure, f"Tirage de {coefficient} — {tirage.resume}", fontsize=10)
+            surtitre(
+                figure,
+                f"Tirage de {coefficient}{_situe(etiquette)} — {tirage.resume}",
+                fontsize=10,
+            )
 
         fichiers = _ecrire(figure, chemin, formats)
 
@@ -482,6 +491,11 @@ def figure_tirage(
         fichiers=fichiers,
         coefficients=(coefficient,),
     )
+
+
+def _situe(etiquette: str | None) -> str:
+    """L'étiquette de situation, prête à s'insérer dans un titre."""
+    return "" if not etiquette else f" — {etiquette}"
 
 
 def _ecrire(figure: Figure, chemin: Any, formats: Sequence[str]) -> tuple[Path, ...]:
@@ -646,6 +660,7 @@ def figure_tirage_matrice(
     reference: float | None = None,
     coefficients: Sequence[str] | None = None,
     convention_: ConventionArg = None,
+    etiquette: str | None = None,
     sigmas: Sequence[int] | None = SIGMAS_DEFAUT,
     max_par_figure: int = MAX_COEFFICIENTS_PAR_FIGURE,
     profil: str = PROFIL_DEFAUT,
@@ -726,7 +741,11 @@ def figure_tirage_matrice(
                 )
 
             pagination = f"  ({numero}/{len(pages)})" if len(pages) > 1 else ""
-            surtitre(figure, f"Tirage — {tirage.resume}{pagination}", fontsize=10)
+            surtitre(
+                figure,
+                f"Tirage{_situe(etiquette)} — {tirage.resume}{pagination}",
+                fontsize=10,
+            )
 
             fichiers = _ecrire(figure, _chemin_de_page(chemin, numero, len(pages)), formats)
 

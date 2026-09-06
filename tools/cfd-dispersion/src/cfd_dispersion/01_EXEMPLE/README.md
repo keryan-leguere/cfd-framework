@@ -1,10 +1,11 @@
 # Exemple cfd-dispersion — prêt à tourner
 
-Tout est là : une table de lois, un modèle jouet, et cinq scripts qui
+Tout est là : une table de lois, un modèle jouet, un exemple de tableau de
+sortie, et six scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les cinq, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les six, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -32,6 +33,8 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `03_polaire_batch_plot.py` | cas d'usage 2.3 : la dispersion greffée sur `cfd_plot.batch_plot` |
 | `04_bande_et_correlation.py` | corrélé/indépendant, les trois remplissages, deux coefficients liés |
 | `05_modele_croise.py` | **la forme d'un vrai modèle** : listes d'axes croisées, tableau large à colonnes dictionnaires |
+| `sortie_modele.py` | **un exemple écrit en dur du tableau de sortie** : 4 points de vol × 100 tirages, les deux dictionnaires, les métadonnées |
+| `06_tirages_par_pdv.py` | le parcours des points de vol : une figure par (PDV × tirage × coefficient) |
 
 ---
 
@@ -135,6 +138,29 @@ faussé.
 > fois. Valider tel quel multiplierait l'effectif par sept et rejetterait des
 > tirages corrects. D'où `unique_par=("tirage",)` dans ce script — et le refus
 > explicite de `valider_lot` si on l'oublie.
+
+### `sortie_modele.py` — la forme d'une sortie, écrite en dur
+
+Pas un modèle : la **forme** de sa sortie, à comparer à la vôtre. Quatre points
+de vol, cent tirages, 400 lignes. Le lot est tiré une fois et rejoué à chaque
+point de vol — le tirage n° 7 est le même partout, et y porte le même numéro.
+
+À regarder : `SORTIE_MODELE.csv`, et la liste des colonnes qu'affiche le script.
+`<coeff>` y porte le coefficient **dispersé** (il change à chaque ligne),
+`<coeff>_nominal` la valeur non dispersée du point de vol (constante sur ses
+cent lignes).
+
+### `06_tirages_par_pdv.py` — une figure par point de vol et par tirage
+
+Un dict de points de vol — la forme du `flight_point_dict` de `batch_plot` — et
+la fonction boucle : elle isole chaque point de vol, prend ses **quinze
+premiers** tirages, et écrit pour chacun une figure par coefficient plus la
+matrice qui les empile. Soit ici 4 × 15 × (3 + 1) = 240 fichiers, en une minute
+sur tous les cœurs.
+
+À regarder : `TIRAGES/M_0.7/Z_0/tirage_000/matrice.svg` — le point de vol est
+rappelé dans le titre, un SVG se transmettant seul — et
+`INVENTAIRE_TIRAGES.csv`, qui dit ce qui a été écrit, ligne par ligne.
 
 ---
 

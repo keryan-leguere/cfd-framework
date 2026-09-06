@@ -196,7 +196,7 @@ Trois choses valent d'être notées dans cette boucle.
   donne mille fois le même tirage, ce qui ne se voit qu'à la validation.
 * **Le tirage est partagé par tous les points croisés.** C'est le cas physique —
   une erreur de recalage est la même sur toute la polaire — et c'est ce qui
-  impose de dédoublonner avant de valider (§5.5).
+  impose de dédoublonner avant de valider (§5.7).
 * **Le tableau porte ses propres lois.** `DICT_LAW_DISPERSION` dans une colonne
   n'est pas une redondance : c'est ce qui permet de relire le tableau dans six
   mois sans retrouver le YAML de l'époque, et ce qui interdit de le valider
@@ -241,7 +241,7 @@ Un tableau, une ligne par appel :
 | `<coefficient>_FE` | **oui** | le facteur d'échelle tiré |
 | `<coefficient>` | pour le 3ᵉ panneau | le coefficient dispersé obtenu |
 | les clés de point de vol | si `par=` | `Mach`, `Altitude_m`, … |
-| `tirage` | pour dédoublonner (§5.5) | un identifiant de tirage |
+| `tirage` | pour dédoublonner (§5.7) | un identifiant de tirage |
 
 C'est exactement ce que `tableau_des_tirages(lot)` produit ; `lois.colonnes`
 énumère les noms attendus.
@@ -317,7 +317,110 @@ ValueError: colonne(s) absente(s) du tableau : ['CN_FE'] ;
 
 ---
 
-## 5.5 Le piège du croisement
+## 5.5 Un exemple de sortie, écrit en dur
+
+Plutôt que de décrire ce tableau, le paquet en livre un :
+`01_EXEMPLE/sortie_modele.py`. Il ne contient **pas de modèle** — seulement la
+forme de sa sortie, écrite noir sur blanc, à comparer à la vôtre :
+
+```
+4 points de vol × 100 tirages = 400 lignes
+```
+
+Le lot est tiré **une fois** et rejoué à chaque point de vol : le tirage n° 7
+est le même partout, et y porte le même numéro. C'est ce que fait un modèle
+appelé en croisé, et c'est ce qui permet de dédoublonner ensuite (§5.7).
+
+| famille | colonnes |
+|:--|:--|
+| point de vol | `Mach`, `Altitude_m` |
+| métadonnées | `cas`, `maillage`, `solveur`, `version_modele`, `date`, `convergence` |
+| coefficients dispersés | `CN`, `CA`, `Cm_alpha` |
+| valeurs nominales | `CN_nominal`, `CA_nominal`, `Cm_alpha_nominal` |
+| les deux dictionnaires | `DICT_LAW_DISPERSION`, `DICT_TIRAGE` |
+| numéro de tirage | `tirage` |
+
+```python
+from sortie_modele import sortie_modele
+
+df = sortie_modele(100)  # -> 400 lignes
+df.to_csv("SORTIE_MODELE.csv", index=False)
+```
+
+Les deux familles de coefficients méritent un mot, parce que c'est le point où
+deux modèles ne se ressemblent pas : `<coeff>` porte ici le coefficient
+**dispersé** — il change d'une ligne à l'autre — et `<coeff>_nominal` la valeur
+non dispersée du point de vol, constante sur ses cent lignes. Les figures
+cherchent la valeur nominale d'abord dans la colonne du **même nom** que le
+coefficient, puis dans `<coeff>_nominal` ; si votre modèle ne sort que la
+première et qu'elle est constante par point de vol, c'est elle qui sert.
+
+---
+
+## 5.6 Les figures de tirage, point de vol par point de vol
+
+Le tableau porte quatre cents lignes ; les figures du tirage parlent d'**un**
+tirage. Entre les deux, une fonction :
+
+```python
+from cfd_dispersion import figures_tirage_par_pdv
+
+inventaire = figures_tirage_par_pdv(
+    df,
+    points_de_vol={  # la forme du flight_point_dict
+        "Mach": {"values": [0.70, 0.85], "label": "M", "save_name": "M"},
+        "Altitude_m": {"values": [0, 10_000], "label": "Z", "save_name": "Z", "unit": " m"},
+    },
+    racine=sortie / "TIRAGES",
+    max_tirages=15,  # par point de vol
+    n_jobs=-1,  # tous les cœurs
+)
+```
+
+Elle découpe le tableau par point de vol, prend ses premiers tirages, et écrit
+pour chacun une figure par coefficient plus la matrice qui les empile :
+
+```
+TIRAGES/M_0.7/Z_0/tirage_000/CN.svg
+TIRAGES/M_0.7/Z_0/tirage_000/matrice.svg
+…
+```
+
+Un dossier par clé **qui varie** — une clé à valeur unique n'ajoute qu'un niveau
+à traverser — et le point de vol est rappelé dans le titre de chaque figure, un
+SVG se transmettant seul. Ce qui est rendu est l'**inventaire** : une ligne par
+fichier écrit, avec son point de vol, son tirage et sa figure. Les figures, elles,
+sont fermées au fur et à mesure ; un parcours en produit des centaines.
+
+Trois points d'attention :
+
+* **Quinze tirages par point de vol**, pas cent. Quatre cents figures par
+  coefficient, personne ne les regarde. `max_tirages=None` les prend toutes.
+* **La valeur nominale peut manquer.** Elle est cherchée dans la colonne du même
+  nom que le coefficient, puis dans `<coeff>_nominal` — et dans les deux cas
+  seulement si la colonne est **constante** sur le point de vol : une colonne
+  qui varie d'un tirage à l'autre est un coefficient dispersé, pas un nominal,
+  et la retenir centrerait la loi sur le tirage qu'elle doit juger. Sans
+  nominal, les deux panneaux de composantes sont tracés quand même et le
+  troisième dit ce qui lui manque.
+* **Une figure coûte une demi-seconde** à écrire — la police du gabarit est
+  vectorisée glyphe par glyphe. Un parcours de 4 × 15 tirages écrit 240 fichiers
+  en une minute sur tous les cœurs, quatre en séquence. D'où `n_jobs`.
+
+> **Pourquoi pas `batch_plot` directement ?** Son point de greffe,
+> `on_before_save(fig, ax, context)`, arrive sur une figure **qu'il a déjà
+> construite** : un axe, une courbe par source, un balayage en abscisse. Les
+> figures de tirage n'ont ni balayage, ni courbe, ni axe unique. S'y greffer
+> supposerait de lui faire tracer des courbes pour les effacer aussitôt. C'est
+> donc sa **logique de parcours** qui est reprise — le `flight_point_dict` et
+> l'arborescence — et non la fonction. Pour les polaires dispersées, en
+> revanche, c'est bien `batch_plot` qui trace : voir §5.9.
+
+`01_EXEMPLE/06_tirages_par_pdv.py` est ce parcours de bout en bout.
+
+---
+
+## 5.7 Le piège du croisement
 
 **Un modèle appelé en croisé applique le même tirage à tous les points du
 balayage.** Sur sept incidences, chaque valeur tirée apparaît sept fois dans le
@@ -361,7 +464,7 @@ type 1 ou 2) ne le déclenche pas ; `redondance_max=1.0` le désactive.
 
 ---
 
-## 5.6 Le cas d'un balayage : une courbe par tirage
+## 5.8 Le cas d'un balayage : une courbe par tirage
 
 Pour une polaire, la sortie du modèle a une ligne de plus par point du
 balayage : **(tirage × point)**. C'est la forme naturelle d'un tableau à plat, et
@@ -416,7 +519,7 @@ superposer_dispersion(
 
 ---
 
-## 5.7 La greffe sur `batch_plot`
+## 5.9 La greffe sur `batch_plot`
 
 `batch_plot` (paquet [cfd-plot](../../cfd-plot)) prend **quatre dictionnaires** et
 écrit tout un arbre de figures. La dispersion s'y ajoute par son unique point de
@@ -472,7 +575,7 @@ from cfd_dispersion.batch import hook_dispersion
 hook = hook_dispersion(
     lois,  # {coefficient: loi} — confronté à context.y_key
     serie="CFD",  # la courbe à disperser, par son libellé
-    tirages=tirages,  # facultatif : les courbes obtenues (§5.8)
+    tirages=tirages,  # facultatif : les courbes obtenues (§5.10)
     n=6000,  # effectif de la bande théorique
     graine=1,
     max_tirages=150,
@@ -509,7 +612,7 @@ disperser trois.
 
 ---
 
-## 5.8 Le dictionnaire `tirages` et sa clé
+## 5.10 Le dictionnaire `tirages` et sa clé
 
 `batch_plot` produit une figure par (grandeur × balayage × point de vol) ; le
 hook, lui, reçoit un seul dictionnaire. Il faut donc une **clé** pour retrouver
@@ -567,7 +670,7 @@ bande.
 
 ---
 
-## 5.9 Récapitulatif des formats
+## 5.11 Récapitulatif des formats
 
 | ce que vous fournissez | forme exacte |
 |:--|:--|
@@ -579,4 +682,5 @@ bande.
 | la validation d'un tableau croisé | `valider_lot(..., par=…, unique_par=("tirage",))` |
 | la sortie sur un balayage | une ligne par (tirage × point) ; plus la colonne de balayage et un identifiant de tirage |
 | `tirages=` du hook | `{(y_key, sweep_key): tableau (n_tirages, npts)}` |
-| les figures `batch_plot` | les quatre dictionnaires de §5.7 |
+| les figures `batch_plot` | les quatre dictionnaires de §5.9 |
+| les figures de tirage par point de vol | `figures_tirage_par_pdv(df, points_de_vol={…}, racine=…)` — §5.6 |

@@ -375,6 +375,26 @@ not part of the Bash framework's runtime:
       wrong. Degenerate components fold into the constant rather than entering as Dirac masses.
       A combined law exists **at one point only** (FE multiplies the nominal), so a swept nominal
       is reduced to one abscissa and the figure says which.
+    - **`figures_tirage_par_pdv` (`figures/par_pdv.py`) walks the flight points** of a model output
+      table and writes, per flight point and per draw, one figure per coefficient plus the matrix —
+      returning an *inventory* DataFrame (flight point, draw, figure, file) and closing figures as
+      it goes. It reuses `batch_plot`'s **conventions** — the `flight_point_dict` shape, one
+      directory per *varying* key, `save_name`/`label`/`unit` — but not the function: its
+      `on_before_save` hook fires on a figure it has already built (one axes, one curve per source,
+      a sweep on x), and draw figures have no sweep, no curve and three panels. Three deliberate
+      behaviours: `max_tirages=15` per flight point (400 draws would mean 400 figures nobody
+      reads); the nominal is looked up in the column named like the coefficient, then
+      `<coeff>_nominal`, and only if **constant** over the flight point — a varying column is a
+      dispersed output, and taking it would centre the law on the draw it is meant to judge; and
+      `n_jobs` (forkserver pool, picklability checked up front like `batch_plot`'s hook) because a
+      single figure costs ~0.5 s to write — the house font is vectorised glyph by glyph.
+      `01_EXEMPLE/sortie_modele.py` is a **hard-coded example of the model output table** (4 flight
+      points × 100 draws = 400 rows, one lot replayed at every flight point) that later examples
+      build on.
+    - **The built-in `CONVENTIONS` are module-level functions, not lambdas**, so a `Tirage` — and
+      anything carrying one — survives `pickle`. Before that, `pickle.dumps(tirer_lot(...))` failed,
+      which quietly cost a `multiprocessing.Pool` the draws it was being handed and dropped
+      `batch_plot` to one core.
     - **The draw figures draw and write in one call.** `figure_tirage(..., chemin=)` and
       `figure_tirage_matrice(..., chemin=)` save through `enregistrer` — **SVG** by default — and
       return `FigureTirage` (`figure`, `axes`, `fichiers`, `coefficients`); the matrix returns a
