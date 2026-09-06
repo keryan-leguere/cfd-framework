@@ -30,14 +30,20 @@ nôtre.
 
 Ce qu'il faut savoir
 --------------------
-**La valeur nominale se cherche dans la colonne du même nom** que le
-coefficient — et peut manquer. Sans elle, les deux panneaux de composantes sont
-tracés quand même et le troisième dit ce qui lui manque (voir
-:func:`cfd_dispersion.figures.tirage.figure_tirage`). Une colonne qui *varie* à
-l'intérieur d'un point de vol n'est pas une valeur nominale mais une sortie
-dispersée : elle est ignorée, sans quoi la loi serait centrée sur le tirage
-qu'elle est censée juger. À défaut, ``"<coeff>_nominal"`` est essayée —
-c'est ainsi qu'un modèle qui sort les deux se lit sans rien avoir à déclarer.
+**La valeur nominale vient d'un second tableau**, ``reference=`` : le même
+modèle, tourné une fois avec un tirage neutre (biais 0, FE 1 pour la convention
+linéaire — voir :func:`cfd_dispersion.tirage_neutre`), donc des coefficients non
+dispersés. Elle peut aussi être imposée (``nominaux=``) ou lue dans une colonne
+``"<coeff>_nominal"``. Sans elle, les deux panneaux de composantes sont tracés
+quand même et le troisième dit ce qui lui manque.
+
+**La colonne ``<coeff>`` est la sortie dispersée du modèle**, pas un nominal.
+Elle sert à autre chose, et c'est le seul contrôle du paquet qui porte sur le
+modèle : le paquet recalcule ``convention(nominal, biais, FE)`` et confronte les
+deux. Ils doivent tomber sur le même nombre ; quand ils n'y tombent pas, c'est
+une convention différente de part et d'autre, une référence qui n'est pas celle
+qu'a vue le modèle, ou un modèle qui n'applique pas la dispersion là où on
+croit. Le verdict est écrit sur la figure et dans l'inventaire.
 
 **Seuls les premiers tirages sont tracés.** Cent tirages sur quatre points de
 vol font quatre cents figures par coefficient, que personne ne regardera :
@@ -60,6 +66,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from ..core.combinaison import TOLERANCE_ACCORD, AccordModele
 from ..core.convention import Convention, ConventionArg, convention
 from ..core.lois import JeuDeLois
 from ..core.tableau import COLONNE_LOIS, COLONNE_NUMERO, COLONNE_TIRAGE, tirage_depuis_ligne
@@ -106,6 +113,7 @@ class _Travail:
     lois: JeuDeLois
     coefficients: tuple[str, ...]
     nominaux: dict[str, Any]
+    disperses_modele: dict[str, Any]
     dossier: Path
     etiquette: str
     formats: tuple[str, ...]
@@ -114,6 +122,7 @@ class _Travail:
     convention: Convention
     sigmas: tuple[int, ...] | None
     max_par_figure: int
+    tolerance: float
     profil: str
 
 
@@ -137,6 +146,8 @@ def _executer(travail: _Travail) -> list[dict[str, Any]]:
                 travail.lois[nom],
                 travail.tirage,
                 nominal=travail.nominaux.get(nom),
+                disperse_modele=travail.disperses_modele.get(nom),
+                tolerance=travail.tolerance,
                 chemin=travail.dossier / nom,
                 formats=travail.formats,
                 convention_=travail.convention,
@@ -145,8 +156,10 @@ def _executer(travail: _Travail) -> list[dict[str, Any]]:
                 profil=travail.profil,
             )
             plt.close(rendue.figure)
+            verdict = _colonnes_accord(rendue.accord)
             inventaire.extend(
-                {**commun, "figure": nom, "fichier": fichier} for fichier in rendue.fichiers
+                {**commun, "figure": nom, "fichier": fichier, **verdict}
+                for fichier in rendue.fichiers
             )
 
     if travail.matrice:
@@ -154,6 +167,8 @@ def _executer(travail: _Travail) -> list[dict[str, Any]]:
             travail.lois,
             travail.tirage,
             nominaux=travail.nominaux,
+            disperses_modele=travail.disperses_modele,
+            tolerance=travail.tolerance,
             coefficients=list(travail.coefficients),
             chemin=travail.dossier / _NOM_MATRICE,
             formats=travail.formats,
@@ -170,6 +185,18 @@ def _executer(travail: _Travail) -> list[dict[str, Any]]:
             )
 
     return inventaire
+
+
+def _colonnes_accord(accord: AccordModele | None) -> dict[str, Any]:
+    """Le verdict d'un coefficient, en colonnes d'inventaire."""
+    if accord is None:
+        return {"calcul": None, "modele": None, "ecart": None, "accord": None}
+    return {
+        "calcul": accord.calcul,
+        "modele": accord.modele,
+        "ecart": accord.ecart,
+        "accord": accord.accord,
+    }
 
 
 def _repartir(travaux: Sequence[_Travail], n_jobs: int) -> list[dict[str, Any]]:
@@ -231,8 +258,10 @@ def figures_tirage_par_pdv(
     points_de_vol: Mapping[str, Any],
     racine: Any,
     lois: JeuDeLois | None = None,
+    reference: pd.DataFrame | None = None,
     coefficients: Sequence[str] | None = None,
     nominaux: Mapping[str, Any] | None = None,
+    tolerance: float = TOLERANCE_ACCORD,
     colonne_tirage: str = COLONNE_NUMERO,
     max_tirages: int | None = MAX_TIRAGES_DEFAUT,
     formats: Sequence[str] = FORMATS_DEFAUT,
@@ -276,14 +305,20 @@ def figures_tirage_par_pdv(
     lois:
         Les lois prescrites. Par défaut, relues du tableau s'il porte sa
         colonne ``DICT_LAW_DISPERSION``.
+    reference:
+        La sortie du **même modèle**, tourné une fois avec un tirage neutre
+        (biais 0, FE 1) : c'est de là que viennent les valeurs nominales, point
+        de vol par point de vol, dans la colonne du nom de chaque coefficient.
+        Même structure que *df* ; une ligne par point de vol suffit.
     coefficients:
         Les coefficients à tracer, dans l'ordre voulu. Par défaut, tous ceux du
         jeu de lois.
     nominaux:
-        ``{coefficient: valeur}``, pour imposer les valeurs nominales. Par
-        défaut, chacune est cherchée dans la colonne du même nom que le
-        coefficient, puis dans ``"<coeff>_nominal"`` — voir le docstring du
-        module.
+        ``{coefficient: valeur}``, pour imposer les valeurs nominales, quand
+        ni *reference* ni le tableau ne les portent.
+    tolerance:
+        Tolérance **relative** de l'accord entre le coefficient recalculé et
+        celui que le modèle a rendu.
     colonne_tirage:
         La colonne numérotant les tirages. C'est elle qui décide de l'ordre et
         du nom des dossiers.
@@ -352,7 +387,12 @@ def figures_tirage_par_pdv(
 
         dossier = chemin_du_point_de_vol(base, point, specs, variables)
         etiquette = etiquette_du_point_de_vol(point, specs)
-        valeurs_nominales = _nominaux_du_point(lignes, noms, nominaux)
+        valeurs_nominales = _nominaux_du_point(
+            lignes,
+            noms,
+            nominaux,
+            _selectionner(reference, point) if reference is not None else None,
+        )
 
         for numero, ligne in _tirages_du_point(lignes, colonne_tirage, max_tirages):
             travaux.append(
@@ -363,6 +403,9 @@ def figures_tirage_par_pdv(
                     lois=jeu,
                     coefficients=tuple(noms),
                     nominaux=valeurs_nominales,
+                    disperses_modele={
+                        nom: float(ligne[nom]) for nom in noms if _lisible(ligne.get(nom))
+                    },
                     dossier=dossier / _MOTIF_DOSSIER_TIRAGE.format(numero=numero),
                     etiquette=etiquette,
                     formats=tuple(formats),
@@ -371,6 +414,7 @@ def figures_tirage_par_pdv(
                     convention=relation,
                     sigmas=None if sigmas is None else tuple(sigmas),
                     max_par_figure=max_par_figure,
+                    tolerance=tolerance,
                     profil=profil,
                 )
             )
@@ -384,9 +428,8 @@ def figures_tirage_par_pdv(
             f"colonnes lues : {list(specs)} — vérifier les valeurs demandées"
         )
 
-    return pd.DataFrame(
-        inventaire, columns=[*specs, "tirage", "figure", "fichier"] if inventaire else None
-    )
+    colonnes = [*specs, "tirage", "figure", "fichier", "calcul", "modele", "ecart", "accord"]
+    return pd.DataFrame(inventaire, columns=colonnes if inventaire else None)
 
 
 # ---------------------------------------------------------------------------
@@ -550,27 +593,46 @@ def _nominaux_du_point(
     lignes: pd.DataFrame,
     coefficients: Sequence[str],
     imposes: Mapping[str, Any] | None,
+    reference: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     """Les valeurs nominales d'un point de vol, ou rien quand elles manquent.
 
-    La règle, dans l'ordre : ce que l'appelant impose ; sinon la colonne du
-    même nom que le coefficient ; sinon ``"<coeff>_nominal"``. Dans les deux
-    derniers cas, **la colonne doit être constante** sur le point de vol : une
-    colonne qui varie d'un tirage à l'autre est un coefficient dispersé, pas
-    une valeur nominale, et la retenir centrerait la loi sur le tirage qu'elle
-    doit juger.
+    La règle, dans l'ordre :
+
+    1. ce que l'appelant impose (*imposes*) ;
+    2. le tableau de **référence** — le modèle tourné une fois avec un tirage
+       neutre — dans sa colonne ``<coeff>`` ;
+    3. la colonne ``"<coeff>_nominal"`` du tableau lui-même.
+
+    La colonne ``<coeff>`` du tableau principal n'est **pas** lue comme un
+    nominal : c'est la sortie dispersée du modèle, celle à laquelle le calcul
+    est confronté. La prendre pour un nominal centrerait la loi sur le tirage
+    qu'elle doit juger.
     """
     valeurs: dict[str, Any] = {}
     for nom in coefficients:
         if imposes is not None and nom in imposes:
             valeurs[nom] = imposes[nom]
             continue
-        for candidate in (nom, f"{nom}_nominal"):
-            constante = _valeur_constante(lignes, candidate)
-            if constante is not None:
-                valeurs[nom] = constante
-                break
+        if reference is not None and not reference.empty:
+            depuis_reference = _valeur_constante(reference, nom)
+            if depuis_reference is not None:
+                valeurs[nom] = depuis_reference
+                continue
+        constante = _valeur_constante(lignes, f"{nom}_nominal")
+        if constante is not None:
+            valeurs[nom] = constante
     return valeurs
+
+
+def _lisible(valeur: Any) -> bool:
+    """Vrai si la valeur est un nombre exploitable."""
+    if valeur is None:
+        return False
+    try:
+        return bool(pd.notna(valeur)) and not isinstance(valeur, str)
+    except (TypeError, ValueError):  # pragma: no cover - valeur exotique
+        return False
 
 
 def _valeur_constante(lignes: pd.DataFrame, colonne: str) -> float | None:

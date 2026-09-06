@@ -41,11 +41,18 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
-from ..core.combinaison import LoiCombinee, loi_combinee
+from ..core.combinaison import (
+    TOLERANCE_ACCORD,
+    AccordModele,
+    LoiCombinee,
+    comparer_au_modele,
+    loi_combinee,
+)
 from ..core.convention import ConventionArg, convention
 from ..core.loi import LoiDispersion
 from ..core.lois import COMPOSANTES, LoiCoefficient
 from ..core.tirage import Tirage
+from ..report.theme import COULEUR_VERDICT
 from ._base import (
     PROFIL_DEFAUT,
     boite_texte,
@@ -104,12 +111,16 @@ class FigureTirage:
         n'a été donné.
     coefficients:
         Les coefficients représentés, dans l'ordre des lignes.
+    accord:
+        La comparaison au coefficient rendu par le modèle, quand il a été
+        donné. None sinon, et sur une page de matrice — qui en porte plusieurs.
     """
 
     figure: Figure
     axes: Any
     fichiers: tuple[Path, ...] = ()
     coefficients: tuple[str, ...] = ()
+    accord: AccordModele | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +279,7 @@ def tracer_loi_combinee(
     combinee: LoiCombinee,
     *,
     valeur: float | None = None,
+    modele: float | None = None,
     couleur: Any = "C2",
     sigmas: Sequence[int] | None = SIGMAS_DEFAUT,
     pourcentage: bool = True,
@@ -278,6 +290,10 @@ def tracer_loi_combinee(
     en plus de la densité : le nominal, la valeur effectivement tirée, les
     lignes ±kσ, et — quand le nominal n'est pas nul — un axe supérieur gradué
     en pourcentage d'écart au nominal.
+
+    *modele* est la valeur que le **modèle** a rendue pour ce tirage. Elle est
+    repérée à côté de la valeur recalculée : les deux doivent coïncider, et
+    quand elles ne coïncident pas, c'est le seul endroit où cela se voit.
     """
     bas, haut = combinee.plage_utile()
 
@@ -312,6 +328,20 @@ def tracer_loi_combinee(
             zorder=5,
         )
         _elargir(ax, float(valeur))
+
+    if modele is not None:
+        # Pointillé et non trait plein : quand les deux valeurs coïncident —
+        # le cas normal — le pointillé se lit *par-dessus* le trait du calcul,
+        # ce qui montre l'accord au lieu de le cacher.
+        ax.axvline(
+            float(modele),
+            color="C4",
+            ls=(0, (2, 2)),
+            lw=1.8,
+            label=f"modèle : {float(modele):.4g}",
+            zorder=6,
+        )
+        _elargir(ax, float(modele))
 
     bornes = combinee.bornes()
     if bornes is not None and not combinee.est_degeneree:
@@ -361,6 +391,8 @@ def figure_tirage(
     tirage: Tirage,
     *,
     nominal: Any = None,
+    disperse_modele: Any = None,
+    tolerance: float = TOLERANCE_ACCORD,
     chemin: Any = None,
     formats: Sequence[str] = FORMATS_DEFAUT,
     x: Any = None,
@@ -388,6 +420,13 @@ def figure_tirage(
         tracés et le troisième reste vide, en le disant. La loi du coefficient
         dispersé n'est pas calculable sans son nominal, puisque le facteur
         d'échelle le multiplie.
+    disperse_modele:
+        Le coefficient que le **modèle** a rendu pour ce tirage. Donné, il est
+        repéré à côté de la valeur recalculée et la figure dit si les deux
+        concordent — le seul contrôle du paquet qui porte sur le modèle. Sans
+        valeur nominale il n'y a rien à comparer, et il est ignoré.
+    tolerance:
+        Tolérance **relative** de cet accord.
     chemin:
         Où écrire la figure, **sans extension**. Donné, la figure est écrite
         immédiatement : tracer et enregistrer ne font qu'un appel. Omis, rien
@@ -463,7 +502,7 @@ def figure_tirage(
             )
             legende(panneau, loc="upper right", fontsize=7)
 
-        _panneau_coefficient(
+        accord = _panneau_coefficient(
             trois[2],
             coefficient,
             loi,
@@ -474,6 +513,8 @@ def figure_tirage(
             fe=valeurs["FE"],
             relation=relation,
             sigmas=sigmas,
+            disperse_modele=disperse_modele,
+            tolerance=tolerance,
         )
 
         if axes is None:
@@ -490,6 +531,7 @@ def figure_tirage(
         axes=np.array(trois),
         fichiers=fichiers,
         coefficients=(coefficient,),
+        accord=accord,
     )
 
 
@@ -518,25 +560,48 @@ def _panneau_coefficient(
     fe: float,
     relation: Any,
     sigmas: Sequence[int] | None,
-) -> None:
+    disperse_modele: Any = None,
+    tolerance: float = TOLERANCE_ACCORD,
+) -> AccordModele | None:
     """Le troisième panneau : la loi du coefficient, biais et FE combinés."""
     if nominal is None:
         _panneau_sans_nominal(ax, coefficient)
-        return
+        return None
 
     valeur_nominale, situation = _point_de_reference(nominal, x, reference)
     combinee = loi_combinee(loi, valeur_nominale, convention_=relation)
     disperse = float(np.asarray(relation(valeur_nominale, biais, fe), dtype=float).reshape(-1)[0])
 
-    tracer_loi_combinee(ax, combinee, valeur=disperse, sigmas=sigmas)
+    accord = None
+    if disperse_modele is not None:
+        accord = comparer_au_modele(
+            disperse,
+            float(np.asarray(disperse_modele, dtype=float).reshape(-1)[0]),
+            nominal=valeur_nominale,
+            tolerance=tolerance,
+        )
+
+    tracer_loi_combinee(
+        ax,
+        combinee,
+        valeur=disperse,
+        modele=None if accord is None else accord.modele,
+        sigmas=sigmas,
+    )
     titre(ax, f"{coefficient} — coefficient dispersé")
+    # Le verdict tient dans la boîte de paramètres plutôt que dans une seconde :
+    # le bas du panneau appartient aux étiquettes ±kσ, et une boîte posée
+    # dessus cacherait le repère qu'on venait de poser. La couleur d'alarme est
+    # réservée au désaccord — la mettre partout la rendrait invisible.
     boite_texte(
         ax,
-        _description_combinaison(combinee, disperse=disperse, situation=situation),
+        _description_combinaison(combinee, disperse=disperse, situation=situation, accord=accord),
         loc="upper left",
         fontsize=7,
+        color=None if accord is None or accord.accord else COULEUR_VERDICT[False],
     )
     legende(ax, loc="upper right", fontsize=7)
+    return accord
 
 
 #: Ce que dit le troisième panneau quand il n'a pas de quoi être tracé.
@@ -627,6 +692,7 @@ def _description_combinaison(
     *,
     disperse: float,
     situation: str,
+    accord: AccordModele | None = None,
 ) -> str:
     """La boîte du troisième panneau : la relation, les nombres, l'écart."""
     # Le biais et le FE tirés ne sont pas repris ici : ils sont déjà lus sur
@@ -646,6 +712,8 @@ def _description_combinaison(
     detail_ecart = "" if pourcent is None else f" ({pourcent:+.2f} %)"
     lignes.append(f"écart = {ecart:+.3g}{detail_ecart}")
     lignes.append(combinee.methode_courte)
+    if accord is not None:
+        lignes.extend(accord.lignes)
     return "\n".join(lignes)
 
 
@@ -654,6 +722,8 @@ def figure_tirage_matrice(
     tirage: Tirage,
     *,
     nominaux: Any = None,
+    disperses_modele: Any = None,
+    tolerance: float = TOLERANCE_ACCORD,
     chemin: Any = None,
     formats: Sequence[str] = FORMATS_DEFAUT,
     x: Any = None,
@@ -684,6 +754,11 @@ def figure_tirage_matrice(
         ``{coefficient: valeur nominale}``. **Facultatif**, et incomplet est
         admis : les coefficients absents gardent leurs deux premiers panneaux,
         et le troisième dit ce qui lui manque.
+    disperses_modele:
+        ``{coefficient: valeur rendue par le modèle}``, pour confronter chaque
+        ligne à ce que le modèle a produit. Facultatif et incomplet admis.
+    tolerance:
+        Tolérance **relative** de cet accord.
     chemin:
         Où écrire, **sans extension ni numéro** : la numérotation est ajoutée
         s'il y a plus d'une page.
@@ -732,6 +807,8 @@ def figure_tirage_matrice(
                     lois[nom],
                     tirage,
                     nominal=(nominaux or {}).get(nom),
+                    disperse_modele=(disperses_modele or {}).get(nom),
+                    tolerance=tolerance,
                     x=x,
                     reference=reference,
                     convention_=convention_,

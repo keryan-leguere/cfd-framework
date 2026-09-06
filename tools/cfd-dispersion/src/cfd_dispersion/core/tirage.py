@@ -34,6 +34,7 @@ colonnes ``"<coeff>_Biais"`` — :func:`tableau_des_tirages` rend le
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -46,7 +47,14 @@ from .convention import Convention, ConventionArg, convention
 from .loi import METHODES
 from .lois import COMPOSANTES, JeuDeLois
 
-__all__ = ["Tirage", "tableau_des_tirages", "tirer", "tirer_lot", "tirer_tableau"]
+__all__ = [
+    "Tirage",
+    "tableau_des_tirages",
+    "tirage_neutre",
+    "tirer",
+    "tirer_lot",
+    "tirer_tableau",
+]
 
 
 @dataclass(frozen=True)
@@ -171,6 +179,100 @@ class Tirage(Mapping[str, "dict[str, float]"]):
         if self.numero is not None:
             morceaux.append(f"tirage {self.numero}")
         return " · ".join(morceaux)
+
+
+def tirage_neutre(
+    lois: JeuDeLois,
+    *,
+    convention_: ConventionArg = None,
+) -> Tirage:
+    """Le tirage qui **ne disperse rien** : celui qui rend le coefficient nominal.
+
+    C'est le tirage à passer au modèle pour obtenir sa base de référence — les
+    coefficients non dispersés, point de vol par point de vol — à laquelle
+    comparer ensuite les tirages réels.
+
+    Le facteur d'échelle neutre **dépend de la convention**, et c'est
+    précisément pour cela que cette fonction existe : ``biais + FE · c`` veut
+    ``FE = 1``, quand ``biais + (1 + FE/100) · c`` veut ``FE = 0``. Se tromper
+    d'un ou de zéro donne soit un coefficient nul, soit un coefficient doublé —
+    et la base de référence de toute l'étude avec.
+
+    La valeur neutre n'est pas codée en dur : elle est **résolue** depuis la
+    relation elle-même, en cherchant le ``FE`` qui laisse deux valeurs
+    nominales différentes inchangées. Une relation maison affine en (biais, FE)
+    passe donc par là comme les autres.
+
+    Parameters
+    ----------
+    lois:
+        Le jeu de lois, pour connaître les coefficients à couvrir.
+    convention_:
+        La relation de reconstruction. Défaut : ``"lineaire"``.
+
+    Returns
+    -------
+    Tirage
+        ``{coeff: {"Biais": 0.0, "FE": <neutre>}}``, sans numéro ni plan : ce
+        n'est pas un tirage aléatoire.
+
+    Raises
+    ------
+    ValueError
+        Si la relation n'a pas de facteur neutre — une relation non affine, ou
+        qui ne laisse aucun coefficient invariant. Le tirage se pose alors à la
+        main : ``Tirage(valeurs={…}, convention=…)``.
+
+    Examples
+    --------
+    >>> tirage_neutre(lois)["CN"]                        # doctest: +SKIP
+    {'Biais': 0.0, 'FE': 1.0}
+    >>> tirage_neutre(lois, convention_="pourcentage")["CN"]   # doctest: +SKIP
+    {'Biais': 0.0, 'FE': 0.0}
+    """
+    relation = convention(convention_)
+    neutre = _facteur_neutre(relation)
+    return Tirage(
+        valeurs={coeff: {COMPOSANTES[0]: 0.0, COMPOSANTES[1]: neutre} for coeff in lois},
+        convention=relation,
+        methode=None,
+    )
+
+
+def _facteur_neutre(relation: Convention) -> float:
+    """Le ``FE`` qui laisse un coefficient inchangé, résolu depuis la relation.
+
+    À nominal fixé, une relation affine s'écrit ``a·biais + b·FE + cst``. Avec
+    ``biais = 0``, la laisser neutre demande ``b·FE + cst = c``, donc
+    ``FE = (c − cst)/b``. La solution est vérifiée sur une **seconde** valeur
+    nominale : un facteur neutre qui dépendrait du coefficient n'en serait pas
+    un.
+    """
+    from .combinaison import decomposition_affine
+
+    candidats = []
+    for nominal in (1.0, 2.5):
+        poids = decomposition_affine(relation, nominal)
+        if poids is None:
+            raise ValueError(
+                f"la convention {relation.nom!r} n'est pas affine en (biais, FE) : "
+                "son facteur neutre ne se résout pas — poser le tirage à la main"
+            )
+        _, b, cst = poids
+        if b == 0.0:
+            raise ValueError(
+                f"la convention {relation.nom!r} ignore le facteur d'échelle : "
+                "elle n'a pas de facteur neutre"
+            )
+        candidats.append((nominal - cst) / b)
+
+    premier, second = candidats
+    if not math.isclose(premier, second, rel_tol=1e-9, abs_tol=1e-12):
+        raise ValueError(
+            f"la convention {relation.nom!r} n'a pas de facteur neutre unique "
+            f"({premier:g} puis {second:g} selon le coefficient) — poser le tirage à la main"
+        )
+    return premier
 
 
 def tirer(

@@ -20,24 +20,28 @@ famille                 colonnes
 point de vol            ``Mach``, ``Altitude_m``
 métadonnées             ``cas``, ``maillage``, ``solveur``, ``version_modele``,
                         ``date``, ``convergence``
-coefficients dispersés  ``CN``, ``CA``, ``Cm_alpha`` — ce que le modèle a calculé
-valeurs nominales       ``CN_nominal``, ``CA_nominal``, ``Cm_alpha_nominal``
+coefficients            ``CN``, ``CA``, ``Cm_alpha`` — **dispersés**, ce que le
+                        modèle a calculé avec le tirage de la ligne
 les deux dictionnaires  ``DICT_LAW_DISPERSION``, ``DICT_TIRAGE``
 numéro de tirage        ``tirage``
 ======================  =========================================================
 
-Un mot sur les deux familles de coefficients, parce que c'est le point où deux
-modèles ne se ressemblent pas :
+La valeur nominale n'est pas dans ce tableau
+--------------------------------------------
+Elle vient d'un **second tableau, de même structure** : le même modèle, tourné
+une fois avec un tirage neutre — biais 0 et FE 1 pour la convention linéaire —
+qui rend donc les coefficients non dispersés. C'est
+:func:`sortie_modele_reference`, et c'est ce qu'on passe en ``reference=`` aux
+figures.
 
-* ``<coeff>`` porte ici le coefficient **dispersé**, celui que le modèle a
-  produit avec le tirage de la ligne — il change d'une ligne à l'autre ;
-* ``<coeff>_nominal`` porte la valeur **non dispersée** du point de vol — elle
-  est constante sur les cent lignes d'un point de vol.
+Le facteur neutre dépend de la convention : ``FE = 1`` pour ``biais + FE · c``,
+``FE = 0`` pour ``biais + (1 + FE/100) · c``. :func:`cfd_dispersion.tirage_neutre`
+le résout depuis la relation plutôt que de le coder en dur — se tromper d'un ou
+de zéro donnerait une base de référence nulle ou doublée, et toute l'étude avec.
 
-Les figures cherchent la valeur nominale d'abord dans la colonne du **même nom**
-que le coefficient, puis dans ``<coeff>_nominal``. Si votre modèle ne sort que
-la première et qu'elle est constante par point de vol, c'est elle qui sert ;
-s'il n'en sort aucune, les figures le disent au lieu d'inventer un nominal.
+La colonne ``<coeff>`` du tableau principal sert alors à autre chose : les
+figures y confrontent ce que le modèle a rendu à ce qu'elles recalculent, et
+disent si les deux concordent.
 
 Les deux colonnes de dictionnaires sont écrites telles quelles — des dicts
 Python. Après un aller-retour par CSV elles reviennent en chaînes, et le paquet
@@ -45,7 +49,8 @@ les relit dans les deux cas.
 
     python sortie_modele.py [--sortie SORTIE] [-n 100]
 
-écrit ``SORTIE_MODELE.csv`` et affiche les premières lignes.
+écrit ``SORTIE_MODELE.csv`` et ``SORTIE_MODELE_REFERENCE.csv``, et affiche les
+premières lignes.
 """
 
 from __future__ import annotations
@@ -57,7 +62,7 @@ from typing import Any
 import pandas as pd
 from rich.console import Console
 
-from cfd_dispersion import charger_lois, convention, tirer_lot
+from cfd_dispersion import charger_lois, convention, tirage_neutre, tirer_lot
 
 ICI = Path(__file__).resolve().parent
 
@@ -181,12 +186,51 @@ def sortie_modele(
                     **METADONNEES_COMMUNES,
                     **METADONNEES[cle],
                     **{coeff: float(valeur) for coeff, valeur in disperses.items()},
-                    **{f"{coeff}_nominal": valeur for coeff, valeur in nominaux.items()},
                     "DICT_LAW_DISPERSION": DICT_LAW_DISPERSION,
                     "DICT_TIRAGE": tirage.vers_dict(),
                     "tirage": tirage.numero,
                 }
             )
+
+    return pd.DataFrame(lignes)
+
+
+def sortie_modele_reference(*, convention_: str = CONVENTION) -> pd.DataFrame:
+    """Le **même modèle**, tourné une fois avec un tirage neutre.
+
+    Une ligne par point de vol, la même structure que :func:`sortie_modele`, et
+    des coefficients non dispersés : c'est la base de référence dont les
+    figures tirent leurs valeurs nominales.
+
+    Le tirage neutre n'est pas écrit à la main — ``biais 0, FE 1`` n'est neutre
+    que pour la convention linéaire. :func:`cfd_dispersion.tirage_neutre` le
+    résout depuis la relation employée.
+
+    Returns
+    -------
+    pandas.DataFrame
+        ``len(POINTS_DE_VOL)`` lignes.
+    """
+    lois = charger_lois(DICT_LAW_DISPERSION)
+    relation = convention(convention_)
+    neutre = tirage_neutre(lois, convention_=relation)
+
+    lignes: list[dict[str, Any]] = []
+    for point in POINTS_DE_VOL:
+        cle = (point["Mach"], point["Altitude_m"])
+        nominaux = COEFFICIENTS_NOMINAUX[cle]
+        coefficients = neutre.appliquer(nominaux)
+        lignes.append(
+            {
+                **point,
+                **METADONNEES_COMMUNES,
+                **METADONNEES[cle],
+                **{coeff: float(valeur) for coeff, valeur in coefficients.items()},
+                "DICT_LAW_DISPERSION": DICT_LAW_DISPERSION,
+                "DICT_TIRAGE": neutre.vers_dict(),
+                "tirage": 0,
+            }
+        )
 
     return pd.DataFrame(lignes)
 
@@ -207,7 +251,7 @@ def main() -> int:
     )
     console.print(f"colonnes : {list(df.columns)}\n")
 
-    apercu = df.loc[:, ["Mach", "Altitude_m", "tirage", "CN", "CN_nominal", "cas"]]
+    apercu = df.loc[:, ["Mach", "Altitude_m", "tirage", "CN", "CA", "cas"]]
     console.print(apercu.head(4).to_string(index=False))
     premiere = dict(df.iloc[0])
     console.print(
@@ -219,6 +263,21 @@ def main() -> int:
     chemin = args.sortie / "SORTIE_MODELE.csv"
     df.to_csv(chemin, index=False)
     console.print(f"\n[green]écrit :[/] {chemin}")
+
+    # La base de référence : le même modèle, un tirage neutre, une ligne par
+    # point de vol. C'est de là que viennent les valeurs nominales.
+    reference = sortie_modele_reference()
+    neutre = dict(reference.iloc[0])["DICT_TIRAGE"]["CN"]
+    console.print(
+        f"\n[bold]Référence[/] (tirage neutre) : {len(reference)} lignes\n"
+        f"  tirage employé : {neutre}"
+    )
+    console.print(
+        reference.loc[:, ["Mach", "Altitude_m", "CN", "CA", "Cm_alpha"]].to_string(index=False)
+    )
+    chemin_reference = args.sortie / "SORTIE_MODELE_REFERENCE.csv"
+    reference.to_csv(chemin_reference, index=False)
+    console.print(f"\n[green]écrit :[/] {chemin_reference}")
     return 0
 
 

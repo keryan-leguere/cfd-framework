@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 
 from cfd_dispersion.core.combinaison import (
+    TOLERANCE_ACCORD,
     LoiCombinee,
+    comparer_au_modele,
     decomposition_affine,
     loi_combinee,
 )
@@ -221,3 +223,50 @@ class TestInterface:
         combinee = loi_combinee(lois["CN"], 0.85)
         assert isinstance(combinee, LoiCombinee)
         assert combinee.coefficient == "CN"
+
+
+class TestAccordAvecLeModele:
+    """Le coefficient recalculé contre celui que le modèle a rendu."""
+
+    def test_deux_valeurs_identiques_concordent(self) -> None:
+        accord = comparer_au_modele(0.8325, 0.8325, nominal=0.85)
+        assert accord.accord
+        assert accord.ecart == 0.0
+        assert accord.resume == "modèle = calcul"
+
+    def test_un_ecart_est_chiffre_en_absolu_et_en_relatif(self) -> None:
+        accord = comparer_au_modele(0.80, 0.84, nominal=0.80)
+        assert not accord.accord
+        assert accord.ecart == pytest.approx(0.04)
+        assert accord.ecart_relatif == pytest.approx(5.0)
+        assert "≠" in accord.resume
+
+    def test_l_echelle_vient_du_nominal(self) -> None:
+        """Un écart de 0.01 sur un CA de 0.03 n'est pas celui d'un CN de 0.85."""
+        petit = comparer_au_modele(0.03, 0.031, nominal=0.03)
+        grand = comparer_au_modele(0.85, 0.851, nominal=0.85)
+        assert abs(petit.ecart_relatif) > 10 * abs(grand.ecart_relatif)
+
+    def test_sans_nominal_l_echelle_vient_des_valeurs(self) -> None:
+        assert comparer_au_modele(1.0, 1.5).ecart_relatif == pytest.approx(100.0 * 0.5 / 1.5)
+
+    def test_deux_zeros_ne_divisent_pas_par_zero(self) -> None:
+        accord = comparer_au_modele(0.0, 0.0, nominal=0.0)
+        assert accord.accord
+        assert accord.ecart_relatif == 0.0
+
+    def test_la_tolerance_est_relative(self) -> None:
+        assert comparer_au_modele(0.85, 0.85 + 1e-9, nominal=0.85).accord
+        assert not comparer_au_modele(0.85, 0.85 + 1e-3, nominal=0.85).accord
+
+    def test_elle_se_regle(self) -> None:
+        assert comparer_au_modele(0.85, 0.851, nominal=0.85, tolerance=0.01).accord
+
+    def test_la_tolerance_par_defaut_est_serree(self) -> None:
+        """Les deux doivent être le même nombre, pas deux nombres voisins."""
+        assert TOLERANCE_ACCORD == 1e-6
+
+    def test_le_verdict_tient_en_deux_lignes_courtes(self) -> None:
+        """La boîte de figure partage sa largeur avec la légende."""
+        assert comparer_au_modele(0.85, 0.85).lignes == ("modèle = calcul",)
+        assert len(comparer_au_modele(0.85, 0.90).lignes) == 2

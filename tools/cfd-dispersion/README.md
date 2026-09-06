@@ -369,6 +369,16 @@ rendue.figure, rendue.axes, rendue.fichiers  # la figure, ses axes, ses fichiers
 le fichier part en **SVG**, par le gabarit d'export de cfd-plot. Sans `chemin`,
 rien n'est écrit et `rendue.fichiers` est vide.
 
+**Le coefficient que le modèle a rendu se confronte au calcul.**
+`disperse_modele=` donne la valeur que votre modèle a produite pour ce tirage ;
+la figure la repère à côté de celle qu'elle recalcule
+(`convention(nominal, biais, FE)`) et **dit si les deux concordent**. Elles
+doivent tomber sur le même nombre : quand elles n'y tombent pas, c'est une
+convention différente de part et d'autre, une valeur nominale de référence qui
+n'est pas celle qu'a vue le modèle, ou un modèle qui n'applique pas la
+dispersion là où on croit. C'est le seul contrôle du paquet qui porte sur le
+**modèle**, et il ne coûte rien puisque les deux nombres sont là.
+
 **`nominal` est facultatif.** Sans lui — vous ne l'avez pas encore, ou il ne
 vous intéresse pas — les deux panneaux de composantes sont tracés normalement et
 le troisième reste vide **en disant ce qui lui manque** : la loi du coefficient
@@ -488,7 +498,8 @@ figures sont fermées au fur et à mesure ; un parcours en écrit des centaines.
 | | |
 |:--|:--|
 | **15 tirages par point de vol** | quatre cents figures par coefficient, personne ne les regarde. `max_tirages=None` les prend toutes |
-| **la valeur nominale peut manquer** | cherchée dans la colonne du même nom que le coefficient, puis dans `<coeff>_nominal`, et seulement si elle est **constante** sur le point de vol — une colonne qui varie est un coefficient dispersé, pas un nominal. Sans elle, le troisième panneau le dit |
+| **la valeur nominale vient de `reference=`** | la sortie du **même modèle**, tourné une fois avec un tirage neutre (`tirage_neutre`) : ses coefficients *sont* les nominaux. À défaut, `nominaux=` ou une colonne `<coeff>_nominal`. Sans elle, le troisième panneau le dit |
+| **la colonne `<coeff>` est la sortie dispersée** | pas un nominal. Le paquet recalcule `convention(nominal, biais, FE)` et confronte les deux ; le verdict est sur la figure et dans l'inventaire (`calcul`, `modele`, `ecart`, `accord`) |
 | **une figure coûte 0.5 s** | la police du gabarit est vectorisée glyphe par glyphe. 240 fichiers : une minute sur tous les cœurs, quatre en séquence |
 
 **Pourquoi pas `batch_plot` directement ?** Son point de greffe
@@ -499,10 +510,25 @@ figures de tirage n'ont ni balayage, ni courbe, ni axe unique. C'est donc sa
 l'arborescence — et non la fonction. Pour les polaires dispersées, c'est bien
 `batch_plot` qui trace : voir §9.
 
+**La base de référence** est un second tableau, de même structure, obtenu en
+faisant tourner le modèle une fois avec un tirage neutre :
+
+```python
+from cfd_dispersion import tirage_neutre
+
+neutre = tirage_neutre(lois)  # {'CN': {'Biais': 0.0, 'FE': 1.0}}
+df_neutre = mon_modele(L_MACH, L_ALTITUDE, neutre)
+```
+
+Le facteur neutre **dépend de la convention** — `FE = 1` pour `biais + FE · c`,
+`FE = 0` pour `biais + (1 + FE/100) · c` — et `tirage_neutre` le résout depuis
+la relation plutôt que de le coder en dur : se tromper d'un ou de zéro donnerait
+une base de référence nulle ou doublée, et toute l'étude avec.
+
 Un exemple de tableau de sortie est livré, écrit en dur :
 `01_EXEMPLE/sortie_modele.py` (4 points de vol × 100 tirages, les deux
-dictionnaires, les métadonnées), et `01_EXEMPLE/06_tirages_par_pdv.py` en fait
-le parcours complet.
+dictionnaires, les métadonnées, plus `sortie_modele_reference()` pour la base
+neutre), et `01_EXEMPLE/06_tirages_par_pdv.py` en fait le parcours complet.
 
 ### 5. Valider mille appels du modèle
 
@@ -855,10 +881,11 @@ après huit heures de calcul.
 | `lire_sortie_modele`, `aplatir_tirage`, `lois_depuis_tableau`, `lire_dict` | le tableau du modèle |
 | `LIBELLES_TYPE`, `TYPES_VALIDES`, `CLES_ATTENDUES`, `COMPOSANTES` | les constantes |
 | `Convention`, `CONVENTIONS`, `CONVENTION_PAR_DEFAUT`, `convention` | la reconstruction |
-| `Tirage`, `tirer`, `tirer_lot`, `tirer_tableau`, `tableau_des_tirages`, `graine_temporaire` | le tirage |
+| `Tirage`, `tirer`, `tirer_lot`, `tirer_tableau`, `tableau_des_tirages`, `tirage_neutre`, `graine_temporaire` | le tirage |
 | `BandeDispersion`, `bande_depuis_loi`, `bande_depuis_points`, `INTERVALLES` | la propagation |
 | `Verdict`, `valider`, `valider_lot`, `alpha_corrige` | la validation |
 | `LoiCombinee`, `loi_combinee` | la loi du coefficient dispersé |
+| `AccordModele`, `comparer_au_modele`, `TOLERANCE_ACCORD` | le calcul confronté au modèle |
 | `figures_tirage_par_pdv`, `MAX_TIRAGES_DEFAUT` | le parcours des points de vol |
 | `tirage_depuis_ligne` | le tirage que porte une ligne de la sortie |
 | `tracer_loi`, `tracer_loi_combinee`, `figure_tirage`, `figure_tirage_matrice`, `FigureTirage`, `MAX_COEFFICIENTS_PAR_FIGURE` | figures du tirage |
@@ -937,7 +964,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 623 tests
+pytest                                  # 654 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc
@@ -960,6 +987,8 @@ Quelques invariants que la suite tient :
 | au-delà de quatre coefficients, la matrice pagine et numérote ses fichiers | `test_tirage.py::TestFigureTirageMatrice` |
 | une colonne qui varie dans un point de vol n'est pas prise pour un nominal | `test_par_pdv.py::TestValeursNominales` |
 | le travail d'un parcours se sérialise, donc `n_jobs` tient ses promesses | `test_par_pdv.py::TestParallelisme` |
+| un modèle qui n'applique pas la même convention est repéré, coefficient par coefficient | `test_par_pdv.py::TestAccordAvecLeModele` |
+| le facteur neutre vaut 1 en linéaire et 0 en pourcentage, et il est résolu, pas codé | `test_tirage.py::TestTirageNeutre` |
 | un point dans un nom de figure ne fait pas disparaître le fichier | `test_base.py`, `test_exemple.py` |
 | un tableau croisé est refusé tant qu'il n'est pas dédoublonné, et le message dit comment | `test_tableau.py::TestPiegeDuCroisement` |
 | les dictionnaires du modèle survivent à un aller-retour par CSV | `test_tableau.py::TestLireSortieModele` |

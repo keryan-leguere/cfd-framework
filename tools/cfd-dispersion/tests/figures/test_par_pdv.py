@@ -11,7 +11,7 @@ import pytest
 
 from cfd_dispersion.core.convention import convention
 from cfd_dispersion.core.lois import JeuDeLois, charger_lois
-from cfd_dispersion.core.tirage import tirer_lot
+from cfd_dispersion.core.tirage import tirage_neutre, tirer_lot
 from cfd_dispersion.figures.par_pdv import (
     MAX_TIRAGES_DEFAUT,
     _nominaux_du_point,
@@ -65,13 +65,31 @@ def tableau(lois_deux: JeuDeLois) -> pd.DataFrame:
                     "Altitude_m": 10_000.0,
                     "cas": f"M{mach}",
                     **{coeff: float(valeur) for coeff, valeur in disperses.items()},
-                    **{f"{coeff}_nominal": valeur for coeff, valeur in nominaux.items()},
                     "DICT_LAW_DISPERSION": TABLE,
                     "DICT_TIRAGE": tirage.vers_dict(),
                     "tirage": tirage.numero,
                 }
             )
     return pd.DataFrame(lignes)
+
+
+@pytest.fixture(scope="module")
+def reference(lois_deux: JeuDeLois) -> pd.DataFrame:
+    """Le même modèle, tirage neutre : une ligne par point de vol."""
+    neutre = tirage_neutre(lois_deux)
+    return pd.DataFrame(
+        [
+            {
+                "Mach": mach,
+                "Altitude_m": 10_000.0,
+                **{coeff: float(valeur) for coeff, valeur in neutre.appliquer(nominaux).items()},
+                "DICT_LAW_DISPERSION": TABLE,
+                "DICT_TIRAGE": neutre.vers_dict(),
+                "tirage": 0,
+            }
+            for mach, nominaux in NOMINAUX.items()
+        ]
+    )
 
 
 #: Le parcours le plus court qui prouve quelque chose : une matrice par point
@@ -168,7 +186,16 @@ class TestInventaire:
             racine=tmp_path,
             max_tirages=1,
         )
-        assert list(inventaire.columns) == ["Mach", "tirage", "figure", "fichier"]
+        assert list(inventaire.columns) == [
+            "Mach",
+            "tirage",
+            "figure",
+            "fichier",
+            "calcul",
+            "modele",
+            "ecart",
+            "accord",
+        ]
         assert sorted(inventaire["figure"]) == ["CA", "CN", "matrice"]
         assert all(Path(chemin).is_file() for chemin in inventaire["fichier"])
 
@@ -202,23 +229,30 @@ class TestInventaire:
 
 
 class TestValeursNominales:
-    def test_une_colonne_constante_est_la_valeur_nominale(self) -> None:
-        lignes = pd.DataFrame({"CN": [0.85, 0.85], "CA": [0.03, 0.03]})
-        assert _nominaux_du_point(lignes, ["CN"], None) == {"CN": 0.85}
+    def test_la_reference_donne_le_nominal(self) -> None:
+        """Le modèle tourné une fois avec un tirage neutre."""
+        lignes = pd.DataFrame({"CN": [0.83, 0.87]})
+        reference = pd.DataFrame({"CN": [0.85]})
+        assert _nominaux_du_point(lignes, ["CN"], None, reference) == {"CN": 0.85}
 
-    def test_une_colonne_qui_varie_est_un_coefficient_disperse(self) -> None:
-        """La retenir centrerait la loi sur le tirage qu'elle doit juger."""
+    def test_la_colonne_du_coefficient_n_est_pas_un_nominal(self) -> None:
+        """C'est la sortie dispersée : la prendre centrerait la loi sur elle."""
+        lignes = pd.DataFrame({"CN": [0.85, 0.85]})
+        assert _nominaux_du_point(lignes, ["CN"], None, None) == {}
+
+    def test_une_colonne_nominale_explicite_sert_de_repli(self) -> None:
         lignes = pd.DataFrame({"CN": [0.83, 0.87], "CN_nominal": [0.85, 0.85]})
-        assert _nominaux_du_point(lignes, ["CN"], None) == {"CN": 0.85}
+        assert _nominaux_du_point(lignes, ["CN"], None, None) == {"CN": 0.85}
 
-    def test_sans_colonne_il_n_y_a_pas_de_nominal(self) -> None:
+    def test_sans_rien_il_n_y_a_pas_de_nominal(self) -> None:
         """Le troisième panneau le dira plutôt que d'en inventer un."""
         lignes = pd.DataFrame({"autre": [1.0, 2.0]})
-        assert _nominaux_du_point(lignes, ["CN"], None) == {}
+        assert _nominaux_du_point(lignes, ["CN"], None, None) == {}
 
     def test_l_appelant_peut_imposer(self) -> None:
         lignes = pd.DataFrame({"CN": [0.85, 0.85]})
-        assert _nominaux_du_point(lignes, ["CN"], {"CN": 1.0}) == {"CN": 1.0}
+        reference = pd.DataFrame({"CN": [0.80]})
+        assert _nominaux_du_point(lignes, ["CN"], {"CN": 1.0}, reference) == {"CN": 1.0}
 
     def test_un_nominal_impose_traverse_le_parcours(
         self, tableau: pd.DataFrame, tmp_path: Path
@@ -231,6 +265,54 @@ class TestValeursNominales:
             **LEGER,
         )
         assert len(inventaire) == 1
+
+
+class TestAccordAvecLeModele:
+    """Le seul contrôle du paquet qui porte sur le modèle, pas sur le tirage."""
+
+    def test_l_inventaire_porte_le_verdict(
+        self, tableau: pd.DataFrame, reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference,
+            max_tirages=1,
+        )
+        coefficients = inventaire[inventaire["figure"] != "matrice"]
+        assert coefficients["accord"].all()
+        assert coefficients["ecart"].abs().max() < 1e-12
+
+    def test_un_modele_qui_derape_est_repere(
+        self, tableau: pd.DataFrame, reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Une convention différente de part et d'autre, et rien ne le dirait."""
+        faux = tableau.copy()
+        faux["CN"] = faux["CN"] * 1.01
+        inventaire = figures_tirage_par_pdv(
+            faux,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference,
+            max_tirages=1,
+        )
+        verdicts = inventaire.set_index("figure")["accord"]
+        assert not verdicts["CN"]
+        assert verdicts["CA"]
+
+    def test_sans_nominal_il_n_y_a_pas_de_verdict(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Rien à recalculer, donc rien à confronter."""
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            max_tirages=1,
+        )
+        coefficients = inventaire[inventaire["figure"] != "matrice"]
+        assert coefficients["accord"].isna().all()
 
 
 class TestFormesDeTableau:
@@ -311,6 +393,7 @@ class TestParallelisme:
             lois=charger_lois(TABLE),
             coefficients=("CN",),
             nominaux={"CN": 0.85},
+            disperses_modele={"CN": 0.83},
             dossier=tmp_path,
             etiquette="M = 0.85",
             formats=("svg",),
@@ -319,6 +402,7 @@ class TestParallelisme:
             convention=convention(),
             sigmas=(1, 2, 3),
             max_par_figure=4,
+            tolerance=1e-6,
             profil="notebook",
         )
         assert pickle.loads(pickle.dumps(travail)).numero == 0

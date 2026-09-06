@@ -391,6 +391,18 @@ not part of the Bash framework's runtime:
       `01_EXEMPLE/sortie_modele.py` is a **hard-coded example of the model output table** (4 flight
       points × 100 draws = 400 rows, one lot replayed at every flight point) that later examples
       build on.
+    - **The nominal comes from a second table, and the model gets checked.** `reference=` on the
+      walker is the same model run once with a neutral draw (`tirage_neutre` — `FE = 1` for
+      `biais + FE·c`, `FE = 0` for the percentage form, *resolved* from the relation rather than
+      hard-coded, since one-versus-zero would null or double a whole study's baseline); its
+      `<coeff>` columns are the nominals. The main table's `<coeff>` is therefore the model's
+      **dispersed output**, and `figure_tirage(disperse_modele=…)` marks it beside the value the
+      package recomputes as `convention(nominal, biais, FE)`, stating whether they agree
+      (`comparer_au_modele` / `AccordModele`, relative tolerance 1e-6 against the nominal's scale;
+      the parameter box turns red on disagreement, and the walker's inventory carries `calcul`,
+      `modele`, `ecart`, `accord`). It is the only check in the package aimed at the *model* rather
+      than the draw, and it catches the three silent ones: a different convention on either side,
+      a reference the model never saw, dispersion applied somewhere else than assumed.
     - **The built-in `CONVENTIONS` are module-level functions, not lambdas**, so a `Tirage` — and
       anything carrying one — survives `pickle`. Before that, `pickle.dumps(tirer_lot(...))` failed,
       which quietly cost a `multiprocessing.Pool` the draws it was being handed and dropped

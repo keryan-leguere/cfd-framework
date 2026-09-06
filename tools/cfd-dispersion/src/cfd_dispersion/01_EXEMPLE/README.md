@@ -33,7 +33,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `03_polaire_batch_plot.py` | cas d'usage 2.3 : la dispersion greffée sur `cfd_plot.batch_plot` |
 | `04_bande_et_correlation.py` | corrélé/indépendant, les trois remplissages, deux coefficients liés |
 | `05_modele_croise.py` | **la forme d'un vrai modèle** : listes d'axes croisées, tableau large à colonnes dictionnaires |
-| `sortie_modele.py` | **un exemple écrit en dur du tableau de sortie** : 4 points de vol × 100 tirages, les deux dictionnaires, les métadonnées |
+| `sortie_modele.py` | **un exemple écrit en dur du tableau de sortie** : 4 points de vol × 100 tirages, les deux dictionnaires, les métadonnées — plus la base de référence, tirage neutre |
 | `06_tirages_par_pdv.py` | le parcours des points de vol : une figure par (PDV × tirage × coefficient) |
 
 ---
@@ -145,10 +145,13 @@ Pas un modèle : la **forme** de sa sortie, à comparer à la vôtre. Quatre poi
 de vol, cent tirages, 400 lignes. Le lot est tiré une fois et rejoué à chaque
 point de vol — le tirage n° 7 est le même partout, et y porte le même numéro.
 
-À regarder : `SORTIE_MODELE.csv`, et la liste des colonnes qu'affiche le script.
-`<coeff>` y porte le coefficient **dispersé** (il change à chaque ligne),
-`<coeff>_nominal` la valeur non dispersée du point de vol (constante sur ses
-cent lignes).
+`<coeff>` y porte le coefficient **dispersé** : il change à chaque ligne. La
+valeur nominale, elle, vient d'un second tableau de même structure —
+`sortie_modele_reference()`, le même modèle tourné une fois avec un tirage
+neutre (`tirage_neutre`, `FE = 1` en convention linéaire).
+
+À regarder : `SORTIE_MODELE.csv`, `SORTIE_MODELE_REFERENCE.csv`, et la liste des
+colonnes qu'affiche le script.
 
 ### `06_tirages_par_pdv.py` — une figure par point de vol et par tirage
 
@@ -158,9 +161,19 @@ premiers** tirages, et écrit pour chacun une figure par coefficient plus la
 matrice qui les empile. Soit ici 4 × 15 × (3 + 1) = 240 fichiers, en une minute
 sur tous les cœurs.
 
-À regarder : `TIRAGES/M_0.7/Z_0/tirage_000/matrice.svg` — le point de vol est
-rappelé dans le titre, un SVG se transmettant seul — et
-`INVENTAIRE_TIRAGES.csv`, qui dit ce qui a été écrit, ligne par ligne.
+Le troisième panneau confronte en plus le coefficient **rendu par le modèle** à
+celui que le paquet recalcule, et dit si les deux concordent : c'est le seul
+contrôle qui porte sur le modèle lui-même.
+
+À regarder :
+
+* `TIRAGES/M_0.7/Z_0/tirage_000/matrice.svg` — le point de vol est rappelé dans
+  le titre, un SVG se transmettant seul ;
+* `INVENTAIRE_TIRAGES.csv`, qui dit ce qui a été écrit ligne par ligne, avec le
+  verdict (`calcul`, `modele`, `ecart`, `accord`) ;
+* `tirage_desaccord.svg` — **un désaccord volontaire de 1 %** : la boîte de
+  paramètres passe au rouge et chiffre l'écart. C'est ce qu'on verrait si le
+  modèle et le paquet n'appliquaient pas la même convention.
 
 ---
 

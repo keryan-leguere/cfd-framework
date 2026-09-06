@@ -396,13 +396,18 @@ Trois points d'attention :
 
 * **Quinze tirages par point de vol**, pas cent. Quatre cents figures par
   coefficient, personne ne les regarde. `max_tirages=None` les prend toutes.
-* **La valeur nominale peut manquer.** Elle est cherchée dans la colonne du même
-  nom que le coefficient, puis dans `<coeff>_nominal` — et dans les deux cas
-  seulement si la colonne est **constante** sur le point de vol : une colonne
-  qui varie d'un tirage à l'autre est un coefficient dispersé, pas un nominal,
-  et la retenir centrerait la loi sur le tirage qu'elle doit juger. Sans
-  nominal, les deux panneaux de composantes sont tracés quand même et le
-  troisième dit ce qui lui manque.
+* **La valeur nominale vient de `reference=`**, le tableau du tirage neutre
+  (§5.5) : ses colonnes `<coeff>` *sont* les nominaux. À défaut, `nominaux=`
+  l'impose, ou une colonne `<coeff>_nominal` du tableau la porte. Sans nominal,
+  les deux panneaux de composantes sont tracés quand même et le troisième dit
+  ce qui lui manque.
+* **Le modèle est confronté au calcul.** La colonne `<coeff>` est la sortie
+  dispersée ; le paquet recalcule `convention(nominal, biais, FE)` et compare.
+  Les deux doivent tomber sur le même nombre — sinon c'est une convention
+  différente de part et d'autre, une référence qui n'est pas celle qu'a vue le
+  modèle, ou un modèle qui n'applique pas la dispersion là où on croit. Le
+  verdict est écrit sur la figure (en rouge s'il y a désaccord) et dans
+  l'inventaire, colonnes `calcul`, `modele`, `ecart`, `accord`.
 * **Une figure coûte une demi-seconde** à écrire — la police du gabarit est
   vectorisée glyphe par glyphe. Un parcours de 4 × 15 tirages écrit 240 fichiers
   en une minute sur tous les cœurs, quatre en séquence. D'où `n_jobs`.
@@ -677,6 +682,7 @@ bande.
 | le plan d'appels | `plan_croise(Mach=L_MACH, Altitude_m=L_ALTITUDE, alpha=L_ALPHA)` |
 | la table de lois | `{coeff: {"Biais_Type", "Biais_M", "Biais_ET", "FE_Type", "FE_M", "FE_ET"}}` |
 | ce que le modèle reçoit | `{coeff: {"Biais": float, "FE": float}}` — un `Tirage`, ou `dict(tirage)` |
+| la base de référence | le même modèle avec `tirage_neutre(lois)`, une ligne par point de vol |
 | la sortie, forme à plat | `DataFrame`, une ligne par appel ; colonnes `<coeff>_Biais`, `<coeff>_FE`, `<coeff>`, les clés de point de vol, un identifiant de tirage |
 | la sortie, forme large | `DataFrame` + colonnes `DICT_TIRAGE` et `DICT_LAW_DISPERSION` (dict ou chaîne) + vos métadonnées → `lire_sortie_modele(df)` |
 | la validation d'un tableau croisé | `valider_lot(..., par=…, unique_par=("tirage",))` |

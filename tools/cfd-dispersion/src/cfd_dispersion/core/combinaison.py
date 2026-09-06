@@ -49,7 +49,10 @@ from .lois import LoiCoefficient
 __all__ = [
     "GRAINE_LISSAGE",
     "N_LISSAGE",
+    "TOLERANCE_ACCORD",
+    "AccordModele",
     "LoiCombinee",
+    "comparer_au_modele",
     "decomposition_affine",
     "loi_combinee",
 ]
@@ -64,6 +67,11 @@ GRAINE_LISSAGE: int = 20_240_101
 
 #: Tolérance relative du contrôle d'affinité.
 _TOL_AFFINE: float = 1e-9
+
+#: Tolérance relative de l'accord entre le coefficient calculé et celui rendu
+#: par le modèle. Serrée : les deux doivent être *le même nombre*, à l'erreur
+#: d'écriture près. Un écart plus grand n'est pas du bruit, c'est un désaccord.
+TOLERANCE_ACCORD: float = 1e-6
 
 
 def decomposition_affine(
@@ -371,3 +379,112 @@ def _combinaison_lissee(
     # correction de bord, le noyau déborde des bornes et rabote le sommet.
     noyau.setBoundaryCorrection(True)
     return noyau.build(echantillon)
+
+
+@dataclass(frozen=True)
+class AccordModele:
+    """Le coefficient calculé, celui rendu par le modèle, et leur écart.
+
+    Le modèle applique le tirage lui-même ; le paquet le réapplique à la valeur
+    nominale. Les deux doivent tomber sur le même nombre. Quand ils n'y tombent
+    pas, ce n'est pas du bruit numérique : c'est une convention différente de
+    part et d'autre (le facteur 100 de ``pourcentage``), une valeur nominale de
+    référence qui n'est pas celle qu'a vue le modèle, ou un modèle qui
+    n'applique pas la dispersion là où on croit.
+
+    C'est le seul contrôle du paquet qui porte sur le **modèle** et non sur le
+    tirage — et il ne coûte rien, puisque les deux nombres sont là.
+
+    Attributes
+    ----------
+    calcul:
+        ``convention(nominal, biais, FE)``, ce que le paquet obtient.
+    modele:
+        Ce que le modèle a rendu pour ce tirage.
+    ecart:
+        ``modele - calcul``.
+    ecart_relatif:
+        L'écart rapporté à l'échelle du coefficient, en pourcentage.
+    accord:
+        Vrai si l'écart tient dans la tolérance.
+    tolerance:
+        La tolérance **relative** employée.
+    """
+
+    calcul: float
+    modele: float
+    ecart: float
+    ecart_relatif: float
+    accord: bool
+    tolerance: float = TOLERANCE_ACCORD
+
+    @property
+    def resume(self) -> str:
+        """Le verdict en une ligne, pour un terminal ou un inventaire."""
+        if self.accord:
+            return "modèle = calcul"
+        return f"modèle ≠ calcul : {self.ecart:+.4g} ({self.ecart_relatif:+.3g} %)"
+
+    @property
+    def lignes(self) -> tuple[str, ...]:
+        """Le même verdict en lignes courtes, pour une boîte de figure.
+
+        Le chiffre passe à la ligne : la boîte partage sa largeur avec la
+        légende, et une ligne trop longue passe dessous.
+        """
+        if self.accord:
+            return ("modèle = calcul",)
+        return ("modèle ≠ calcul", f"{self.ecart:+.4g} ({self.ecart_relatif:+.3g} %)")
+
+
+def comparer_au_modele(
+    calcul: float,
+    modele: float,
+    *,
+    nominal: float | None = None,
+    tolerance: float = TOLERANCE_ACCORD,
+) -> AccordModele:
+    """Compare le coefficient recalculé à celui que le modèle a rendu.
+
+    Parameters
+    ----------
+    calcul:
+        Le coefficient reconstruit ici, ``convention(nominal, biais, FE)``.
+    modele:
+        Le coefficient rendu par le modèle pour ce même tirage.
+    nominal:
+        La valeur nominale, qui donne son échelle à l'écart relatif. À défaut,
+        l'échelle est celle des deux valeurs comparées.
+    tolerance:
+        Tolérance **relative** à cette échelle.
+
+    Returns
+    -------
+    AccordModele
+
+    Examples
+    --------
+    >>> comparer_au_modele(0.8325, 0.8325).accord
+    True
+    >>> comparer_au_modele(0.8325, 0.8400, nominal=0.85).accord
+    False
+    """
+    calcule = float(calcul)
+    rendu = float(modele)
+    ecart = rendu - calcule
+
+    # L'échelle est celle du coefficient — son nominal — comme partout ailleurs
+    # dans le paquet : un écart de 0.001 n'a pas le même sens sur un CA de 0.03
+    # et sur un CN de 0.85. Sans nominal, celle des deux valeurs comparées.
+    echelle = abs(float(nominal)) if nominal is not None else 0.0
+    if echelle == 0.0:
+        echelle = max(abs(calcule), abs(rendu)) or 1.0
+
+    return AccordModele(
+        calcul=calcule,
+        modele=rendu,
+        ecart=ecart,
+        ecart_relatif=100.0 * ecart / echelle,
+        accord=abs(ecart) <= tolerance * echelle,
+        tolerance=tolerance,
+    )

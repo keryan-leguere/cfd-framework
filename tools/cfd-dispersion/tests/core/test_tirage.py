@@ -13,6 +13,7 @@ from cfd_dispersion.core.lois import JeuDeLois
 from cfd_dispersion.core.tirage import (
     Tirage,
     tableau_des_tirages,
+    tirage_neutre,
     tirer,
     tirer_lot,
     tirer_tableau,
@@ -264,3 +265,53 @@ class TestTableauDesTirages:
     def test_il_accepte_n_importe_quelle_sequence(self, lois: JeuDeLois) -> None:
         lot = tirer_lot(lois, 4, graine=1)
         assert len(tableau_des_tirages(tuple(lot))) == 4
+
+
+class TestTirageNeutre:
+    """Le tirage qui ne disperse rien : la base de référence d'une étude."""
+
+    @pytest.mark.parametrize(
+        ("nom", "fe"),
+        [("lineaire", 1.0), ("pourcentage", 0.0), ("relatif", 0.0)],
+    )
+    def test_le_facteur_neutre_depend_de_la_convention(
+        self, lois: JeuDeLois, nom: str, fe: float
+    ) -> None:
+        """Un ou zéro : se tromper donne une référence nulle ou doublée."""
+        neutre = tirage_neutre(lois, convention_=nom)
+        assert neutre["Cm_alpha"] == {"Biais": 0.0, "FE": fe}
+
+    @pytest.mark.parametrize("nom", ["lineaire", "pourcentage", "relatif"])
+    def test_il_laisse_le_coefficient_inchange(self, lois: JeuDeLois, nom: str) -> None:
+        neutre = tirage_neutre(lois, convention_=nom)
+        assert float(neutre.appliquer({"Cm_alpha": -2.5})["Cm_alpha"]) == pytest.approx(-2.5)
+
+    def test_il_couvre_tous_les_coefficients(self, lois: JeuDeLois) -> None:
+        assert set(tirage_neutre(lois)) == set(lois)
+
+    def test_il_ne_pretend_pas_venir_d_un_plan(self, lois: JeuDeLois) -> None:
+        """Ce n'est pas un tirage aléatoire : ni plan, ni graine, ni numéro."""
+        neutre = tirage_neutre(lois)
+        assert neutre.methode is None
+        assert neutre.numero is None
+        assert "plan" not in neutre.resume
+
+    def test_une_relation_maison_affine_a_son_neutre(self, lois: JeuDeLois) -> None:
+        maison = Convention(
+            nom="maison",
+            formule="biais + (2·FE − 1) · c",
+            appliquer=lambda c, biais, fe: biais + (2.0 * fe - 1.0) * c,
+        )
+        assert tirage_neutre(lois, convention_=maison)["CA"]["FE"] == pytest.approx(1.0)
+
+    def test_une_relation_non_affine_est_refusee(self, lois: JeuDeLois) -> None:
+        tordue = Convention(
+            nom="tordue", formule="biais + FE² · c", appliquer=lambda c, b, f: b + f**2 * c
+        )
+        with pytest.raises(ValueError, match="pas affine"):
+            tirage_neutre(lois, convention_=tordue)
+
+    def test_une_relation_qui_ignore_le_fe_est_refusee(self, lois: JeuDeLois) -> None:
+        sourde = Convention(nom="sourde", formule="biais + c", appliquer=lambda c, b, f: b + c)
+        with pytest.raises(ValueError, match="facteur d'échelle"):
+            tirage_neutre(lois, convention_=sourde)

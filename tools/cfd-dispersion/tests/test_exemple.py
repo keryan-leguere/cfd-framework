@@ -166,6 +166,12 @@ class TestExecution:
         assert len(inventaire) == 16
         assert set(inventaire["figure"]) == {"CN", "CA", "Cm_alpha", "matrice"}
         assert (tmp_path / "TIRAGES" / "M_0.7" / "Z_0" / "tirage_000" / "matrice.svg").is_file()
+        # La valeur nominale vient du tableau de référence, et le coefficient
+        # recalculé doit retomber sur celui que le modèle a rendu.
+        assert inventaire["accord"].dropna().all()
+        # Et le désaccord volontaire, lui, doit être vu.
+        assert (tmp_path / "tirage_desaccord.svg").is_file()
+        assert "modèle ≠ calcul" in resultat.stdout
 
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""
@@ -174,9 +180,16 @@ class TestExecution:
 
         table = pd.read_csv(tmp_path / "SORTIE_MODELE.csv")
         assert len(table) == 4 * 10
-        assert {"DICT_LAW_DISPERSION", "DICT_TIRAGE", "tirage", "CN_nominal"} <= set(table.columns)
+        assert {"DICT_LAW_DISPERSION", "DICT_TIRAGE", "tirage", "CN"} <= set(table.columns)
         # Le tirage 3 est le même aux quatre points de vol.
         assert table.loc[table["tirage"] == 3, "DICT_TIRAGE"].nunique() == 1
+
+        # La référence : le même modèle, tirage neutre, une ligne par point de
+        # vol — et ses coefficients sont les nominaux.
+        reference = pd.read_csv(tmp_path / "SORTIE_MODELE_REFERENCE.csv")
+        assert len(reference) == 4
+        assert list(reference.columns) == list(table.columns)
+        assert reference.loc[reference["Mach"] == 0.85, "CN"].tolist() == [0.850, 0.868]
 
     def test_04_bande_et_correlation(self, tmp_path: Path) -> None:
         resultat = self._lancer("04_bande_et_correlation.py", tmp_path, "-n", "400")

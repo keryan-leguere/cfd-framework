@@ -329,6 +329,74 @@ class TestSansNominal:
         assert MESSAGE_SANS_NOMINAL.format(coefficient="Cm_alpha") in textes_de(page.figure)
 
 
+class TestAccordAvecLeModele:
+    """La valeur que le modèle a rendue, confrontée à celle qu'on recalcule."""
+
+    def _calcul(self, lois: JeuDeLois, tirage: Tirage) -> float:
+        return float(tirage.appliquer({"Cm_alpha": -2.5})["Cm_alpha"])
+
+    def test_la_valeur_du_modele_est_reperee(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        rendue = figure_tirage(
+            "Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5, disperse_modele=-2.6
+        )
+        libelles = {str(ligne.get_label()) for ligne in rendue.axes[2].get_lines()}
+        assert any(libelle.startswith("modèle : -2.6") for libelle in libelles)
+
+    def test_l_accord_est_rendu(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        calcul = self._calcul(lois, tirage)
+        rendue = figure_tirage(
+            "Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5, disperse_modele=calcul
+        )
+        assert rendue.accord is not None
+        assert rendue.accord.accord
+        assert any("modèle = calcul" in texte for texte in textes_de(rendue.figure))
+
+    def test_un_desaccord_est_chiffre(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        """Une convention différente de part et d'autre, et rien ne le dirait."""
+        calcul = self._calcul(lois, tirage)
+        rendue = figure_tirage(
+            "Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5, disperse_modele=calcul * 1.05
+        )
+        assert rendue.accord is not None
+        assert not rendue.accord.accord
+        assert any("modèle ≠ calcul" in texte for texte in textes_de(rendue.figure))
+
+    def test_sans_valeur_de_modele_il_n_y_a_pas_de_verdict(
+        self, lois: JeuDeLois, tirage: Tirage
+    ) -> None:
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5)
+        assert rendue.accord is None
+        assert not any("modèle" in texte for texte in textes_de(rendue.figure))
+
+    def test_sans_nominal_il_n_y_a_rien_a_comparer(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        """Pas de calcul possible, donc pas de confrontation."""
+        rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, disperse_modele=-2.6)
+        assert rendue.accord is None
+
+    def test_la_tolerance_se_regle(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        calcul = self._calcul(lois, tirage)
+        rendue = figure_tirage(
+            "Cm_alpha",
+            lois["Cm_alpha"],
+            tirage,
+            nominal=-2.5,
+            disperse_modele=calcul * 1.001,
+            tolerance=0.01,
+        )
+        assert rendue.accord is not None and rendue.accord.accord
+
+    def test_la_matrice_confronte_chaque_ligne(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        disperses = tirage.appliquer(NOMINAUX)
+        (page,) = figure_tirage_matrice(
+            lois,
+            tirage,
+            nominaux=NOMINAUX,
+            disperses_modele={nom: float(valeur) for nom, valeur in disperses.items()},
+        )
+        textes = textes_de(page.figure)
+        assert sum("modèle = calcul" in texte for texte in textes) == 3
+
+
 class TestEcriture:
     def test_sans_chemin_rien_n_est_ecrit(self, lois: JeuDeLois, tirage: Tirage) -> None:
         rendue = figure_tirage("Cm_alpha", lois["Cm_alpha"], tirage, nominal=-2.5)

@@ -128,7 +128,29 @@ lissage, au lieu de produire une loi « exacte » exactement fausse.
 
 ---
 
-## 2.5 La figure du tirage
+## 2.5 Le tirage neutre
+
+Faire tourner le modèle **sans dispersion** donne la base de référence d'une
+étude : les coefficients nominaux, point de vol par point de vol. Encore
+faut-il savoir ce que « sans dispersion » veut dire, et cela dépend de la
+convention :
+
+```python
+from cfd_dispersion import tirage_neutre
+
+tirage_neutre(lois)  # {'CN': {'Biais': 0.0, 'FE': 1.0}}
+tirage_neutre(lois, convention_="pourcentage")  # {'CN': {'Biais': 0.0, 'FE': 0.0}}
+```
+
+`FE = 1` pour `biais + FE · c`, `FE = 0` pour `biais + (1 + FE/100) · c` : se
+tromper d'un ou de zéro donne une base de référence nulle ou doublée. La valeur
+n'est pas codée en dur mais **résolue** depuis la relation, en cherchant le `FE`
+qui laisse deux coefficients différents inchangés — une relation maison affine
+passe donc par là comme les autres.
+
+---
+
+## 2.6 La figure du tirage
 
 ![le tirage en trois panneaux](FIGURES/04_tirage_3_panneaux.png)
 
@@ -174,6 +196,20 @@ pages = figure_tirage_matrice(
 
 Sans `chemin`, rien n'est écrit : `rendue.fichiers` est vide et la figure reste
 à l'appelant.
+
+Le troisième panneau confronte aussi, quand on le lui donne, le coefficient que
+le **modèle** a rendu pour ce tirage à celui qu'il recalcule :
+
+```python
+figure_tirage("CN", lois["CN"], tirage, nominal=0.85, disperse_modele=0.8325)
+# la boîte dit « modèle = calcul », ou passe au rouge et chiffre l'écart
+```
+
+Les deux doivent tomber sur le même nombre. Quand ils n'y tombent pas, c'est
+une convention différente de part et d'autre (le facteur 100 de `pourcentage`),
+une valeur nominale de référence qui n'est pas celle qu'a vue le modèle, ou un
+modèle qui n'applique pas la dispersion là où on croit — trois erreurs que rien
+d'autre ne trahit.
 
 `nominal` est **facultatif**. Sans lui, les deux panneaux de composantes sont
 tracés comme d'habitude — ce sont les lois du biais et du facteur d'échelle,

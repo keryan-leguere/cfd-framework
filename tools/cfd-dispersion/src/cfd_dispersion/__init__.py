@@ -63,6 +63,7 @@ from .core.alea import graine_temporaire
 from .core.tirage import (
     Tirage,
     tableau_des_tirages,
+    tirage_neutre,
     tirer,
     tirer_lot,
     tirer_tableau,
@@ -70,7 +71,10 @@ from .core.tirage import (
 
 # --- La loi du coefficient dispersé ------------------------------------------
 from .core.combinaison import (
+    TOLERANCE_ACCORD,
+    AccordModele,
     LoiCombinee,
+    comparer_au_modele,
     loi_combinee,
 )
 
@@ -152,6 +156,7 @@ __all__ = [
     "convention",
     # Le tirage
     "Tirage",
+    "tirage_neutre",
     "tirer",
     "tirer_lot",
     "tirer_tableau",
@@ -160,6 +165,9 @@ __all__ = [
     # La loi du coefficient dispersé
     "LoiCombinee",
     "loi_combinee",
+    "AccordModele",
+    "comparer_au_modele",
+    "TOLERANCE_ACCORD",
     # La propagation
     "BandeDispersion",
     "INTERVALLES",
