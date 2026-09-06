@@ -40,6 +40,7 @@ import pandas as pd
 
 from cfd_dispersion import (
     JeuDeLois,
+    Tirage,
     charger_lois,
     convention,
     plan_croise,
@@ -138,11 +139,17 @@ def appeler_modele_polaire(
     mach: float = 0.80,
     convention_: str = "lineaire",
     graine: int = 7,
+    tirages: Sequence[Tirage] | None = None,
 ) -> pd.DataFrame:
     """Appelle le modèle *n* fois sur un balayage en incidence.
 
     C'est la forme dont part le cas d'usage 2.3 : un tableau à plat, une ligne
     par (tirage × point du balayage), à regrouper en une courbe par tirage.
+
+    *tirages* impose la liste des tirages au lieu d'en tirer *n*. C'est ainsi
+    qu'on obtient la **polaire de référence** : un seul tirage, neutre.
+
+        appeler_modele_polaire(lois, alpha, tirages=[tirage_neutre(lois)])
     """
     relation = convention(convention_)
     nominaux = coefficients_nominaux(mach)
@@ -150,7 +157,8 @@ def appeler_modele_polaire(
     lignes = []
     # `tirer_lot` rend la liste des tirages : un modèle boucle dessus et reçoit
     # à chaque tour le dictionnaire {coeff: {"Biais": …, "FE": …}} qu'il attend.
-    for tirage in tirer_lot(lois, n, graine=graine):
+    lot = list(tirages) if tirages is not None else tirer_lot(lois, n, graine=graine)
+    for tirage in lot:
         colonnes: dict[str, Any] = {"alpha": alpha}
         for coefficient, valeur in nominaux.items():
             # Le coefficient nominal varie le long du balayage ; le tirage,
@@ -161,7 +169,7 @@ def appeler_modele_polaire(
             colonnes[coefficient] = relation(courbe, biais, fe)
             colonnes[f"{coefficient}_Biais"] = biais
             colonnes[f"{coefficient}_FE"] = fe
-        colonnes["tirage"] = tirage.numero
+        colonnes["tirage"] = 0 if tirage.numero is None else tirage.numero
         colonnes["Mach"] = mach
         lignes.append(pd.DataFrame(colonnes))
 

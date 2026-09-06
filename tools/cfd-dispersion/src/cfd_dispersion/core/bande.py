@@ -41,8 +41,11 @@ from .lois import LoiCoefficient
 __all__ = [
     "INTERVALLES",
     "BandeDispersion",
+    "ResumeDispersion",
+    "bande_depuis_courbes",
     "bande_depuis_loi",
     "bande_depuis_points",
+    "resume_dispersion",
 ]
 
 #: Les réductions de nuage disponibles.
@@ -421,4 +424,179 @@ def bande_depuis_points(
         niveau=niveau,
         correle=False,
         relation=relation,
+    )
+
+
+def bande_depuis_courbes(
+    x: object,
+    nominal: object,
+    courbes: object,
+    *,
+    intervalle: Intervalle = "minmax",
+    couverture: float | None = None,
+    k: float | None = None,
+    convention_: ConventionArg = None,
+    correle: bool = True,
+) -> BandeDispersion:
+    """Fabrique une bande à partir de courbes **déjà obtenues**, sans retirer.
+
+    Les deux autres constructeurs tirent : celui-ci prend le nuage tel quel.
+    C'est ce qu'il faut quand les courbes viennent du modèle — la sortie de
+    :func:`cfd_dispersion.courbes_par_tirage` — et non d'un tirage du paquet.
+
+    Parameters
+    ----------
+    x:
+        L'abscisse du balayage, forme ``(npts,)``.
+    nominal:
+        La courbe non dispersée, forme ``(npts,)``.
+    courbes:
+        Le nuage, forme ``(n_tirages, npts)``.
+    intervalle:
+        ``"minmax"`` (défaut), ``"percentile"`` ou ``"sigma"``.
+    couverture, k:
+        Le niveau, selon l'intervalle choisi.
+    convention_:
+        La relation employée, pour mémoire — elle ne sert qu'à décrire la
+        bande, les courbes étant déjà reconstruites.
+    correle:
+        Si un même tirage a été partagé sur tout le balayage. Vrai par défaut :
+        c'est le cas d'un modèle appelé en croisé.
+
+    Returns
+    -------
+    BandeDispersion
+
+    Raises
+    ------
+    ValueError
+        Si les formes ne concordent pas, ou si le niveau ne s'applique pas à
+        l'intervalle demandé.
+    """
+    abscisse = np.asarray(x, dtype=float)
+    courbe = np.asarray(nominal, dtype=float)
+    nuage = np.atleast_2d(np.asarray(courbes, dtype=float))
+
+    if abscisse.ndim != 1:
+        raise ValueError(f"x doit être 1-D, reçu la forme {abscisse.shape}")
+    if courbe.shape != abscisse.shape:
+        raise ValueError(
+            f"nominal porte {courbe.shape} valeurs pour {abscisse.shape} abscisses ; "
+            "les deux doivent correspondre"
+        )
+    if nuage.shape[1] != abscisse.size:
+        raise ValueError(
+            f"les courbes ont {nuage.shape[1]} colonnes pour {abscisse.size} abscisses ; "
+            "les deux doivent correspondre"
+        )
+
+    return _construire(
+        abscisse,
+        courbe,
+        nuage,
+        intervalle=intervalle,
+        niveau=_resoudre_niveau(intervalle, couverture, k),
+        correle=correle,
+        relation=convention(convention_),
+    )
+
+
+@dataclass(frozen=True)
+class ResumeDispersion:
+    """Ce qu'une bande donne à retenir, en quatre nombres.
+
+    Une enveloppe se regarde ; elle se raconte mal. Ces quatre nombres sont ce
+    qu'on recopie dans un compte rendu : combien de tirages, de combien le
+    coefficient peut bouger, où il bouge le plus, et si la dispersion le
+    déplace en moyenne.
+
+    Attributes
+    ----------
+    n_tirages, npts:
+        L'effectif, et la longueur du balayage.
+    enveloppe:
+        La plus grande hauteur d'enveloppe rencontrée le long du balayage.
+    enveloppe_x:
+        L'abscisse où elle est atteinte — la question qui suit toujours.
+    enveloppe_relative:
+        La même, en pourcentage du nominal en ce point. None si le nominal y
+        est nul.
+    sigma:
+        Le plus grand écart-type rencontré, et sa version relative.
+    ecart_moyen:
+        Le plus grand écart entre la moyenne dispersée et le nominal : il est
+        nul quand les lois sont centrées, et c'est un biais dès qu'il ne
+        l'est pas.
+    """
+
+    n_tirages: int
+    npts: int
+    enveloppe: float
+    enveloppe_x: float
+    enveloppe_relative: float | None
+    sigma: float
+    sigma_relative: float | None
+    ecart_moyen: float
+
+    @property
+    def lignes(self) -> tuple[str, ...]:
+        """Le résumé en lignes courtes, pour une boîte de figure."""
+        relative = "" if self.enveloppe_relative is None else f" ({self.enveloppe_relative:.2f} %)"
+        sigma_relative = "" if self.sigma_relative is None else f" ({self.sigma_relative:.2f} %)"
+        return (
+            f"enveloppe max {self.enveloppe:.4g}{relative} à x = {self.enveloppe_x:.4g}",
+            f"σ max {self.sigma:.3g}{sigma_relative}",
+            f"écart moyen/nominal max {self.ecart_moyen:+.3g}",
+        )
+
+    @property
+    def resume(self) -> str:
+        """Le même résumé sur une ligne, pour un terminal."""
+        return " · ".join(self.lignes)
+
+
+def resume_dispersion(bande: BandeDispersion) -> ResumeDispersion:
+    """Réduit une bande aux nombres qu'on recopie dans un compte rendu.
+
+    Parameters
+    ----------
+    bande:
+        La bande, théorique ou obtenue.
+
+    Returns
+    -------
+    ResumeDispersion
+
+    Examples
+    --------
+    >>> resume_dispersion(bande).resume            # doctest: +SKIP
+    'enveloppe max 0.062 (7.30 %) à x = 8 · σ max 0.021 (2.47 %) · …'
+    """
+    hauteur = np.asarray(bande.haut - bande.bas, dtype=float)
+    indice = int(np.argmax(hauteur))
+    nominal = float(bande.nominal[indice])
+
+    # Le plus grand écart moyenne/nominal, avec son signe : un biais a un sens.
+    ecarts = np.asarray(bande.moyenne - bande.nominal, dtype=float)
+    ecart_moyen = float(ecarts[int(np.argmax(np.abs(ecarts)))])
+
+    ecarts_type = np.asarray(bande.ecart_type, dtype=float)
+    indice_sigma = int(np.argmax(ecarts_type))
+    nominal_sigma = float(bande.nominal[indice_sigma])
+
+    return ResumeDispersion(
+        n_tirages=bande.n_tirages,
+        npts=int(bande.x.size),
+        enveloppe=float(hauteur[indice]),
+        enveloppe_x=float(bande.x[indice]),
+        enveloppe_relative=(
+            None if nominal == 0.0 else 100.0 * float(hauteur[indice]) / abs(nominal)
+        ),
+        sigma=float(ecarts_type[indice_sigma]),
+        sigma_relative=(
+            None
+            if nominal_sigma == 0.0
+            else 100.0 * float(ecarts_type[indice_sigma]) / abs(nominal_sigma)
+        ),
+        ecart_moyen=ecart_moyen,
     )

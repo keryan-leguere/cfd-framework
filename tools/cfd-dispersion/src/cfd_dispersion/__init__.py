@@ -82,8 +82,11 @@ from .core.combinaison import (
 from .core.bande import (
     INTERVALLES,
     BandeDispersion,
+    ResumeDispersion,
+    bande_depuis_courbes,
     bande_depuis_loi,
     bande_depuis_points,
+    resume_dispersion,
 )
 
 # --- La validation -----------------------------------------------------------
@@ -104,6 +107,8 @@ from .figures.monte_carlo import (
 )
 from .figures.polaire import (
     courbes_par_tirage,
+    nominal_depuis_tableau,
+    superposer_depuis_tableau,
     superposer_dispersion,
 )
 from .figures.synthese import (
@@ -175,9 +180,12 @@ __all__ = [
     "TOLERANCE_ACCORD",
     # La propagation
     "BandeDispersion",
+    "ResumeDispersion",
+    "resume_dispersion",
     "INTERVALLES",
     "bande_depuis_loi",
     "bande_depuis_points",
+    "bande_depuis_courbes",
     # La validation
     "Verdict",
     "valider",
@@ -207,5 +215,7 @@ __all__ = [
     "figure_synthese",
     "table_rich",
     "superposer_dispersion",
+    "superposer_depuis_tableau",
+    "nominal_depuis_tableau",
     "courbes_par_tirage",
 ]

@@ -10,8 +10,10 @@ import pytest
 from cfd_dispersion.core.bande import (
     INTERVALLES,
     BandeDispersion,
+    bande_depuis_courbes,
     bande_depuis_loi,
     bande_depuis_points,
+    resume_dispersion,
 )
 from cfd_dispersion.core.loi import LoiDispersion
 from cfd_dispersion.core.lois import LoiCoefficient
@@ -380,3 +382,88 @@ class TestDataclass:
     def test_type(self, balayage: tuple[np.ndarray, np.ndarray], loi_cn: LoiCoefficient) -> None:
         x, nominal = balayage
         assert isinstance(bande_depuis_loi(x, nominal, loi=loi_cn, n=20, graine=1), BandeDispersion)
+
+
+class TestBandeDepuisCourbes:
+    """Une bande faite de courbes déjà obtenues, sans rien retirer."""
+
+    def _nuage(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        x = np.linspace(0.0, 12.0, 13)
+        nominal = 0.1 * x
+        # Trois courbes : le nominal, et deux décalées de ±10 %.
+        courbes = np.vstack([nominal * 0.9, nominal, nominal * 1.1])
+        return x, nominal, courbes
+
+    def test_l_enveloppe_min_max_est_celle_des_courbes(self) -> None:
+        x, nominal, courbes = self._nuage()
+        bande = bande_depuis_courbes(x, nominal, courbes)
+        assert bande.bas == pytest.approx(courbes.min(axis=0))
+        assert bande.haut == pytest.approx(courbes.max(axis=0))
+
+    def test_elle_garde_le_nuage(self) -> None:
+        x, nominal, courbes = self._nuage()
+        assert bande_depuis_courbes(x, nominal, courbes).n_tirages == 3
+
+    def test_le_niveau_se_choisit(self) -> None:
+        x, nominal, courbes = self._nuage()
+        bande = bande_depuis_courbes(x, nominal, courbes, intervalle="sigma", k=1.0)
+        assert bande.label == "±1σ"
+
+    def test_un_niveau_qui_ne_s_applique_pas_est_refuse(self) -> None:
+        x, nominal, courbes = self._nuage()
+        with pytest.raises(ValueError, match="minmax"):
+            bande_depuis_courbes(x, nominal, courbes, couverture=0.95)
+
+    def test_des_formes_qui_ne_concordent_pas_sont_refusees(self) -> None:
+        x, nominal, courbes = self._nuage()
+        with pytest.raises(ValueError, match="colonnes"):
+            bande_depuis_courbes(x, nominal, courbes[:, :5])
+
+
+class TestResumeDispersion:
+    """Les quatre nombres qu'on recopie dans un compte rendu."""
+
+    def _bande(self) -> BandeDispersion:
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        # Une enveloppe qui s'ouvre linéairement : ±0 au début, ±0.5 à la fin.
+        demi = 0.05 * x
+        courbes = np.vstack([nominal - demi, nominal, nominal + demi])
+        return bande_depuis_courbes(x, nominal, courbes)
+
+    def test_l_enveloppe_maximale_et_son_abscisse(self) -> None:
+        resume = resume_dispersion(self._bande())
+        assert resume.enveloppe == pytest.approx(1.0)
+        assert resume.enveloppe_x == pytest.approx(10.0)
+
+    def test_elle_est_rapportee_au_nominal(self) -> None:
+        """1.0 d'enveloppe sur un nominal de 2.0 : 50 %."""
+        assert resume_dispersion(self._bande()).enveloppe_relative == pytest.approx(50.0)
+
+    def test_l_effectif_et_la_longueur(self) -> None:
+        resume = resume_dispersion(self._bande())
+        assert (resume.n_tirages, resume.npts) == (3, 11)
+
+    def test_une_dispersion_centree_n_a_pas_d_ecart_moyen(self) -> None:
+        assert resume_dispersion(self._bande()).ecart_moyen == pytest.approx(0.0)
+
+    def test_un_biais_se_voit_dans_l_ecart_moyen(self) -> None:
+        """Des lois décentrées déplacent la moyenne : c'est ce qu'il faut lire."""
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        courbes = np.vstack([nominal + 0.1, nominal + 0.2, nominal + 0.3])
+        assert resume_dispersion(
+            bande_depuis_courbes(x, nominal, courbes)
+        ).ecart_moyen == pytest.approx(0.2)
+
+    def test_un_nominal_nul_ne_divise_pas_par_zero(self) -> None:
+        x = np.linspace(0.0, 1.0, 3)
+        nominal = np.zeros_like(x)
+        courbes = np.vstack([nominal - 0.1, nominal + 0.1])
+        resume = resume_dispersion(bande_depuis_courbes(x, nominal, courbes))
+        assert resume.enveloppe_relative is None
+
+    def test_le_resume_tient_en_trois_lignes(self) -> None:
+        resume = resume_dispersion(self._bande())
+        assert len(resume.lignes) == 3
+        assert "enveloppe max" in resume.resume

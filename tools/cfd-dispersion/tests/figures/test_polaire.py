@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +13,12 @@ from matplotlib.axes import Axes
 
 from cfd_dispersion.core.lois import JeuDeLois
 from cfd_dispersion.figures._base import assombrir, nouvelle_figure, tracer_ligne
-from cfd_dispersion.figures.polaire import courbes_par_tirage, superposer_dispersion
+from cfd_dispersion.figures.polaire import (
+    courbes_par_tirage,
+    nominal_depuis_tableau,
+    superposer_depuis_tableau,
+    superposer_dispersion,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -352,3 +358,123 @@ class TestCourbesParTirage:
         vide = self._plat().iloc[0:0]
         with pytest.raises(ValueError, match="vide"):
             courbes_par_tirage(vide, x="alpha", y="CN", par=["tirage"])
+
+
+class TestSuperposerDepuisTableau:
+    """L'entrée table : celle qu'on a sous la main après le modèle."""
+
+    @pytest.fixture
+    def tableau(self) -> pd.DataFrame:
+        """Une polaire dispersée à plat : 20 tirages × 5 incidences."""
+        alpha = np.linspace(0.0, 12.0, 5)
+        lignes = []
+        for numero in range(20):
+            facteur = 1.0 + 0.01 * (numero - 10)
+            for x, y in zip(alpha, 0.1 * alpha * facteur):
+                lignes.append({"alpha": x, "CN": y, "tirage": numero, "Mach": 0.8})
+        return pd.DataFrame(lignes)
+
+    @pytest.fixture
+    def reference_polaire(self) -> pd.DataFrame:
+        alpha = np.linspace(0.0, 12.0, 5)
+        return pd.DataFrame({"alpha": alpha, "CN": 0.1 * alpha, "Mach": 0.8})
+
+    def test_elle_trace_a_partir_du_tableau(
+        self, tableau: pd.DataFrame, reference_polaire: pd.DataFrame
+    ) -> None:
+        _, ax = nouvelle_figure()
+        artistes = superposer_depuis_tableau(
+            ax, tableau, x="alpha", y="CN", reference=reference_polaire
+        )
+        assert artistes["bande"] is not None
+        assert len(artistes["tirages"]) == 20
+
+    def test_la_reference_peut_etre_un_tableau_de_valeurs(self, tableau: pd.DataFrame) -> None:
+        _, ax = nouvelle_figure()
+        artistes = superposer_depuis_tableau(ax, tableau, x="alpha", y="CN", reference=np.zeros(5))
+        assert artistes["objet_bande"] is not None
+        assert artistes["objet_bande"].nominal == pytest.approx(np.zeros(5))
+
+    def test_sans_reference_la_moyenne_des_tirages_sert_de_nominal(
+        self, tableau: pd.DataFrame
+    ) -> None:
+        """Correct si les lois sont centrées ; le biais devient invisible sinon."""
+        _, ax = nouvelle_figure()
+        artistes = superposer_depuis_tableau(ax, tableau, x="alpha", y="CN")
+        bande = artistes["objet_bande"]
+        assert bande.nominal == pytest.approx(bande.moyenne)
+
+    def test_une_reference_mal_alignee_est_refusee(self, tableau: pd.DataFrame) -> None:
+        """Sinon la bande se poserait à côté de sa courbe."""
+        decalee = pd.DataFrame({"alpha": np.linspace(0.0, 12.0, 7), "CN": np.zeros(7)})
+        _, ax = nouvelle_figure()
+        with pytest.raises(ValueError, match="ne sont pas celles des tirages"):
+            superposer_depuis_tableau(ax, tableau, x="alpha", y="CN", reference=decalee)
+
+    def test_les_options_passent(
+        self, tableau: pd.DataFrame, reference_polaire: pd.DataFrame
+    ) -> None:
+        _, ax = nouvelle_figure()
+        artistes = superposer_depuis_tableau(
+            ax,
+            tableau,
+            x="alpha",
+            y="CN",
+            reference=reference_polaire,
+            remplissage="sigma",
+            k=1.0,
+            max_tirages=0,
+        )
+        assert artistes["tirages"] == []
+        assert artistes["objet_bande"].label == "±1σ"
+
+    def test_une_colonne_absente_est_refusee(self, tableau: pd.DataFrame) -> None:
+        _, ax = nouvelle_figure()
+        with pytest.raises(ValueError, match="CL"):
+            superposer_depuis_tableau(ax, tableau, x="alpha", y="CL")
+
+
+class TestNominalDepuisTableau:
+    def test_il_lit_la_courbe_dans_l_ordre_des_abscisses(self) -> None:
+        melange = pd.DataFrame({"alpha": [2.0, 0.0, 1.0], "CN": [0.2, 0.0, 0.1]})
+        assert nominal_depuis_tableau(melange, x="alpha", y="CN") == pytest.approx([0.0, 0.1, 0.2])
+
+    def test_une_abscisse_repetee_est_refusee(self) -> None:
+        """Une référence porte une ligne par point : deux, c'est un tableau de tirages."""
+        double = pd.DataFrame({"alpha": [0.0, 0.0], "CN": [0.1, 0.2]})
+        with pytest.raises(ValueError, match="plusieurs lignes"):
+            nominal_depuis_tableau(double, x="alpha", y="CN")
+
+    def test_une_colonne_absente_est_refusee(self) -> None:
+        with pytest.raises(ValueError, match="absente"):
+            nominal_depuis_tableau(pd.DataFrame({"alpha": [0.0]}), x="alpha", y="CN")
+
+
+class TestChiffresDeLaDispersion:
+    """Les nombres, en légende et dans la boîte."""
+
+    @pytest.fixture
+    def axes_traces(self) -> Any:
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        courbes = np.vstack([nominal - 0.05 * x, nominal, nominal + 0.05 * x])
+        _, ax = nouvelle_figure()
+        return ax, x, nominal, courbes
+
+    def test_la_legende_porte_le_chiffre_de_tete(self, axes_traces: Any) -> None:
+        ax, x, nominal, courbes = axes_traces
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes)
+        assert "50.0 % max" in str(artistes["bande"].get_label())
+
+    def test_il_se_coupe(self, axes_traces: Any) -> None:
+        ax, x, nominal, courbes = axes_traces
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, chiffres_legende=False)
+        assert "%" not in str(artistes["bande"].get_label())
+
+    def test_la_boite_chiffre_l_enveloppe(self, axes_traces: Any) -> None:
+        ax, x, nominal, courbes = axes_traces
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes)
+        texte = artistes["boite"].get_text()
+        assert "enveloppe max" in texte
+        assert "σ max" in texte
+        assert "écart moyen/nominal" in texte

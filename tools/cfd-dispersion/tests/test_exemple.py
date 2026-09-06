@@ -200,6 +200,15 @@ class TestExecution:
         # Et un tableau croisé est refusé, en nommant la colonne de balayage.
         assert "candidates : ['alpha']" in resultat.stdout
 
+    def test_08_polaire_depuis_tableau(self, tmp_path: Path) -> None:
+        """La dispersion d'une polaire, posée sur une figure depuis le tableau."""
+        resultat = self._lancer("08_polaire_depuis_tableau.py", tmp_path, "-n", "30")
+        assert resultat.returncode == 0, resultat.stderr
+        for nom in ("polaire_CN.svg", "polaire_variantes.svg", "polaire_trois_coeffs.svg"):
+            assert (tmp_path / nom).is_file(), nom
+        # Les chiffres, sans figure : l'enveloppe et son abscisse.
+        assert "enveloppe max" in resultat.stdout
+
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""
         resultat = self._lancer("sortie_modele.py", tmp_path, "-n", "10")

@@ -1,11 +1,11 @@
 # Exemple cfd-dispersion — prêt à tourner
 
 Tout est là : une table de lois, un modèle jouet, un exemple de tableau de
-sortie, et sept scripts qui
+sortie, et huit scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les sept, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les huit, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -36,6 +36,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `sortie_modele.py` | **un exemple écrit en dur du tableau de sortie** : 4 points de vol × 100 tirages, les deux dictionnaires, les métadonnées — plus la base de référence, tirage neutre |
 | `06_tirages_par_pdv.py` | le parcours des points de vol : une figure par (PDV × tirage × coefficient) |
 | `07_histogrammes_par_pdv.py` | le même parcours, mais **tous les tirages d'un coup** : une figure d'histogrammes par (PDV × coefficient) |
+| `08_polaire_depuis_tableau.py` | une **polaire dispersée** posée sur votre figure, à partir du tableau à plat |
 
 ---
 
@@ -199,6 +200,30 @@ coefficient, chacun superposé à la loi qui le prescrivait.
   tracé. Le script 06 ne pouvait en montrer que le nominal et une valeur ;
 * dans la sortie terminal, le refus d'un tableau **croisé** : trois incidences
   par tirage, et l'histogramme mélangerait le balayage et la dispersion.
+
+### `08_polaire_depuis_tableau.py` — la dispersion sur votre polaire
+
+Vous avez isolé une polaire dans un tableau à plat — une ligne par (tirage ×
+incidence) — et vous tracez votre courbe de référence sur une figure cfd-plot.
+La dispersion se pose dessus en une ligne :
+
+```python
+superposer_depuis_tableau(ax, df_disperse, x="alpha", y="CN", reference=df_reference, serie="CN")
+```
+
+et elle ajoute les cent courbes en teinte claire, le faisceau min/max rempli, la
+moyenne dispersée plus sombre, les lignes ±1/2/3 σ étiquetées sur la courbe, la
+boîte qui chiffre l'enveloppe, et le chiffre de tête en légende.
+
+À regarder :
+
+* `polaire_CN.svg` — la figure complète ;
+* `polaire_variantes.svg` — trois réglages côte à côte. Celui de gauche est
+  tracé **sans référence** : la moyenne des tirages tient lieu de nominal, et
+  l'écart moyenne/nominal tombe à zéro — le biais devient invisible, ce qui est
+  exactement le piège ;
+* dans la sortie terminal, les chiffres sans figure : `resume_dispersion` réduit
+  une bande à l'enveloppe maximale, son abscisse, le σ maximal et l'écart moyen.
 
 ---
 

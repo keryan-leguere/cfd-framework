@@ -35,7 +35,12 @@ import numpy as np
 import pandas as pd
 from matplotlib.axes import Axes
 
-from ..core.bande import BandeDispersion, bande_depuis_loi
+from ..core.bande import (
+    BandeDispersion,
+    bande_depuis_courbes,
+    bande_depuis_loi,
+    resume_dispersion,
+)
 from ..core.convention import ConventionArg, convention
 from ..core.lois import LoiCoefficient
 from ._base import (
@@ -48,7 +53,12 @@ from ._base import (
     tracer_ligne,
 )
 
-__all__ = ["courbes_par_tirage", "superposer_dispersion"]
+__all__ = [
+    "courbes_par_tirage",
+    "nominal_depuis_tableau",
+    "superposer_depuis_tableau",
+    "superposer_dispersion",
+]
 
 #: Assombrissement appliqué à la courbe dérivée par rapport à sa série.
 _ASSOMBRISSEMENT = 0.25
@@ -132,6 +142,134 @@ def courbes_par_tirage(
     return reference, np.vstack(courbes)
 
 
+def nominal_depuis_tableau(
+    df: pd.DataFrame,
+    *,
+    x: str,
+    y: str,
+    abscisse: Any = None,
+) -> np.ndarray:
+    """Lit une courbe de référence dans un tableau, dans l'ordre des abscisses.
+
+    C'est la courbe **non dispersée** — la sortie du modèle tourné une fois
+    avec un tirage neutre — telle qu'elle se lit dans un tableau qui a la même
+    forme que celui des tirages.
+
+    Parameters
+    ----------
+    df:
+        Le tableau de référence : une ligne par point du balayage.
+    x, y:
+        Les colonnes d'abscisse et d'ordonnée.
+    abscisse:
+        L'abscisse attendue, si on veut la vérifier — typiquement celle que
+        :func:`courbes_par_tirage` a rendue. Un décalage entre les deux
+        donnerait une bande posée à côté de sa courbe.
+
+    Returns
+    -------
+    np.ndarray, forme ``(npts,)``
+
+    Raises
+    ------
+    ValueError
+        Si une colonne manque, si le tableau porte plusieurs valeurs pour une
+        même abscisse, ou si l'abscisse ne correspond pas à celle attendue.
+    """
+    manquantes = [colonne for colonne in (x, y) if colonne not in df.columns]
+    if manquantes:
+        raise ValueError(
+            f"colonne(s) absente(s) du tableau de référence : {manquantes} ; "
+            f"il porte {sorted(df.columns)}"
+        )
+
+    ordonne = df.sort_values(x)
+    valeurs_x = ordonne[x].to_numpy(dtype=float)
+    if valeurs_x.size != np.unique(valeurs_x).size:
+        raise ValueError(
+            f"le tableau de référence porte plusieurs lignes pour une même valeur de {x!r} ; "
+            "il en faut une seule par point du balayage — le modèle tourné avec un tirage neutre"
+        )
+
+    if abscisse is not None:
+        attendue = np.asarray(abscisse, dtype=float)
+        if valeurs_x.shape != attendue.shape or not np.allclose(valeurs_x, attendue):
+            raise ValueError(
+                f"la référence est donnée sur {valeurs_x.size} abscisses qui ne sont pas "
+                f"celles des tirages ({attendue.size}) ; la bande se poserait à côté de sa "
+                "courbe. Interpoler la référence sur l'abscisse des tirages au préalable."
+            )
+    return ordonne[y].to_numpy(dtype=float)
+
+
+def superposer_depuis_tableau(
+    ax: Axes,
+    df: pd.DataFrame,
+    *,
+    x: str,
+    y: str,
+    par: Sequence[str] = ("tirage",),
+    reference: Any = None,
+    **options: Any,
+) -> dict[str, Any]:
+    """La dispersion d'une polaire, directement depuis le tableau du modèle.
+
+    L'entrée est celle qu'on a sous la main : le tableau à plat d'une polaire
+    dispersée — une ligne par (tirage × point du balayage), soit trois cents
+    lignes pour cent tirages sur trois incidences. La fonction le remet en
+    forme et appelle :func:`superposer_dispersion`, dont elle accepte toutes
+    les options.
+
+        figure, ax = nouvelle_figure()
+        tracer_ligne(ax, alpha, cn_reference, label="CN")
+        superposer_depuis_tableau(ax, df_disperse, x="alpha", y="CN",
+                                  reference=df_reference, serie="CN")
+
+    Parameters
+    ----------
+    ax:
+        Les axes, portant déjà la courbe de référence.
+    df:
+        Le tableau des tirages, à plat.
+    x, y:
+        Les colonnes d'abscisse et de coefficient.
+    par:
+        Les colonnes identifiant un tirage. ``("tirage",)`` par défaut — le
+        numéro que pose :func:`cfd_dispersion.lire_sortie_modele`.
+    reference:
+        La courbe non dispersée : un ``DataFrame`` de même forme (mêmes
+        colonnes *x* et *y*, une ligne par point), ou un tableau de valeurs
+        déjà aligné sur l'abscisse. **Omise**, la moyenne des tirages en tient
+        lieu — ce qui est correct quand les lois sont centrées, et faux dès
+        qu'elles ne le sont pas : la bande se centre alors sur elle-même et le
+        biais devient invisible. Le dire vaut mieux que le taire.
+    **options:
+        Tout ce qu'accepte :func:`superposer_dispersion` — ``serie``,
+        ``couleur``, ``remplissage``, ``sigmas``, ``max_tirages``…
+
+    Returns
+    -------
+    dict
+        Les artistes créés, comme :func:`superposer_dispersion`.
+
+    Raises
+    ------
+    ValueError
+        Si une colonne manque, si les tirages ne partagent pas la même
+        abscisse, ou si la référence n'est pas sur cette abscisse.
+    """
+    abscisse, courbes = courbes_par_tirage(df, x=x, y=y, par=list(par))
+
+    if reference is None:
+        nominal = courbes.mean(axis=0)
+    elif isinstance(reference, pd.DataFrame):
+        nominal = nominal_depuis_tableau(reference, x=x, y=y, abscisse=abscisse)
+    else:
+        nominal = np.asarray(reference, dtype=float)
+
+    return superposer_dispersion(ax, abscisse, nominal, tirages=courbes, **options)
+
+
 def superposer_dispersion(
     ax: Axes,
     x: Any,
@@ -147,6 +285,7 @@ def superposer_dispersion(
     etiquettes_sigma: bool = True,
     fractions_sigma: Sequence[float] = _FRACTIONS_SIGMA,
     boite_parametres: bool = True,
+    chiffres_legende: bool = True,
     position_boite: str = "lower right",
     max_tirages: int | None = 200,
     alpha_tirages: float = 0.06,
@@ -186,7 +325,12 @@ def superposer_dispersion(
     fractions_sigma:
         Où poser ces étiquettes le long de la courbe, une par σ.
     boite_parametres:
-        Afficher la loi employée, la convention et l'effectif.
+        Afficher la loi employée, la convention, l'effectif, et les chiffres de
+        l'enveloppe : sa plus grande hauteur, où elle est atteinte, le σ
+        maximal et l'écart moyenne/nominal.
+    chiffres_legende:
+        Ajouter à l'étiquette du remplissage sa hauteur maximale en pourcentage
+        du nominal — le chiffre qu'on cherche d'abord.
     max_tirages:
         Plafond de courbes individuelles dessinées. Au-delà, elles sont
         échantillonnées : mille courbes opaques ne montrent rien de plus que
@@ -201,8 +345,9 @@ def superposer_dispersion(
     dict
         Les artistes créés : ``"bande"``, ``"moyenne"``, ``"tirages"``,
         ``"sigmas"``, ``"etiquettes"``, ``"boite"``, plus ``"couleur"`` et
-        ``"objet_bande"`` (la :class:`BandeDispersion` construite, s'il y en a
-        une).
+        ``"objet_bande"`` — la :class:`BandeDispersion` réellement tracée,
+        théorique ou faite des courbes obtenues. C'est elle que
+        :func:`cfd_dispersion.resume_dispersion` réduit en chiffres.
 
     Raises
     ------
@@ -254,7 +399,6 @@ def superposer_dispersion(
             graine=graine,
             methode=methode,
         )
-        artistes["objet_bande"] = bande
 
     nuage = None if tirages is None else np.atleast_2d(np.asarray(tirages, dtype=float))
     if nuage is not None and nuage.shape[1] != x.size:
@@ -268,8 +412,27 @@ def superposer_dispersion(
         artistes["tirages"] = _tracer_tirages(ax, x, nuage, teinte, max_tirages, alpha_tirages)
 
     # --- 2. le remplissage ---------------------------------------------
-    reference = bande if bande is not None else _bande_depuis_nuage(x, nominal, nuage, remplissage)
+    reference = (
+        bande
+        if bande is not None
+        else _bande_depuis_nuage(x, nominal, nuage, remplissage, couverture, k)
+    )
+    # `objet_bande` porte la bande RÉELLEMENT tracée — théorique ou faite des
+    # courbes obtenues. C'est d'elle que l'appelant tire ses chiffres
+    # (`resume_dispersion`), et il ne peut pas la refaire à moins de refaire le
+    # regroupement.
+    artistes["objet_bande"] = reference
     if remplissage is not None and reference is not None:
+        # L'étiquette porte le chiffre de tête : une légende qui dit « min/max »
+        # ne dit pas de combien, et c'est la première question.
+        etendue = resume_dispersion(reference)
+        # La hauteur pleine, comme dans la boîte : deux chiffres pour la même
+        # chose, l'un moitié de l'autre, se lisent comme une contradiction.
+        chiffre = (
+            ""
+            if not chiffres_legende or etendue.enveloppe_relative is None
+            else f" ({etendue.enveloppe_relative:.1f} % max)"
+        )
         artistes["bande"] = remplir_entre(
             ax,
             x,
@@ -277,7 +440,7 @@ def superposer_dispersion(
             reference.haut,
             couleur=teinte,
             alpha=0.18,
-            label=f"{prefixe}{reference.label}",
+            label=f"{prefixe}{reference.label}{chiffre}",
         )
 
     # --- 3. la moyenne dispersée, plus sombre que sa série -------------
@@ -364,22 +527,28 @@ def _tracer_tirages(
 
 
 def _bande_depuis_nuage(
-    x: np.ndarray, nominal: np.ndarray, nuage: np.ndarray | None, remplissage: str | None
+    x: np.ndarray,
+    nominal: np.ndarray,
+    nuage: np.ndarray | None,
+    remplissage: str | None,
+    couverture: float | None = None,
+    k: float | None = None,
 ) -> BandeDispersion | None:
-    """Fabrique une bande à partir de courbes déjà obtenues, sans retirer."""
+    """Fabrique une bande à partir de courbes déjà obtenues, sans retirer.
+
+    Le niveau (`couverture`, `k`) est transmis : sans lui, un
+    ``remplissage="sigma", k=1`` demandé sur des courbes obtenues retomberait
+    silencieusement sur le ±2σ par défaut.
+    """
     if nuage is None:
         return None
-    from ..core.bande import _construire, _resoudre_niveau
-
-    intervalle = remplissage or "minmax"
-    return _construire(
+    return bande_depuis_courbes(
         x,
         nominal,
         nuage,
-        intervalle=intervalle,
-        niveau=_resoudre_niveau(intervalle, None, None),
-        correle=True,
-        relation=convention(None),
+        intervalle=remplissage or "minmax",
+        couverture=couverture,
+        k=k,
     )
 
 
@@ -468,4 +637,9 @@ def _description(
         lignes.append(f"n = {bande.n_tirages} · {'corrélé' if bande.correle else 'indépendant'}")
     if nuage is not None:
         lignes.append(f"{nuage.shape[0]} tirages du modèle")
+    # Les chiffres de l'enveloppe : de combien le coefficient peut bouger, où,
+    # et si la dispersion le déplace en moyenne. Une enveloppe se regarde, mais
+    # c'est cela qu'on recopie dans un compte rendu.
+    if bande is not None:
+        lignes.extend(resume_dispersion(bande).lignes)
     return "\n".join(lignes)

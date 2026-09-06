@@ -403,6 +403,18 @@ not part of the Bash framework's runtime:
       `modele`, `ecart`, `accord`). It is the only check in the package aimed at the *model* rather
       than the draw, and it catches the three silent ones: a different convention on either side,
       a reference the model never saw, dispersion applied somewhere else than assumed.
+    - **The polar utilities are table-first too.** `superposer_depuis_tableau(ax, df, x=, y=,
+      reference=)` does the grouping (`courbes_par_tirage`), reads the reference curve from a
+      DataFrame of the same shape (`nominal_depuis_tableau`, which refuses an abscissa that is not
+      the draws') and calls `superposer_dispersion` — fan, min/max fill, darker dispersed mean,
+      ±kσ labelled on the curve. Omitting `reference` falls back to the mean of the draws, which is
+      right only while the laws are centred: the band then centres on itself and the bias vanishes,
+      so it is documented as a trap rather than a default. The band actually drawn now comes back in
+      `artistes["objet_bande"]` whether it is theoretical or built from the cloud
+      (`bande_depuis_courbes`, in `core/bande.py`, which takes curves you already have), and
+      `resume_dispersion` reduces any band to the four numbers a report copies — largest envelope
+      and where, max σ, mean-vs-nominal gap. Those three lines are in the parameter box, and the
+      fill's legend label carries the headline percentage.
     - **`figures_histogramme_par_pdv` (`figures/histogramme.py`) is the ensemble view**: one figure
       per (flight point × coefficient) over **all** the draws — the realised histogram of the biais,
       of the FE, and of the coefficient the model returned, each against the law that prescribed it

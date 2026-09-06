@@ -57,6 +57,36 @@ correspondraient pas au même point du balayage.
 défaut) : mille courbes opaques ne montrent rien de plus que deux cents, et
 coûtent un fichier vectoriel dix fois plus lourd.
 
+### En une ligne, depuis le tableau
+
+Le regroupement, la courbe de référence et la superposition tiennent en un
+appel — c'est l'entrée à préférer quand la polaire dispersée est déjà dans un
+tableau à plat :
+
+```python
+from cfd_dispersion import superposer_depuis_tableau
+
+figure, ax = nouvelle_figure()
+tracer_ligne(ax, alpha, cn_reference, label="CN", color="C0")
+
+superposer_depuis_tableau(
+    ax,
+    df_disperse,
+    x="alpha",
+    y="CN",
+    reference=df_reference,  # le modèle, tirage neutre
+    serie="CN",
+)
+```
+
+`reference=` prend un `DataFrame` de même forme (une ligne par point du
+balayage), ou un tableau de valeurs déjà aligné. **Omise**, la moyenne des
+tirages en tient lieu : correct tant que les lois sont centrées, faux dès
+qu'elles ne le sont pas — la bande se centre alors sur elle-même, et le biais
+qu'on cherchait devient invisible.
+
+Toutes les options de `superposer_dispersion` passent au travers.
+
 ---
 
 ## 4.3 Remplissages
@@ -98,12 +128,36 @@ intéressante.
 
 ---
 
-## 4.5 La boîte de paramètres
+## 4.5 La boîte de paramètres, et les chiffres
 
 Elle nomme la loi effectivement tirée — type, M, ET, convention, effectif,
 corrélé ou non, et le nombre de tirages du modèle. **Une figure ne doit jamais
 pouvoir cacher quelle dispersion l'a produite.** `boite_parametres=False` la
 retire.
+
+Elle chiffre en plus l'enveloppe, parce qu'une bande se regarde mais se raconte
+mal :
+
+```
+enveloppe max 0.278 (15.55 %) à x = 12
+σ max 0.0678 (3.79 %)
+écart moyen/nominal max +0.00491
+```
+
+Ces trois lignes sont celles de `resume_dispersion(bande)`, qui les rend sans
+figure — pour un compte rendu. La bande, elle, se récupère dans
+`artistes["objet_bande"]`, ou se fabrique depuis des courbes déjà obtenues :
+
+```python
+from cfd_dispersion import bande_depuis_courbes, resume_dispersion
+
+bande = bande_depuis_courbes(x, nominal, courbes)  # sans rien retirer
+resume_dispersion(bande).resume
+```
+
+L'étiquette du remplissage porte enfin le chiffre de tête — la hauteur maximale
+de l'enveloppe en pourcentage du nominal — de sorte que la légende réponde déjà
+à « de combien ? ». `chiffres_legende=False` l'enlève.
 
 ---
 

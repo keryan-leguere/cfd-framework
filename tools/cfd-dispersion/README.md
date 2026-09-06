@@ -57,7 +57,7 @@ Trois questions, dans l'ordre où elles se posent.
 |:--|:--|:--|
 | **1** | Qu'est-ce qu'un tirage de mes lois, et que devient mon coefficient ? | `tirer(lois)` → `figure_tirage(...)` |
 | **2** | Après mille appels du modèle, le tirage réalisé suit-il la loi prescrite ? | `valider_lot(resultats, lois, par=…)` |
-| **3** | À quoi ressemble ma polaire une fois dispersée ? | `superposer_dispersion(...)`, ou le hook sur `batch_plot` |
+| **3** | À quoi ressemble ma polaire une fois dispersée ? | `superposer_depuis_tableau(ax, df, …)`, ou le hook sur `batch_plot` |
 
 Et un fil rouge : **`ET` est une demi-étendue, pas un écart-type**. Pour les
 familles gaussiennes, `σ = ET/2`. Une table écrite en écarts-types et lue ici
@@ -672,7 +672,55 @@ pourtant l'affirmation qu'on croit faire.
 
 ### 9. La polaire dispersée
 
+**Depuis le tableau, en une ligne.** C'est l'entrée la plus courte quand la
+polaire dispersée est déjà dans un tableau à plat — une ligne par (tirage ×
+point du balayage) :
+
 ```python
+from cfd_dispersion import superposer_depuis_tableau
+
+figure, ax = nouvelle_figure()
+tracer_ligne(ax, alpha, cn_reference, label="CN", color="C0")
+
+superposer_depuis_tableau(
+    ax,
+    df_disperse,
+    x="alpha",
+    y="CN",
+    reference=df_reference,  # le modèle, tirage neutre
+    serie="CN",
+)  # reprendre sa couleur
+```
+
+`reference=` accepte un `DataFrame` de même forme (mêmes colonnes *x* et *y*,
+une ligne par point) ou un tableau de valeurs déjà aligné. **Omise**, la moyenne
+des tirages en tient lieu — correct tant que les lois sont centrées, et faux dès
+qu'elles ne le sont pas : la bande se centre alors sur elle-même et le biais
+devient invisible.
+
+**Les chiffres**, en légende et dans la boîte. L'étiquette du remplissage porte
+la hauteur maximale de l'enveloppe en pourcentage du nominal — la première
+question qu'on pose à une bande — et la boîte donne le reste :
+
+```
+enveloppe max 0.278 (15.55 %) à x = 12
+σ max 0.0678 (3.79 %)
+écart moyen/nominal max +0.00491
+```
+
+Sans figure, `resume_dispersion(bande)` rend les mêmes nombres, et
+`bande_depuis_courbes(x, nominal, courbes)` fabrique la bande à partir de
+courbes déjà obtenues — sans rien retirer.
+
+`01_EXEMPLE/08_polaire_depuis_tableau.py` fait le tour.
+
+#### La forme complète
+
+```python
+superposer_depuis_tableau(ax, df, *, x, y, par=("tirage",), reference=None,
+                          **options) -> dict
+nominal_depuis_tableau(df, *, x, y, abscisse=None) -> np.ndarray
+
 superposer_dispersion(ax, x, nominal, *, loi=None, tirages=None,
                       serie=None, couleur=None, remplissage="minmax",
                       sigmas=(1, 2, 3), etiquettes_sigma=True,
@@ -943,7 +991,8 @@ après huit heures de calcul.
 | `tracer_loi`, `tracer_loi_combinee`, `figure_tirage`, `figure_tirage_matrice`, `FigureTirage`, `MAX_COEFFICIENTS_PAR_FIGURE` | figures du tirage |
 | `figure_comparaison`, `figures_par_pdv` | figures Monte-Carlo |
 | `synthese`, `tableau_par_pdv`, `pdv_rejetes`, `figure_synthese`, `table_rich` | la synthèse |
-| `superposer_dispersion`, `courbes_par_tirage` | la polaire dispersée |
+| `superposer_dispersion`, `superposer_depuis_tableau`, `courbes_par_tirage`, `nominal_depuis_tableau` | la polaire dispersée |
+| `bande_depuis_courbes`, `resume_dispersion`, `ResumeDispersion` | la bande obtenue, et ses chiffres |
 | `style`, `nouvelle_figure`, `tracer_ligne`, `enregistrer` | les primitives de tracé |
 | `cfd_dispersion.batch` : `hook_dispersion`, `HookDispersion`, `cle_par_defaut` | la greffe sur `batch_plot` |
 
@@ -1017,7 +1066,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 682 tests
+pytest                                  # 707 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc
