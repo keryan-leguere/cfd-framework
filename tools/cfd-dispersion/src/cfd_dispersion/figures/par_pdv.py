@@ -56,7 +56,7 @@ from __future__ import annotations
 
 import pickle
 import warnings
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from itertools import product
@@ -95,7 +95,10 @@ MAX_TIRAGES_DEFAUT: int = 15
 _MOTIF_DOSSIER_TIRAGE = "tirage_{numero:03d}"
 
 #: Nom de la figure empilant tous les coefficients d'un tirage.
-_NOM_MATRICE = "matrice"
+NOM_MATRICE = "matrice"
+
+#: Ancien nom, gardé pour l'usage interne du module.
+_NOM_MATRICE = NOM_MATRICE
 
 
 @dataclass(frozen=True)
@@ -143,7 +146,7 @@ def _executer(travail: _Travail) -> list[dict[str, Any]]:
         for nom in travail.coefficients:
             rendue = figure_tirage(
                 nom,
-                travail.lois[nom],
+                travail.lois.get(nom),
                 travail.tirage,
                 nominal=travail.nominaux.get(nom),
                 disperse_modele=travail.disperses_modele.get(nom),
@@ -199,7 +202,11 @@ def _colonnes_accord(accord: AccordModele | None) -> dict[str, Any]:
     }
 
 
-def _repartir(travaux: Sequence[_Travail], n_jobs: int) -> list[dict[str, Any]]:
+def _repartir(
+    travaux: Sequence[Any],
+    n_jobs: int,
+    executer: Callable[[Any], list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
     """Exécute les travaux, en séquence ou sur plusieurs processus.
 
     Une figure coûte une demi-seconde à écrire — la police du gabarit est
@@ -208,9 +215,16 @@ def _repartir(travaux: Sequence[_Travail], n_jobs: int) -> list[dict[str, Any]]:
     convention maison écrite en ``lambda`` ne passerait pas, et le parcours
     repasse alors en séquence **en le disant**, plutôt que d'échouer à
     mi-chemin.
+
+    *executer* est la fonction qui fait une unité de travail. Elle est passée
+    plutôt que codée en dur pour que l'histogramme par point de vol
+    (:mod:`cfd_dispersion.figures.histogramme`) partage cette plomberie ; elle
+    doit être de niveau module, faute de quoi elle ne se sérialiserait pas.
     """
     if not travaux:
         return []
+    if executer is None:
+        executer = _executer
 
     if n_jobs != 1:
         try:
@@ -226,12 +240,12 @@ def _repartir(travaux: Sequence[_Travail], n_jobs: int) -> list[dict[str, Any]]:
             n_jobs = 1
 
     if n_jobs == 1:
-        return [ligne for travail in travaux for ligne in _executer(travail)]
+        return [ligne for travail in travaux for ligne in executer(travail)]
 
     ouvriers = None if n_jobs < 0 else n_jobs
     with ProcessPoolExecutor(max_workers=ouvriers, mp_context=_contexte()) as pool:
         # `map` conserve l'ordre : l'inventaire ne dépend pas de l'ordonnancement.
-        return [ligne for lot in pool.map(_executer, travaux) for ligne in lot]
+        return [ligne for lot in pool.map(executer, travaux) for ligne in lot]
 
 
 def _contexte() -> Any:
@@ -312,7 +326,9 @@ def figures_tirage_par_pdv(
         Même structure que *df* ; une ligne par point de vol suffit.
     coefficients:
         Les coefficients à tracer, dans l'ordre voulu. Par défaut, tous ceux du
-        jeu de lois.
+        jeu de lois. Un nom absent des lois est admis s'il est une colonne du
+        tableau : sa figure montre alors le nominal et la valeur du modèle, en
+        disant qu'aucune loi ne le décrit.
     nominaux:
         ``{coefficient: valeur}``, pour imposer les valeurs nominales, quand
         ni *reference* ni le tableau ne les portent.
@@ -352,7 +368,8 @@ def figures_tirage_par_pdv(
     ------
     ValueError
         Si *points_de_vol* est vide, si une colonne de point de vol manque au
-        tableau, si aucun point de vol demandé n'a de ligne, ou si les lois ne
+        tableau, si aucun point de vol demandé n'a de ligne, si un coefficient
+        demandé n'est ni dans les lois ni dans le tableau, ou si les lois ne
         peuvent être ni relues ni devinées.
 
     See Also
@@ -365,9 +382,17 @@ def figures_tirage_par_pdv(
 
     tableau, jeu = _preparer(df, lois, colonne_tirage)
     noms = list(coefficients) if coefficients is not None else list(jeu)
-    manquants = sorted(set(noms) - set(jeu))
-    if manquants:
-        raise ValueError(f"coefficient(s) {manquants} absent(s) du jeu de lois")
+    # Un coefficient sans loi n'est pas une erreur s'il est une colonne du
+    # tableau : il n'est simplement pas dispersé, et sa figure montrera le
+    # nominal et ce que le modèle a rendu. Sans loi *ni* colonne, en revanche,
+    # il n'y a rien à en dire — et le refus le nomme.
+    inconnus = sorted(nom for nom in noms if nom not in jeu and nom not in tableau.columns)
+    if inconnus:
+        raise ValueError(
+            f"coefficient(s) {inconnus} : ni loi ni colonne dans le tableau — rien à tracer d'eux"
+        )
+
+    tires = [nom for nom in noms if nom in jeu]
 
     specs = _specifications(points_de_vol, tableau)
     variables = [cle for cle, spec in specs.items() if len(spec["values"]) > 1]
@@ -400,7 +425,10 @@ def figures_tirage_par_pdv(
                 _Travail(
                     point=point,
                     numero=numero,
-                    tirage=tirage_depuis_ligne(ligne, noms, convention_=relation, numero=numero),
+                    # Seuls les coefficients qui ont des lois ont été tirés :
+                    # demander les autres au tirage le ferait échouer, alors
+                    # qu'ils sont simplement ailleurs.
+                    tirage=tirage_depuis_ligne(ligne, tires, convention_=relation, numero=numero),
                     lois=jeu,
                     coefficients=tuple(noms),
                     nominaux=valeurs_nominales,

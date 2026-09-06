@@ -28,7 +28,6 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 import numpy as np
-import openturns as ot
 import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -50,7 +49,8 @@ from ._base import (
     tracer_bande,
     tracer_ligne,
 )
-from .tirage import axe_pourcentage, tracer_loi, tracer_sigmas
+from .densite import tracer_densite_realisee
+from .tirage import axe_pourcentage, tracer_sigmas
 
 __all__ = ["figure_comparaison", "figures_par_pdv"]
 
@@ -170,35 +170,13 @@ def figure_comparaison(
 
 
 def _panneau_densite(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, couleur: Any) -> None:
-    """Loi théorique, histogramme empirique, et lissage à noyau."""
-    tracer_loi(ax, loi, couleur=couleur, label="prescrite")
+    """Loi théorique, histogramme empirique, et lissage à noyau.
 
-    if echantillon.size == 0:
-        return
-
-    etendue = float(np.ptp(echantillon))
-    if etendue == 0.0:
-        # Un échantillon constant n'a pas de densité : ni histogramme ni noyau
-        # n'ont de sens, et `KernelSmoothing` échouerait sur une largeur nulle.
-        ax.axvline(float(echantillon[0]), color="C3", lw=1.4, ls="--", label="réalisée (constante)")
-        legende(ax, loc="upper right", fontsize=7)
-        return
-
-    ax.hist(
-        echantillon,
-        bins=_N_BINS,
-        density=True,
-        color="C3",
-        alpha=0.30,
-        label=f"réalisée (n={echantillon.size})",
-    )
-
-    noyau = ot.KernelSmoothing().build(ot.Sample(echantillon.reshape(-1, 1)))
-    grille = np.linspace(echantillon.min(), echantillon.max(), _N_GRILLE)
-    densite = np.array(noyau.computePDF([[float(v)] for v in grille])).ravel()
-    tracer_ligne(ax, grille, densite, color="C3", lw=1.2, marker="", label="lissage à noyau")
-
-    legende(ax, loc="upper right", fontsize=7)
+    Le dessin est celui de :func:`cfd_dispersion.figures.densite.tracer_densite_realisee`,
+    partagé avec l'histogramme par point de vol : deux figures, un seul panneau
+    de densité, qui ne peuvent donc pas diverger.
+    """
+    tracer_densite_realisee(ax, echantillon, loi=loi, couleur=couleur)
 
 
 def _panneau_qq(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, couleur: Any) -> None:

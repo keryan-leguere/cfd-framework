@@ -30,15 +30,16 @@ produit déjà.
   - [2. Reconstruire : les conventions](#2-reconstruire--les-conventions)
   - [3. La loi du coefficient dispersé](#3-la-loi-du-coefficient-dispersé)
   - [4. Parcourir les points de vol](#4-parcourir-les-points-de-vol)
-  - [5. Valider mille appels du modèle](#5-valider-mille-appels-du-modèle)
-  - [6. Synthétiser, et ne tracer que les rejets](#6-synthétiser-et-ne-tracer-que-les-rejets)
-  - [7. Propager le long d'un balayage](#7-propager-le-long-dun-balayage)
-  - [8. La polaire dispersée](#8-la-polaire-dispersée)
-  - [9. La greffe sur `batch_plot`](#9-la-greffe-sur-batch_plot)
-  - [10. Corréler deux coefficients](#10-corréler-deux-coefficients)
-  - [11. La ligne de commande](#11-la-ligne-de-commande)
-  - [12. Les figures, et leur format](#12-les-figures-et-leur-format)
-  - [13. Les erreurs](#13-les-erreurs)
+  - [5. Les histogrammes d'un point de vol](#5-les-histogrammes-dun-point-de-vol)
+  - [6. Valider mille appels du modèle](#6-valider-mille-appels-du-modèle)
+  - [7. Synthétiser, et ne tracer que les rejets](#7-synthétiser-et-ne-tracer-que-les-rejets)
+  - [8. Propager le long d'un balayage](#8-propager-le-long-dun-balayage)
+  - [9. La polaire dispersée](#9-la-polaire-dispersée)
+  - [10. La greffe sur `batch_plot`](#10-la-greffe-sur-batch_plot)
+  - [11. Corréler deux coefficients](#11-corréler-deux-coefficients)
+  - [12. La ligne de commande](#12-la-ligne-de-commande)
+  - [13. Les figures, et leur format](#13-les-figures-et-leur-format)
+  - [14. Les erreurs](#14-les-erreurs)
 - [Recettes](#recettes)
 - [Référence de l'API publique](#référence-de-lapi-publique)
 - [Limites du modèle](#limites-du-modèle)
@@ -500,7 +501,7 @@ figures sont fermées au fur et à mesure ; un parcours en écrit des centaines.
 | **15 tirages par point de vol** | quatre cents figures par coefficient, personne ne les regarde. `max_tirages=None` les prend toutes |
 | **la valeur nominale vient de `reference=`** | la sortie du **même modèle**, tourné une fois avec un tirage neutre (`tirage_neutre`) : ses coefficients *sont* les nominaux. À défaut, `nominaux=` ou une colonne `<coeff>_nominal`. Sans elle, le troisième panneau le dit |
 | **la colonne `<coeff>` est la sortie dispersée** | pas un nominal. Le paquet recalcule `convention(nominal, biais, FE)` et confronte les deux ; le verdict est sur la figure et dans l'inventaire (`calcul`, `modele`, `ecart`, `accord`) |
-| **lois et sorties peuvent différer** | la table de lois disperse ce que le modèle *consomme*, le tableau rend ce qu'il *produit*. Un `CX0` interne garde ses deux premiers panneaux et un troisième qui dit ce qui lui manque ; un `CA` rendu sans loi n'est pas tracé, et le demander est refusé en le nommant |
+| **lois et sorties peuvent différer** | la table de lois disperse ce que le modèle *consomme*, le tableau rend ce qu'il *produit*. Un `CX0` interne garde ses deux premiers panneaux et un troisième qui dit ce qui lui manque ; un `CA` rendu sans loi n'est pas tracé par défaut, et nommé dans `coefficients=` il montre son nominal et la valeur du modèle. Ni loi ni colonne : refus, en le nommant |
 | **une figure coûte 0.5 s** | la police du gabarit est vectorisée glyphe par glyphe. 240 fichiers : une minute sur tous les cœurs, quatre en séquence |
 
 **Pourquoi pas `batch_plot` directement ?** Son point de greffe
@@ -509,7 +510,7 @@ construite** : un axe, une courbe par source, un balayage en abscisse. Les
 figures de tirage n'ont ni balayage, ni courbe, ni axe unique. C'est donc sa
 *logique de parcours* qui est reprise — le `flight_point_dict` et
 l'arborescence — et non la fonction. Pour les polaires dispersées, c'est bien
-`batch_plot` qui trace : voir §9.
+`batch_plot` qui trace : voir §10.
 
 **La base de référence** est un second tableau, de même structure, obtenu en
 faisant tourner le modèle une fois avec un tirage neutre :
@@ -531,7 +532,56 @@ Un exemple de tableau de sortie est livré, écrit en dur :
 dictionnaires, les métadonnées, plus `sortie_modele_reference()` pour la base
 neutre), et `01_EXEMPLE/06_tirages_par_pdv.py` en fait le parcours complet.
 
-### 5. Valider mille appels du modèle
+### 5. Les histogrammes d'un point de vol
+
+La section précédente montre **un** tirage. Celle-ci les montre **tous**, dans
+les mêmes trois panneaux : ce qui a été *obtenu*, superposé à ce qui était
+*prescrit*.
+
+```python
+from cfd_dispersion import figures_histogramme_par_pdv
+
+inventaire = figures_histogramme_par_pdv(
+    df,
+    points_de_vol=POINTS_DE_VOL_DICT,  # le même dict qu'au §4
+    racine=sortie / "HISTOGRAMMES",
+    reference=df_neutre,
+)
+```
+
+```
+HISTOGRAMMES/M_0.85/Z_10000/CN.svg        biais, FE, coefficient — obtenus
+HISTOGRAMMES/M_0.85/Z_10000/matrice.svg   les coefficients empilés
+```
+
+Une figure par (point de vol × coefficient), sur **tous** les tirages — pas de
+`max_tirages` ici, c'est l'ensemble qui est le sujet. Le troisième panneau
+confronte l'histogramme obtenu à la **loi combinée prescrite** : un modèle qui
+disperse plus que demandé se voit là, et nulle part ailleurs.
+
+**Lois et sorties décalées, autrement.** C'est là que cette figure se distingue
+de celle du tirage :
+
+| | panneaux biais et FE | panneau coefficient |
+|:--|:--|:--|
+| lois **et** sortie | prescrite + obtenue | obtenu + loi combinée |
+| lois, pas de sortie | prescrite + obtenue | message : rien d'obtenu |
+| sortie, pas de lois | message : aucune loi | **l'histogramme obtenu** |
+
+Le dernier cas est celui que la figure de tirage ne peut pas traiter : sans loi
+il n'y a pas de tirage à montrer, mais il y a bien un échantillon de valeurs.
+Il faut alors nommer le coefficient dans `coefficients=` — par défaut, seuls
+ceux que les lois décrivent sont tracés.
+
+**Une ligne par tirage.** L'histogramme suppose que le point de vol porte une
+ligne par tirage. Sur un appel croisé — sept incidences par tirage — chaque
+valeur apparaît sept fois et l'histogramme mélangerait le balayage et la
+dispersion : le parcours **refuse**, en nommant la colonne à ajouter au point
+de vol.
+
+`01_EXEMPLE/07_histogrammes_par_pdv.py` fait les trois cas.
+
+### 6. Valider mille appels du modèle
 
 ```python
 valider(echantillon, loi, *, alpha=0.05, tol_M=0.10, tol_ET=0.10, n_min=20) -> Verdict
@@ -571,7 +621,7 @@ livrable dont tout l'intérêt est qu'on ne regarde *que* les cases rouges.
 | sans correction | 58 / 960 | 3 / 20 |
 | avec Šidák *(défaut)* | 1 / 960 | 19 / 20 |
 
-### 6. Synthétiser, et ne tracer que les rejets
+### 7. Synthétiser, et ne tracer que les rejets
 
 ![la synthèse](00_DOC/FIGURES/06_synthese.png)
 
@@ -597,7 +647,7 @@ for cles, coefficient, figure in figures_par_pdv(
 `figures_par_pdv` est un **générateur** : un millier de figures n'est jamais tout
 en mémoire à la fois.
 
-### 7. Propager le long d'un balayage
+### 8. Propager le long d'un balayage
 
 ```python
 bande_depuis_loi(x, nominal, *, loi, n=20000, intervalle="percentile",
@@ -620,7 +670,7 @@ point — un résidu mal convergé, par exemple. Les deux enveloppes se ressembl
 **seule celle de gauche se lit « la vraie courbe est là-dedans »**, qui est
 pourtant l'affirmation qu'on croit faire.
 
-### 8. La polaire dispersée
+### 9. La polaire dispersée
 
 ```python
 superposer_dispersion(ax, x, nominal, *, loi=None, tirages=None,
@@ -676,7 +726,7 @@ tirages qui ne partagent pas la même abscisse : les empiler donnerait une matri
 dont les colonnes ne correspondent pas au même point du balayage — une figure
 fausse, et lisse.
 
-### 9. La greffe sur `batch_plot`
+### 10. La greffe sur `batch_plot`
 
 C'est le livrable. `batch_plot` (paquet [cfd-plot](../cfd-plot)) prend quatre
 dictionnaires et écrit tout un arbre de figures ; la dispersion s'y ajoute par
@@ -758,7 +808,7 @@ Le détail clé par clé des quatre dictionnaires est dans
 [00_DOC/05 §5.9](00_DOC/05_BRANCHER_SON_MODELE.md#59-la-greffe-sur-batch_plot) ;
 `01_EXEMPLE/03_polaire_batch_plot.py` en est la version exécutable.
 
-### 10. Corréler deux coefficients
+### 11. Corréler deux coefficients
 
 Sans argument, les composantes sont **indépendantes**. C'est presque toujours ce
 qu'on veut, et presque jamais ce qu'on a vérifié : deux coefficients issus du
@@ -781,7 +831,7 @@ Pour cibler une paire croisée, nommer les deux composantes :
 L'hypothèse d'indépendance étant invisible sur une figure, elle est rendue
 explicite : `lois.independantes` est reportée dans chaque boîte de paramètres.
 
-### 11. La ligne de commande
+### 12. La ligne de commande
 
 ```bash
 cfd-dispersion check   --lois LOIS.yaml
@@ -798,7 +848,7 @@ Le script console de pip fige le chemin de l'interpréteur ;
 `python -m cfd_dispersion.cli.main` est l'équivalent qui marche partout — venv
 déplacé, image Apptainer, chemin trop long pour un `#!`.
 
-### 12. Les figures, et leur format
+### 13. Les figures, et leur format
 
 Toutes les figures passent par cfd-plot — y compris les lignes de repère
 (`add_reference_lines`, sous les ±kσ des figures de tirage). Les primitives sont
@@ -826,7 +876,7 @@ aussi banal que `CN_M0.85` y perdrait son `.85` — toute une série de points d
 vol s'écrasant alors dans un seul fichier, sans erreur. `enregistrer` s'en
 protège, et un test le vérifie.
 
-### 13. Les erreurs
+### 14. Les erreurs
 
 Toutes les erreurs sont des `ValueError` nommant le coupable :
 
@@ -888,6 +938,7 @@ après huit heures de calcul.
 | `LoiCombinee`, `loi_combinee` | la loi du coefficient dispersé |
 | `AccordModele`, `comparer_au_modele`, `TOLERANCE_ACCORD` | le calcul confronté au modèle |
 | `figures_tirage_par_pdv`, `MAX_TIRAGES_DEFAUT` | le parcours des points de vol |
+| `figure_histogramme`, `figure_histogramme_matrice`, `figures_histogramme_par_pdv` | les histogrammes d'un point de vol |
 | `tirage_depuis_ligne` | le tirage que porte une ligne de la sortie |
 | `tracer_loi`, `tracer_loi_combinee`, `figure_tirage`, `figure_tirage_matrice`, `FigureTirage`, `MAX_COEFFICIENTS_PAR_FIGURE` | figures du tirage |
 | `figure_comparaison`, `figures_par_pdv` | figures Monte-Carlo |
@@ -953,7 +1004,8 @@ cfd-dispersion/
 │   │   ├── tableau.py       plan croisé, tableau large, tirage d'une ligne
 │   │   └── validation.py    support / moments / Kolmogorov–Smirnov
 │   ├── report/              theme.py, console.py, _plotting_lib.py
-│   ├── figures/             _base, tirage, par_pdv, monte_carlo, synthese, polaire
+│   ├── figures/             _base, tirage, par_pdv, densite, histogramme,
+│   │                        monte_carlo, synthese, polaire
 │   ├── batch.py             la greffe sur cfd_plot.batch_plot
 │   ├── cli/main.py
 │   └── 01_EXEMPLE/          livré comme donnée de paquet
@@ -965,7 +1017,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 660 tests
+pytest                                  # 682 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc
@@ -987,6 +1039,8 @@ Quelques invariants que la suite tient :
 | une relation non affine est détectée, et bascule sur le lissage | `test_combinaison.py::TestDecompositionAffine` |
 | au-delà de quatre coefficients, la matrice pagine et numérote ses fichiers | `test_tirage.py::TestFigureTirageMatrice` |
 | une colonne qui varie dans un point de vol n'est pas prise pour un nominal | `test_par_pdv.py::TestValeursNominales` |
+| un coefficient sans loi garde son histogramme, un coefficient sans sortie garde ses lois | `test_histogramme.py::TestDecalages` |
+| un tableau croisé est refusé par l'histogramme, en nommant le balayage | `test_histogramme.py::TestParcours` |
 | le travail d'un parcours se sérialise, donc `n_jobs` tient ses promesses | `test_par_pdv.py::TestParallelisme` |
 | un modèle qui n'applique pas la même convention est repéré, coefficient par coefficient | `test_par_pdv.py::TestAccordAvecLeModele` |
 | le facteur neutre vaut 1 en linéaire et 0 en pourcentage, et il est résolu, pas codé | `test_tirage.py::TestTirageNeutre` |

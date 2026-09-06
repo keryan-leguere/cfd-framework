@@ -113,6 +113,11 @@ from .figures.synthese import (
     table_rich,
     tableau_par_pdv,
 )
+from .figures.histogramme import (
+    figure_histogramme,
+    figure_histogramme_matrice,
+    figures_histogramme_par_pdv,
+)
 from .figures.par_pdv import (
     MAX_TIRAGES_DEFAUT,
     figures_tirage_par_pdv,
@@ -191,6 +196,9 @@ __all__ = [
     "figure_tirage_matrice",
     "figures_tirage_par_pdv",
     "MAX_TIRAGES_DEFAUT",
+    "figure_histogramme",
+    "figure_histogramme_matrice",
+    "figures_histogramme_par_pdv",
     "figure_comparaison",
     "figures_par_pdv",
     "synthese",

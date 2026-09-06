@@ -388,14 +388,30 @@ class TestLoisEtSortiesDecalees:
         )
         assert "CA" not in set(inventaire["figure"])
 
-    def test_le_demander_explicitement_est_refuse(self, decale: pd.DataFrame) -> None:
-        """Nommer le coupable vaut mieux que rendre une figure vide."""
-        with pytest.raises(ValueError, match=r"\['CA'\] absent"):
+    def test_le_demander_explicitement_le_trace_sans_loi(
+        self, decale: pd.DataFrame, decale_reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Sans loi il n'y a pas de tirage — mais il reste un nominal et une valeur."""
+        inventaire = figures_tirage_par_pdv(
+            decale,
+            points_de_vol={"Mach": [0.85], "Altitude_m": [10_000.0]},
+            racine=tmp_path,
+            reference=decale_reference,
+            coefficients=["CA"],
+            matrice=False,
+            max_tirages=1,
+        )
+        assert list(inventaire["figure"]) == ["CA"]
+        assert (tmp_path / "tirage_000" / "CA.svg").is_file()
+
+    def test_un_coefficient_inconnu_partout_est_refuse(self, decale: pd.DataFrame) -> None:
+        """Ni loi ni colonne : il n'y a rien à en dire, et le refus le nomme."""
+        with pytest.raises(ValueError, match="ni loi ni colonne"):
             figures_tirage_par_pdv(
                 decale,
                 points_de_vol={"Mach": [0.85]},
                 racine="/tmp/x",
-                coefficients=["CA"],
+                coefficients=["CL"],
             )
 
 
@@ -497,7 +513,7 @@ class TestRefus:
             figures_tirage_par_pdv(tableau, points_de_vol={"Mach": [0.95]}, racine="/tmp/x")
 
     def test_un_coefficient_inconnu_est_refuse(self, tableau: pd.DataFrame) -> None:
-        with pytest.raises(ValueError, match="absent"):
+        with pytest.raises(ValueError, match="ni loi ni colonne"):
             figures_tirage_par_pdv(
                 tableau,
                 points_de_vol={"Mach": [0.85]},

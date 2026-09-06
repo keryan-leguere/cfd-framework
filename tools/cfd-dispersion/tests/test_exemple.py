@@ -178,8 +178,27 @@ class TestExecution:
         # dossier de point de vol — la règle de cfd-plot.
         asymetrique = tmp_path / "ASYMETRIQUE" / "tirage_000"
         assert (asymetrique / "CX0.svg").is_file()
-        assert not (asymetrique / "CA.svg").exists()
-        assert "absent(s) du jeu de lois" in resultat.stdout
+        # CA n'a pas de loi, mais nommé il est tracé : nominal et valeur modèle.
+        assert (asymetrique / "CA.svg").is_file()
+        # Un coefficient inconnu partout, lui, est refusé.
+        assert "ni loi ni colonne" in resultat.stdout
+
+    def test_07_histogrammes_par_pdv(self, tmp_path: Path) -> None:
+        """Une figure par (point de vol × coefficient), sur tous les tirages."""
+        resultat = self._lancer("07_histogrammes_par_pdv.py", tmp_path, "-n", "12", "--jobs", "1")
+        assert resultat.returncode == 0, resultat.stderr
+
+        inventaire = pd.read_csv(tmp_path / "INVENTAIRE_HISTOGRAMMES.csv")
+        # 4 points de vol × (3 coefficients + 1 matrice).
+        assert len(inventaire) == 16
+        assert inventaire["tirages"].tolist() == [12] * 16
+        assert (tmp_path / "HISTOGRAMMES" / "M_0.7" / "Z_0" / "CN.svg").is_file()
+
+        # Le cas décalé : CA n'a pas de loi, mais son histogramme est tracé.
+        assert (tmp_path / "HISTOGRAMMES_DECALES" / "CA.svg").is_file()
+        assert (tmp_path / "HISTOGRAMMES_DECALES" / "CX0.svg").is_file()
+        # Et un tableau croisé est refusé, en nommant la colonne de balayage.
+        assert "candidates : ['alpha']" in resultat.stdout
 
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""

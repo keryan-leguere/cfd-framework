@@ -387,7 +387,7 @@ def axe_pourcentage(ax: Axes, nominal: float) -> Any:
 
 def figure_tirage(
     coefficient: str,
-    loi: LoiCoefficient,
+    loi: LoiCoefficient | None,
     tirage: Tirage,
     *,
     nominal: Any = None,
@@ -411,7 +411,11 @@ def figure_tirage(
     coefficient:
         Le nom du coefficient, pour les titres.
     loi:
-        Ses deux lois (biais et facteur d'échelle).
+        Ses deux lois (biais et facteur d'échelle), ou **None** si aucune loi
+        ne décrit ce coefficient — le cas d'une grandeur que le modèle *rend*
+        sans qu'elle soit dispersée. Les deux premiers panneaux le disent
+        alors, et le troisième se contente du nominal et de la valeur du
+        modèle : il n'y a pas de loi à tracer, mais il reste un écart à lire.
     tirage:
         Le tirage dont sont extraites les deux valeurs.
     nominal:
@@ -463,13 +467,15 @@ def figure_tirage(
         Si *axes* n'en contient pas exactement trois, ou si le coefficient est
         absent du tirage.
     """
-    if coefficient not in tirage:
+    # Sans loi, le coefficient n'a pas été tiré : il est normal qu'il manque au
+    # tirage. Avec une loi, son absence est une erreur — et le message la nomme.
+    if loi is not None and coefficient not in tirage:
         raise ValueError(
             f"coefficient {coefficient!r} absent du tirage ; il porte {sorted(tirage)}"
         )
 
     relation = tirage.convention if convention_ is None else convention(convention_)
-    valeurs = tirage[coefficient]
+    valeurs = tirage[coefficient] if loi is not None else None
 
     with style(profil):
         if axes is None:
@@ -484,6 +490,11 @@ def figure_tirage(
             figure = figure_
 
         for panneau, composante in zip(trois[:2], COMPOSANTES):
+            titre(panneau, f"{coefficient} — {composante}")
+            if loi is None or valeurs is None:
+                _panneau_sans_loi(panneau, coefficient, composante)
+                continue
+
             tracer_loi(
                 panneau,
                 loi.composante(composante),
@@ -493,7 +504,6 @@ def figure_tirage(
                 sigmas=sigmas,
             )
             panneau.set_xlabel(composante)
-            titre(panneau, f"{coefficient} — {composante}")
             boite_texte(
                 panneau,
                 _description_loi(loi.composante(composante)),
@@ -509,8 +519,8 @@ def figure_tirage(
             nominal=nominal,
             x=x,
             reference=reference,
-            biais=valeurs["Biais"],
-            fe=valeurs["FE"],
+            biais=None if valeurs is None else valeurs["Biais"],
+            fe=None if valeurs is None else valeurs["FE"],
             relation=relation,
             sigmas=sigmas,
             disperse_modele=disperse_modele,
@@ -551,19 +561,27 @@ def _ecrire(figure: Figure, chemin: Any, formats: Sequence[str]) -> tuple[Path, 
 def _panneau_coefficient(
     ax: Axes,
     coefficient: str,
-    loi: LoiCoefficient,
+    loi: LoiCoefficient | None,
     *,
     nominal: Any,
     x: Any,
     reference: float | None,
-    biais: float,
-    fe: float,
+    biais: float | None,
+    fe: float | None,
     relation: Any,
     sigmas: Sequence[int] | None,
     disperse_modele: Any = None,
     tolerance: float = TOLERANCE_ACCORD,
 ) -> AccordModele | None:
     """Le troisième panneau : la loi du coefficient, biais et FE combinés."""
+    if loi is None or biais is None or fe is None:
+        # Pas de loi : pas de densité à tracer. Restent le nominal et ce que le
+        # modèle a rendu — deux nombres et leur écart, ce qui est déjà la
+        # question qu'on se pose.
+        titre(ax, f"{coefficient} — coefficient dispersé")
+        _panneau_sans_loi_du_coefficient(ax, coefficient, nominal, disperse_modele)
+        return None
+
     if nominal is None:
         _panneau_sans_nominal(ax, coefficient)
         return None
@@ -640,6 +658,97 @@ def _panneau_sans_nominal(ax: Axes, coefficient: str) -> None:
         linespacing=1.5,
         bbox={"facecolor": ax.get_facecolor(), "edgecolor": "0.75", "boxstyle": "round,pad=0.6"},
     )
+
+
+#: Ce que dit un panneau de composante quand aucune loi ne décrit le coefficient.
+MESSAGE_SANS_LOI: str = (
+    "Aucune loi pour {coefficient}.\n\n"
+    "Ce coefficient n'est pas dispersé : la table de lois n'en parle pas,\n"
+    "donc il n'a ni biais ni facteur d'échelle tirés. Le modèle le rend\n"
+    "quand même, et le panneau de droite le montre.\n\n"
+    "Pour l'obtenir : ajouter {coefficient} à DICT_LAW_DISPERSION."
+)
+
+
+def _panneau_sans_loi(ax: Axes, coefficient: str, composante: str) -> None:
+    """Un panneau de composante, laissé vide et expliqué."""
+    ax.set_axis_off()
+    ax.text(
+        0.5,
+        0.5,
+        MESSAGE_SANS_LOI.format(coefficient=coefficient),
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=7.5,
+        color="0.35",
+        linespacing=1.5,
+        bbox={"facecolor": ax.get_facecolor(), "edgecolor": "0.75", "boxstyle": "round,pad=0.6"},
+    )
+
+
+def _panneau_sans_loi_du_coefficient(
+    ax: Axes,
+    coefficient: str,
+    nominal: Any,
+    disperse_modele: Any,
+) -> None:
+    """Le troisième panneau quand le coefficient n'a pas de loi.
+
+    Il n'y a pas de densité à tracer, mais il reste deux nombres à confronter :
+    la valeur nominale et celle que le modèle a rendue. C'est une règle
+    graduée, pas une loi — et l'axe des ordonnées est éteint pour qu'on ne
+    croie pas y lire une densité.
+    """
+    valeur_nominale = (
+        None if nominal is None else float(np.asarray(nominal, dtype=float).reshape(-1)[0])
+    )
+    valeur_modele = (
+        None
+        if disperse_modele is None
+        else float(np.asarray(disperse_modele, dtype=float).reshape(-1)[0])
+    )
+
+    if valeur_nominale is None and valeur_modele is None:
+        _panneau_sans_nominal(ax, coefficient)
+        return
+
+    connues = [v for v in (valeur_nominale, valeur_modele) if v is not None]
+    centre = sum(connues) / len(connues)
+    demi = max(abs(max(connues) - min(connues)), abs(centre) * 0.05, 1e-9) * 2.0
+    ax.set_xlim(centre - demi, centre + demi)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_yticks([])
+    ax.set_xlabel(coefficient)
+
+    if valeur_nominale is not None:
+        ax.axvline(
+            valeur_nominale,
+            color="0.35",
+            ls="--",
+            lw=1.2,
+            label=f"nominal : {valeur_nominale:.4g}",
+        )
+    if valeur_modele is not None:
+        ax.axvline(
+            valeur_modele,
+            color="C4",
+            ls=(0, (2, 2)),
+            lw=1.8,
+            label=f"modèle : {valeur_modele:.4g}",
+        )
+
+    lignes = ["aucune loi : pas de dispersion prescrite"]
+    if valeur_nominale is not None and valeur_modele is not None:
+        ecart = valeur_modele - valeur_nominale
+        lignes.append(f"écart = {ecart:+.3g}")
+        if valeur_nominale != 0.0:
+            lignes.append(f"soit {100.0 * ecart / abs(valeur_nominale):+.2f} % du nominal")
+    boite_texte(ax, "\n".join(lignes), loc="upper left", fontsize=7)
+    legende(ax, loc="upper right", fontsize=7)
+
+    if valeur_nominale is not None:
+        axe_pourcentage(ax, valeur_nominale)
 
 
 def _point_de_reference(nominal: Any, x: Any, reference: float | None) -> tuple[float, str]:
@@ -766,7 +875,9 @@ def figure_tirage_matrice(
         Les formats d'écriture. SVG par défaut.
     coefficients:
         Les coefficients à représenter, dans l'ordre voulu. Par défaut, tous
-        ceux du jeu de lois.
+        ceux du jeu de lois. Un nom absent du jeu de lois est admis : sa ligne
+        montre alors le nominal et la valeur du modèle, en disant qu'aucune loi
+        ne le décrit.
     max_par_figure:
         Nombre maximal de coefficients par figure.
 
@@ -778,8 +889,8 @@ def figure_tirage_matrice(
     Raises
     ------
     ValueError
-        Si la liste de coefficients est vide, si l'un d'eux est absent du jeu
-        de lois, ou si *max_par_figure* n'est pas strictement positif.
+        Si la liste de coefficients est vide, ou si *max_par_figure* n'est pas
+        strictement positif.
     """
     noms = list(coefficients) if coefficients is not None else list(lois)
     if not noms:
@@ -787,9 +898,9 @@ def figure_tirage_matrice(
     if max_par_figure <= 0:
         raise ValueError(f"max_par_figure doit être strictement positif, reçu {max_par_figure!r}")
 
-    manquants = sorted(set(noms) - set(lois))
-    if manquants:
-        raise ValueError(f"coefficient(s) {manquants} absent(s) du jeu de lois")
+    # Un coefficient absent du jeu de lois n'est pas une erreur ici : il n'est
+    # simplement pas dispersé, et sa ligne le dira. C'est l'appelant qui sait
+    # s'il a du sens à le montrer — la matrice, elle, ne le devine pas.
 
     pages = [noms[debut : debut + max_par_figure] for debut in range(0, len(noms), max_par_figure)]
     sorties: list[FigureTirage] = []
@@ -804,7 +915,7 @@ def figure_tirage_matrice(
             for ligne, nom in zip(grille, page):
                 figure_tirage(
                     nom,
-                    lois[nom],
+                    lois.get(nom),
                     tirage,
                     nominal=(nominaux or {}).get(nom),
                     disperse_modele=(disperses_modele or {}).get(nom),

@@ -435,6 +435,45 @@ Trois points d'attention :
 
 `01_EXEMPLE/06_tirages_par_pdv.py` est ce parcours de bout en bout.
 
+### Les mêmes tirages, tous à la fois
+
+Le parcours précédent montre **un** tirage par figure. Son jumeau les montre
+**tous**, dans les mêmes trois panneaux — l'histogramme de ce qui a été obtenu,
+superposé à la loi qui le prescrivait :
+
+```python
+from cfd_dispersion import figures_histogramme_par_pdv
+
+inventaire = figures_histogramme_par_pdv(
+    df,
+    points_de_vol={…},          # le même dict
+    racine=sortie / "HISTOGRAMMES",
+    reference=reference,        # la même référence
+)
+```
+
+Une figure par (point de vol × coefficient), et pas de `max_tirages` : c'est
+l'ensemble qui est le sujet. Le troisième panneau confronte l'histogramme obtenu
+à la **loi combinée prescrite** — un modèle qui disperse plus que demandé se voit
+là, et nulle part ailleurs.
+
+Le décalage lois / sorties s'y traite autrement, et c'est ce qui distingue les
+deux figures :
+
+| | panneaux biais et FE | panneau coefficient |
+|:--|:--|:--|
+| lois **et** sortie | prescrite + obtenue | obtenu + loi combinée |
+| lois, pas de sortie | prescrite + obtenue | message : rien d'obtenu |
+| sortie, pas de lois | message : aucune loi | **l'histogramme obtenu** |
+
+> **Une ligne par tirage.** L'histogramme suppose que le point de vol porte une
+> ligne par tirage. Sur un appel croisé — sept incidences par tirage — chaque
+> valeur apparaît sept fois et l'histogramme mélangerait le balayage et la
+> dispersion. Le parcours **refuse**, en nommant la colonne à ajouter au point
+> de vol. C'est le piège du croisement (§5.7) sous une autre forme.
+
+`01_EXEMPLE/07_histogrammes_par_pdv.py` en fait le tour.
+
 ---
 
 ## 5.7 Le piège du croisement
@@ -702,3 +741,4 @@ bande.
 | `tirages=` du hook | `{(y_key, sweep_key): tableau (n_tirages, npts)}` |
 | les figures `batch_plot` | les quatre dictionnaires de §5.9 |
 | les figures de tirage par point de vol | `figures_tirage_par_pdv(df, points_de_vol={…}, racine=…)` — §5.6 |
+| les histogrammes par point de vol | `figures_histogramme_par_pdv(df, points_de_vol={…}, racine=…)` — §5.6 |

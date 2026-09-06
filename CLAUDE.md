@@ -403,11 +403,24 @@ not part of the Bash framework's runtime:
       `modele`, `ecart`, `accord`). It is the only check in the package aimed at the *model* rather
       than the draw, and it catches the three silent ones: a different convention on either side,
       a reference the model never saw, dispersion applied somewhere else than assumed.
+    - **`figures_histogramme_par_pdv` (`figures/histogramme.py`) is the ensemble view**: one figure
+      per (flight point × coefficient) over **all** the draws — the realised histogram of the biais,
+      of the FE, and of the coefficient the model returned, each against the law that prescribed it
+      (the third panel against the *combined* law, which is where a model dispersing more than asked
+      shows up). It shares the flight-point plumbing with `figures_tirage_par_pdv` (`_repartir` now
+      takes the worker function) and the density panel with `figure_comparaison`
+      (`figures/densite.py::tracer_densite_realisee`, law optional). It is also where the
+      laws-vs-outputs mismatch pays off: a coefficient with **no laws but an output column still
+      gets its histogram**, which the per-draw figure cannot do. It refuses a **crossed** table —
+      several rows per draw would mix the sweep into the histogram — naming the column that
+      discriminates the duplicated rows.
     - **The law table and the output columns need not name the same coefficients**, and the two
       directions differ. A `CX0` the model *consumes* has laws but no output column: it keeps its
       two component panels — those laws depend on no nominal — and its third says what is missing.
-      A `CA` the model *returns* without laws is not plotted at all (no draw, no draw figure), and
-      asking for it in `coefficients=` is refused by name. An **ambiguous reference** — two `CN`
+      A `CA` the model *returns* without laws is not plotted by default (the walk follows the laws);
+      named in `coefficients=` it still gets a figure — no law means no draw, but there remains a
+      nominal and the value the model returned, hence an écart to read. Only a name that is neither
+      a law nor a column is refused. An **ambiguous reference** — two `CN`
       values for what `points_de_vol` calls one flight point — also raises, naming the columns that
       would disambiguate, rather than picking one or silently dropping the nominal.
     - **The built-in `CONVENTIONS` are module-level functions, not lambdas**, so a `Tirage` — and

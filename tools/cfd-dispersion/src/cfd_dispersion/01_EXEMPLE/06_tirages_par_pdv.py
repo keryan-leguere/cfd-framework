@@ -359,9 +359,10 @@ def main() -> int:
     #   CX0  garde ses DEUX PREMIERS panneaux — ce sont les lois de ses
     #        composantes, elles ne dépendent d'aucun nominal — et le troisième
     #        dit ce qui lui manque, au lieu d'inventer une valeur ;
-    #   CA   n'est pas tracé du tout : sans tirage, il n'y a pas de figure de
-    #        tirage à faire. Le demander explicitement est refusé, en le
-    #        nommant.
+    #   CA   n'est pas tracé PAR DÉFAUT : le parcours suit les lois, et aucune
+    #        ne le décrit. Nommé dans `coefficients=`, il l'est quand même —
+    #        sans loi il n'y a pas de tirage à montrer, mais il reste un
+    #        nominal et la valeur que le modèle a rendue, donc un écart à lire.
     #
     # Ici on fabrique ce cas en rebaptisant CA en CX0 dans les seuls
     # dictionnaires ; les colonnes du tableau, elles, gardent CA.
@@ -376,6 +377,8 @@ def main() -> int:
     # les trois cas de figure. Le point de vol est donné EN ENTIER (Mach et
     # altitude) : la référence porte quatre lignes, et n'en désigner qu'une
     # partie rendrait le nominal ambigu — le paquet refuserait, en le disant.
+    #
+    # CA est nommé explicitement, sans quoi le parcours ne le verrait pas.
     inventaire_asym = figures_tirage_par_pdv(
         df_asym,
         points_de_vol={
@@ -384,6 +387,7 @@ def main() -> int:
         },
         racine=args.sortie / "ASYMETRIQUE",
         reference=reference_asym,
+        coefficients=["CN", "CX0", "CA"],
         max_tirages=1,
         nettoyer=True,
         n_jobs=1,
@@ -393,22 +397,24 @@ def main() -> int:
     lisible = inventaire_asym.loc[:, ["figure", "calcul", "modele", "accord"]].fillna("—")
     console.print("  " + lisible.to_string(index=False).replace("\n", "\n  "))
     console.print(
+        "  CN  : les trois panneaux, et le calcul confronté au modèle\n"
         "  CX0 : deux panneaux sur trois — pas de nominal, donc pas de loi du "
         "coefficient\n"
-        "  CA  : aucune figure — il n'a ni biais ni FE"
+        "  CA  : pas de loi, donc pas de tirage — mais le nominal et la valeur "
+        "du modèle"
     )
 
-    # Et si on insiste pour tracer CA, le refus nomme le coupable plutôt que
-    # de rendre une figure vide.
+    # Un coefficient qui n'est NI dans les lois NI dans le tableau, lui, n'a
+    # rien à montrer : le refus le nomme, plutôt que de rendre une figure vide.
     try:
         figures_tirage_par_pdv(
             df_asym,
             points_de_vol={"Mach": [0.85]},
             racine=args.sortie / "ASYMETRIQUE",
-            coefficients=["CA"],
+            coefficients=["CL"],
         )
     except ValueError as erreur:
-        console.print(f"  demander CA explicitement : [red]{erreur}[/]")
+        console.print(f"  demander CL, qu'on ne connaît pas : [red]{erreur}[/]")
 
     return 0
 

@@ -1,11 +1,11 @@
 # Exemple cfd-dispersion — prêt à tourner
 
 Tout est là : une table de lois, un modèle jouet, un exemple de tableau de
-sortie, et six scripts qui
+sortie, et sept scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les six, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les sept, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -35,6 +35,7 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `05_modele_croise.py` | **la forme d'un vrai modèle** : listes d'axes croisées, tableau large à colonnes dictionnaires |
 | `sortie_modele.py` | **un exemple écrit en dur du tableau de sortie** : 4 points de vol × 100 tirages, les deux dictionnaires, les métadonnées — plus la base de référence, tirage neutre |
 | `06_tirages_par_pdv.py` | le parcours des points de vol : une figure par (PDV × tirage × coefficient) |
+| `07_histogrammes_par_pdv.py` | le même parcours, mais **tous les tirages d'un coup** : une figure d'histogrammes par (PDV × coefficient) |
 
 ---
 
@@ -179,6 +180,25 @@ contrôle qui porte sur le modèle lui-même.
   rend un `CA`. `CX0` garde ses deux premiers panneaux et un troisième qui dit
   ce qui lui manque ; `CA` n'est pas tracé, faute de tirage, et le demander est
   refusé en le nommant.
+
+### `07_histogrammes_par_pdv.py` — ce que les cent tirages ont donné
+
+Même tableau, même dict de points de vol, autre question. Le script 06 demande
+« qu'est-ce qu'**un** tirage fait à mon coefficient » et rend 240 figures ; le
+07 demande « qu'est-ce que les **cent** tirages ont donné » et en rend 16 : par
+point de vol et par coefficient, l'histogramme du biais, celui du FE et celui du
+coefficient, chacun superposé à la loi qui le prescrivait.
+
+À regarder :
+
+* `HISTOGRAMMES/M_0.85/Z_10000/CN.svg` — le troisième panneau confronte
+  l'histogramme obtenu à la **loi combinée prescrite** : un modèle qui disperse
+  plus que demandé se voit là, et nulle part ailleurs ;
+* `HISTOGRAMMES_DECALES/CA.svg` — **la différence avec le script 06** : `CA`
+  n'a aucune loi, mais on a bien cent valeurs obtenues, et leur histogramme est
+  tracé. Le script 06 ne pouvait en montrer que le nominal et une valeur ;
+* dans la sortie terminal, le refus d'un tableau **croisé** : trois incidences
+  par tirage, et l'histogramme mélangerait le balayage et la dispersion.
 
 ---
 

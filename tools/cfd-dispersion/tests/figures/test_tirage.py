@@ -490,9 +490,11 @@ class TestFigureTirageMatrice:
         pages = figure_tirage_matrice(lois, tirage, nominaux=NOMINAUX, max_par_figure=2)
         assert any("(2/2)" in texte for texte in textes_de(pages[1].figure))
 
-    def test_un_coefficient_inconnu_est_refuse(self, lois: JeuDeLois, tirage: Tirage) -> None:
-        with pytest.raises(ValueError, match="absent"):
-            figure_tirage_matrice(lois, tirage, nominaux={}, coefficients=["CL"])
+    def test_un_coefficient_sans_loi_garde_sa_ligne(self, lois: JeuDeLois, tirage: Tirage) -> None:
+        """Il n'est pas dispersé : sa ligne le dit, au lieu de disparaître."""
+        (page,) = figure_tirage_matrice(lois, tirage, nominaux={"CL": 1.2}, coefficients=["CL"])
+        assert page.axes.shape == (1, 3)
+        assert any("Aucune loi pour CL" in texte for texte in textes_de(page.figure))
 
     def test_une_liste_vide_est_refusee(self, lois: JeuDeLois, tirage: Tirage) -> None:
         with pytest.raises(ValueError, match="aucun coefficient"):
