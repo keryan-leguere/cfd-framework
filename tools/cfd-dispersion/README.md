@@ -730,6 +730,27 @@ courbes_par_tirage(df, *, x, y, par) -> (x, courbes)
 
 ![polaire dispersée](00_DOC/FIGURES/07_polaire_dispersee.png)
 
+Chaque élément se coupe séparément :
+
+| option | ce qu'elle retire |
+|:--|:--|
+| `remplissage=None` | toute l'enveloppe |
+| `remplir=False` | l'intérieur peint ; les deux bords restent |
+| `bordures=False` | les deux bords ; le remplissage reste |
+| `montrer_tirages=False` | le faisceau des courbes individuelles |
+| `montrer_moyenne=False` | la moyenne dispersée |
+| `sigmas=()` | les lignes ±kσ |
+| `etiquettes_sigma=False` | leurs étiquettes, en gardant les lignes |
+| `boite_parametres=False` | la boîte qui chiffre la dispersion |
+| `chiffres_legende=False` | le pourcentage accolé à l'étiquette du remplissage |
+
+Les teintes ne sont pas décoratives : le faisceau est **éclairci** (il porte la
+texture), les bords de l'enveloppe légèrement assombris (sans quoi, à teinte
+égale, on ne les verrait pas), les ±kσ franchement plus sombres, et la moyenne
+dispersée est la ligne la plus marquée — c'est celle qu'on cherche. Les
+étiquettes ±kσ sont posées sur un cartouche **translucide** : opaque, il
+percerait un trou blanc dans le faisceau qu'on venait regarder.
+
 Cinq choses s'y superposent, et chacune s'enlève :
 
 * la **bande théorique**, calculée depuis `loi=` ;

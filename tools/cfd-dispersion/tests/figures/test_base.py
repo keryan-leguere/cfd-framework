@@ -15,6 +15,7 @@ from cfd_dispersion.figures._base import (
     assombrir,
     boite_texte,
     couleur_de_serie,
+    eclaircir,
     enregistrer,
     etiqueter_ligne,
     legende,
@@ -58,6 +59,27 @@ class TestAssombrir:
     def test_un_facteur_hors_bornes_est_refuse(self, facteur: float) -> None:
         with pytest.raises(ValueError, match=r"\[0, 1\]"):
             assombrir("C0", facteur)
+
+
+class TestEclaircir:
+    def test_eclaircit_vers_le_blanc(self) -> None:
+        assert eclaircir("#808080", 0.5) == pytest.approx((0.75, 0.75, 0.75), abs=0.01)
+
+    def test_facteur_nul_ne_change_rien(self) -> None:
+        assert eclaircir("#4C72B0", 0.0) == pytest.approx((0.298, 0.447, 0.690), abs=0.01)
+
+    def test_facteur_un_donne_du_blanc(self) -> None:
+        assert eclaircir("#4C72B0", 1.0) == pytest.approx((1.0, 1.0, 1.0))
+
+    def test_la_couleur_reste_reconnaissable(self) -> None:
+        """Éclaircir doit rattacher, pas dépayser : les teintes gardent leur ordre."""
+        r, v, b = eclaircir("#4C72B0", 0.35)
+        assert b > v > r
+
+    @pytest.mark.parametrize("facteur", [-0.1, 1.5])
+    def test_un_facteur_hors_bornes_est_refuse(self, facteur: float) -> None:
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            eclaircir("C0", facteur)
 
 
 class TestCouleurDeSerie:
@@ -163,6 +185,20 @@ class TestPrimitives:
     def test_remplir_entre_rend_un_polygone(self, axes: Axes) -> None:
         assert remplir_entre(axes, [0, 1, 2], [0, 0, 0], [1, 1, 1]) is not None
 
+    def test_remplir_entre_rend_aussi_ses_bords(self, axes: Axes) -> None:
+        """Un bord de la teinte exacte du remplissage ne se verrait pas."""
+        polygone, bords = remplir_entre(
+            axes,
+            [0, 1, 2],
+            [0, 0, 0],
+            [1, 1, 1],
+            lignes=True,
+            options_lignes={"color": "k", "linewidth": 2.0},
+        )
+        assert polygone is not None
+        assert len(bords) == 2
+        assert all(ligne.get_linewidth() == 2.0 for ligne in bords)
+
     def test_boite_texte_ancre_dans_les_axes(self, axes: Axes) -> None:
         texte = boite_texte(axes, "bonjour", loc="lower right")
         assert texte.get_text() == "bonjour"
@@ -183,6 +219,20 @@ class TestLignesReference:
 
     def test_sans_position_ne_trace_rien(self, axes: Axes) -> None:
         assert lignes_reference(axes) == []
+
+
+class TestFondDesEtiquettes:
+    def test_le_cartouche_est_translucide(self, axes: Axes) -> None:
+        """Un cartouche opaque perce un trou blanc dans le faisceau."""
+        cartouche = etiqueter_ligne(axes, [0, 1], [0, 1], "±1σ").get_bbox_patch()
+        assert cartouche is not None
+        opacite = cartouche.get_alpha()
+        assert opacite is not None and 0.0 < opacite < 1.0
+
+    def test_il_se_rend_opaque(self, axes: Axes) -> None:
+        cartouche = etiqueter_ligne(axes, [0, 1], [0, 1], "±1σ", fond_alpha=1.0).get_bbox_patch()
+        assert cartouche is not None
+        assert cartouche.get_alpha() == 1.0
 
 
 class TestToutPasseParCfdPlot:

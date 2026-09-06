@@ -17,6 +17,7 @@ from matplotlib.figure import Figure
 from cfd_dispersion.batch import HookDispersion, cle_par_defaut, hook_dispersion
 from cfd_dispersion.core.lois import JeuDeLois
 from cfd_dispersion.figures._base import nouvelle_figure, tracer_ligne
+from cfd_dispersion.figures.polaire import ALPHA_TIRAGES
 
 cfd_plot = pytest.importorskip("cfd_plot", reason="cfd_dispersion.batch exige cfd-plot")
 
@@ -196,7 +197,10 @@ class TestAppelDirect:
             max_tirages=None,
         )
         hook(figure, ax, _Contexte("Cm_alpha", "alpha"))
-        faibles = [ligne for ligne in ax.get_lines() if (ligne.get_alpha() or 1.0) < 0.2]
+        # Les courbes du faisceau sont les seules tracées à `ALPHA_TIRAGES`.
+        faibles = [
+            ligne for ligne in ax.get_lines() if ligne.get_alpha() == pytest.approx(ALPHA_TIRAGES)
+        ]
         assert len(faibles) == 12
 
     def test_panneaux_restreint_le_mode_comparaison(self, lois: JeuDeLois) -> None:

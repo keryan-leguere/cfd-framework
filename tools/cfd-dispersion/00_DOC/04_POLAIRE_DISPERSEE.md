@@ -89,7 +89,41 @@ Toutes les options de `superposer_dispersion` passent au travers.
 
 ---
 
-## 4.3 Remplissages
+## 4.3 Ce qui se trace, et ce qui se coupe
+
+Tout ce que la superposition dessine est une option :
+
+| option | ce qu'elle retire |
+|:--|:--|
+| `remplissage=None` | toute l'enveloppe |
+| `remplir=False` | l'intérieur peint ; les deux bords restent |
+| `bordures=False` | les deux bords ; le remplissage reste |
+| `montrer_tirages=False` | le faisceau des courbes individuelles |
+| `montrer_moyenne=False` | la moyenne dispersée |
+| `sigmas=()` | les lignes ±kσ |
+| `etiquettes_sigma=False` | leurs étiquettes |
+| `boite_parametres=False` | la boîte de paramètres |
+| `chiffres_legende=False` | le pourcentage en légende |
+
+Les teintes en découlent, et elles ne sont pas décoratives — c'est leur ordre
+qui fait la lisibilité :
+
+* le **faisceau** est *éclairci* : cent courbes de la teinte de la série
+  s'empileraient en un bloc plus sombre que les lignes qu'elles sont censées
+  soutenir ;
+* les **bords** de l'enveloppe sont légèrement assombris : à teinte égale, un
+  bord ne se voit pas sur son propre remplissage ;
+* les **±kσ** sont franchement plus sombres, et discontinus : ils passent *sur*
+  le remplissage ;
+* la **moyenne dispersée** est la ligne la plus marquée. C'est celle qu'on
+  cherche.
+
+Les étiquettes ±kσ sont enfin posées sur un cartouche **translucide** : opaque,
+il percerait un trou blanc dans le faisceau qu'on venait regarder.
+
+---
+
+## 4.4 Remplissages
 
 ![les trois remplissages](FIGURES/08_remplissages.png)
 
@@ -104,7 +138,7 @@ dont les queues ne sont pas gaussiennes.
 
 ---
 
-## 4.4 Les lignes ±kσ, étiquetées sur la courbe
+## 4.5 Les lignes ±kσ, étiquetées sur la courbe
 
 Matplotlib n'offre pas d'équivalent public de `clabel` en dehors des contours.
 `etiqueter_ligne` le fait à la main : elle prend le point à une fraction donnée
@@ -128,7 +162,7 @@ intéressante.
 
 ---
 
-## 4.5 La boîte de paramètres, et les chiffres
+## 4.6 La boîte de paramètres, et les chiffres
 
 Elle nomme la loi effectivement tirée — type, M, ET, convention, effectif,
 corrélé ou non, et le nombre de tirages du modèle. **Une figure ne doit jamais
@@ -161,7 +195,7 @@ de l'enveloppe en pourcentage du nominal — de sorte que la légende réponde d
 
 ---
 
-## 4.6 Corrélé ou indépendant
+## 4.7 Corrélé ou indépendant
 
 La distinction compte plus que le choix de l'intervalle, et se tromper dessus
 est la façon classique de publier une mauvaise enveloppe.
@@ -180,7 +214,7 @@ qui est pourtant l'affirmation qu'on croit faire.
 
 ---
 
-## 4.7 Greffe sur `cfd_plot.batch_plot`
+## 4.8 Greffe sur `cfd_plot.batch_plot`
 
 ```python
 from cfd_dispersion.batch import hook_dispersion

@@ -35,6 +35,7 @@ __all__ = [
     "assombrir",
     "boite_texte",
     "couleur_de_serie",
+    "eclaircir",
     "enregistrer",
     "etiqueter_ligne",
     "legende",
@@ -120,13 +121,33 @@ def remplir_entre(
     alpha: float = 0.15,
     label: str | None = None,
     lignes: bool = False,
+    options_lignes: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
-    """Remplit la zone entre deux courbes (``cfd_plot.fill_between_curves``)."""
-    _, polygones = get_plotting().fill_between_curves(
-        ax, x, y1, y2, color=couleur, alpha=alpha, label=label, lines=lignes, **kwargs
+    """Remplit la zone entre deux courbes (``cfd_plot.fill_between_curves``).
+
+    *lignes* trace en plus les deux bords. Ils sortent opaques là où le
+    remplissage est transparent, et *options_lignes* permet de les assombrir :
+    un bord de la teinte exacte du remplissage ne se voit pas.
+
+    Returns
+    -------
+    Le polygone, ou ``(polygone, bords)`` quand *lignes* est vrai.
+    """
+    bords, polygones = get_plotting().fill_between_curves(
+        ax,
+        x,
+        y1,
+        y2,
+        color=couleur,
+        alpha=alpha,
+        label=label,
+        lines=lignes,
+        line_kwargs=options_lignes,
+        **kwargs,
     )
-    return polygones[0] if polygones else None
+    polygone = polygones[0] if polygones else None
+    return (polygone, list(bords)) if lignes else polygone
 
 
 def lignes_reference(
@@ -231,6 +252,25 @@ def assombrir(couleur: Any, facteur: float = 0.25) -> tuple[float, float, float]
     return (r * echelle, v * echelle, b * echelle)
 
 
+def eclaircir(couleur: Any, facteur: float = 0.35) -> tuple[float, float, float]:
+    """Éclaircit une couleur de *facteur* (0 = inchangée, 1 = blanche).
+
+    Le pendant d':func:`assombrir`, et il sert au faisceau des courbes par
+    tirage : elles doivent se lire comme la texture du fond, sous les lignes
+    qui, elles, portent l'information — l'enveloppe, les ±kσ, la moyenne. À
+    teinte égale, cent courbes empilées deviennent plus sombres que ce qu'elles
+    sont censées soutenir.
+    """
+    if not 0.0 <= facteur <= 1.0:
+        raise ValueError(f"facteur doit être dans [0, 1], reçu {facteur!r}")
+    r, v, b = mcolors.to_rgb(couleur)
+    return (
+        r + (1.0 - r) * facteur,
+        v + (1.0 - v) * facteur,
+        b + (1.0 - b) * facteur,
+    )
+
+
 def couleur_de_serie(ax: Axes, label: str) -> Any:
     """Retrouve la couleur d'une courbe déjà tracée, par son libellé.
 
@@ -270,6 +310,7 @@ def etiqueter_ligne(
     couleur: Any = None,
     taille: float = 7.0,
     fond: Any = None,
+    fond_alpha: float = 0.6,
     **kwargs: Any,
 ) -> Text:
     """Pose une étiquette **sur** une courbe, inclinée comme elle.
@@ -307,8 +348,12 @@ def etiqueter_ligne(
         Taille de police.
     fond:
         Couleur du cartouche derrière le texte. Par défaut celle du fond des
-        axes, ce qui fait apparaître la courbe comme interrompue par
-        l'étiquette au lieu de passer dessous.
+        axes, ce qui détache l'étiquette de ce qu'il y a dessous.
+    fond_alpha:
+        Opacité de ce cartouche. Translucide par défaut : un cartouche opaque
+        perce un trou blanc dans le faisceau qu'on venait regarder, alors
+        qu'une étiquette lisible n'a pas besoin d'effacer ce qu'elle couvre.
+        1.0 rend le fond plein, 0.0 le supprime.
 
     Returns
     -------
@@ -345,7 +390,10 @@ def etiqueter_ligne(
     if fond is None:
         fond = ax.get_facecolor()
 
-    kwargs.setdefault("bbox", {"facecolor": fond, "edgecolor": "none", "pad": 0.8})
+    kwargs.setdefault(
+        "bbox",
+        {"facecolor": fond, "edgecolor": "none", "pad": 0.8, "alpha": fond_alpha},
+    )
     return ax.text(
         float(x[indice]),
         float(y[indice]),

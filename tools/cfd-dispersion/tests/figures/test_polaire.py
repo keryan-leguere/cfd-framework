@@ -12,7 +12,12 @@ import pytest
 from matplotlib.axes import Axes
 
 from cfd_dispersion.core.lois import JeuDeLois
-from cfd_dispersion.figures._base import assombrir, nouvelle_figure, tracer_ligne
+from cfd_dispersion.figures._base import (
+    assombrir,
+    eclaircir,
+    nouvelle_figure,
+    tracer_ligne,
+)
 from cfd_dispersion.figures.polaire import (
     courbes_par_tirage,
     nominal_depuis_tableau,
@@ -478,3 +483,106 @@ class TestChiffresDeLaDispersion:
         assert "enveloppe max" in texte
         assert "σ max" in texte
         assert "écart moyen/nominal" in texte
+
+
+class TestOptionsDAffichage:
+    """Chaque élément du tracé s'enlève séparément."""
+
+    @pytest.fixture
+    def nuage(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        x = np.linspace(0.0, 10.0, 11)
+        nominal = np.full_like(x, 2.0)
+        courbes = np.vstack([nominal - 0.05 * x, nominal, nominal + 0.05 * x])
+        return x, nominal, courbes
+
+    def test_par_defaut_tout_est_la(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes)
+        assert artistes["bande"] is not None
+        assert len(artistes["bordures"]) == 2
+        assert len(artistes["tirages"]) == 3
+        assert artistes["moyenne"] is not None
+        assert artistes["sigmas"]
+        assert artistes["boite"] is not None
+
+    def test_sans_remplir_il_reste_les_bords(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, remplir=False)
+        assert artistes["bande"] is None
+        assert len(artistes["bordures"]) == 2
+
+    def test_sans_bordures_il_reste_le_remplissage(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, bordures=False)
+        assert artistes["bande"] is not None
+        assert artistes["bordures"] == []
+
+    def test_les_bords_sont_plus_sombres_que_le_remplissage(self, nuage: Any) -> None:
+        """Un bord de la teinte exacte du remplissage ne se verrait pas."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C0")
+        bord = artistes["bordures"][0].get_color()
+        assert bord == pytest.approx(assombrir("C0", 0.15), abs=1e-6)
+
+    def test_les_tirages_sont_plus_clairs_que_leur_serie(self, nuage: Any) -> None:
+        """Cent courbes empilées ne doivent pas dominer les lignes qu'elles portent."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C0")
+        assert artistes["tirages"][0].get_color() == pytest.approx(eclaircir("C0", 0.35), abs=1e-6)
+
+    def test_le_faisceau_se_coupe(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, montrer_tirages=False)
+        assert artistes["tirages"] == []
+
+    def test_les_sigmas_se_coupent(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, sigmas=())
+        assert artistes["sigmas"] == []
+        assert artistes["etiquettes"] == []
+
+    def test_la_boite_se_coupe(self, nuage: Any) -> None:
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, boite_parametres=False)
+        assert artistes["boite"] is None
+
+    def test_tout_se_coupe_a_la_fois(self, nuage: Any) -> None:
+        """Le minimum : l'enveloppe, et rien d'autre."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(
+            ax,
+            x,
+            nominal,
+            tirages=courbes,
+            montrer_tirages=False,
+            montrer_moyenne=False,
+            bordures=False,
+            sigmas=(),
+            boite_parametres=False,
+        )
+        assert artistes["bande"] is not None
+        assert not artistes["tirages"]
+        assert not artistes["bordures"]
+        assert artistes["moyenne"] is None
+        assert not artistes["sigmas"]
+        assert artistes["boite"] is None
+
+    def test_le_tableau_ne_sous_echantillonne_pas(self) -> None:
+        """`superposer_depuis_tableau` trace ce qu'on lui donne, sans en écarter."""
+        lignes = [
+            {"alpha": x, "CN": 0.1 * x * (1 + 0.001 * numero), "tirage": numero}
+            for numero in range(300)
+            for x in (0.0, 5.0, 10.0)
+        ]
+        _, ax = nouvelle_figure()
+        artistes = superposer_depuis_tableau(ax, pd.DataFrame(lignes), x="alpha", y="CN")
+        assert len(artistes["tirages"]) == 300

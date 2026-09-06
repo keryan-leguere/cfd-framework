@@ -17,7 +17,8 @@ incidences font 1300 lignes. Et vous avez, à côté, la polaire de **référenc
 La figure est la vôtre
 ----------------------
 Tout ce qui la construit vient de **cfd-plot**, appelé directement : le style,
-les axes, la courbe de référence, les libellés, le titre, l'export.
+les axes, la courbe de référence, les libellés, le titre — et l'export, par
+``cfd_plot.save_figure``.
 
     import cfd_plot as cplt
 
@@ -50,14 +51,14 @@ Ce que le script montre :
 
   1. le tableau de départ, et sa référence ;
   2. la figure complète, en une ligne ;
-  3. les variantes : sans référence, en percentile, sans les tirages ;
+  3. les options : chaque élément du tracé s'enlève séparément ;
   4. les trois coefficients sur une figure ;
   5. les chiffres seuls, sans figure — pour un compte rendu.
 
 Sorties, dans SORTIE/ :
 
     polaire_CN.svg              la figure complète
-    polaire_variantes.svg       trois réglages côte à côte
+    polaire_options.svg         six réglages côte à côte : chaque élément s'enlève
     polaire_trois_coeffs.svg    les trois coefficients, chacun sa teinte
 """
 
@@ -82,7 +83,6 @@ from cfd_dispersion import (
     bande_depuis_courbes,
     charger_lois_yaml,
     courbes_par_tirage,
-    enregistrer,
     resume_dispersion,
     superposer_depuis_tableau,
     tirage_neutre,
@@ -171,12 +171,14 @@ def main() -> int:
             serie="CN",  # reprendre la couleur de la courbe "CN"
         )
 
-        # `enregistrer` est `cfd_plot.save_figure` plus un garde-fou : ce
-        # dernier compose son fichier avec `Path.with_suffix`, qui remplace
-        # tout ce qui suit le dernier point — un nom aussi banal que
-        # « polaire_M0.85 » y perdrait son « .85 », et toute une série de
-        # points de vol s'écraserait dans un seul fichier.
-        (chemin,) = enregistrer(figure, args.sortie / "polaire_CN", formats=("svg",))
+        # L'export aussi vient de cfd-plot : DPI, marges et fond sortent du
+        # profil de style. Le chemin se donne sans extension, une par format.
+        #
+        # (Un nom qui contient un point — « polaire_M0.85 » — perdrait ce qui
+        # suit le dernier point, `save_figure` composant son fichier avec
+        # `Path.with_suffix`. Pour ces noms-là, `cfd_dispersion.enregistrer`
+        # ajoute le garde-fou. Ici les noms n'en ont pas.)
+        (chemin,) = cplt.save_figure(figure, args.sortie / "polaire_CN", formats=("svg",))
         plt.close(figure)
 
     # `artistes` rend ce qui a été créé : le remplissage, la moyenne, les
@@ -184,29 +186,42 @@ def main() -> int:
     console.print(f"\n[green]écrit :[/] {chemin}")
     console.print(f"  artistes rendus : {sorted(artistes)}")
 
-    # --- 3. les variantes ------------------------------------------------
+    # --- 3. chaque élément s'enlève --------------------------------------
     #
-    # Trois réglages, côte à côte, pour voir ce que chacun change :
+    # Tout ce que la superposition dessine est une option, et chacune se coupe
+    # séparément :
     #
-    #   * sans `reference=` : la MOYENNE des tirages tient lieu de nominal.
-    #     Correct tant que les lois sont centrées, faux dès qu'elles ne le sont
-    #     pas — la bande se centre alors sur elle-même et le biais devient
-    #     invisible. Le chiffre « écart moyen/nominal » tombe à zéro, et c'est
-    #     ainsi qu'on s'en aperçoit ;
-    #   * `remplissage="percentile"` : l'enveloppe à 95 % au lieu du min/max,
-    #     qui ne dépend pas des deux tirages les plus extrêmes ;
-    #   * `max_tirages=0` : le faisceau sans les courbes, quand elles
-    #     noircissent la figure.
+    #   remplissage=…       quelle enveloppe : "minmax", "percentile", "sigma"
+    #                       ou None pour n'en tracer aucune
+    #   remplir=False       garder l'enveloppe, ne pas peindre l'intérieur
+    #   bordures=False      peindre l'intérieur sans en tracer les bords
+    #   montrer_tirages=…   le faisceau des courbes individuelles
+    #   montrer_moyenne=…   la moyenne dispersée
+    #   sigmas=()           aucune ligne ±kσ
+    #   etiquettes_sigma=…  les lignes sans les étiquettes posées dessus
+    #   boite_parametres=…  la boîte qui chiffre la dispersion
+    #   chiffres_legende=…  le pourcentage accolé à l'étiquette du remplissage
     #
-    # `new_figure(1, 3)` rend une grille d'axes, comme `plt.subplots`.
+    # Six réglages côte à côte, pour voir ce que chacun retire.
     with cplt.style_context("notebook"):
-        figure, grille = cplt.new_figure(1, 3, figsize=(15.0, 4.2))
-        variantes: tuple[tuple[str, dict[str, Any]], ...] = (
-            ("sans référence", {"reference": None}),
-            ("percentile 95 %", {"remplissage": "percentile", "couverture": 0.95}),
-            ("sans les tirages", {"max_tirages": 0}),
+        figure, grille = cplt.new_figure(2, 3, figsize=(16.0, 8.0))
+        options: tuple[tuple[str, dict[str, Any]], ...] = (
+            ("tout (défaut)", {}),
+            ("sans remplir : les bords seuls", {"remplir": False}),
+            ("sans les tirages", {"montrer_tirages": False}),
+            ("sans les σ", {"sigmas": ()}),
+            (
+                "sans boîte ni chiffres",
+                {"boite_parametres": False, "chiffres_legende": False},
+            ),
+            # Le piège, gardé pour la fin : sans référence, la MOYENNE des
+            # tirages tient lieu de nominal. Correct tant que les lois sont
+            # centrées, faux dès qu'elles ne le sont pas — la bande se centre
+            # alors sur elle-même, et « écart moyen/nominal » tombe à zéro.
+            # C'est à ce chiffre qu'on s'en aperçoit.
+            ("sans référence (le piège)", {"reference": None}),
         )
-        for panneau, (nom, options) in zip(np.ravel(grille), variantes):
+        for panneau, (nom, reglages) in zip(np.ravel(grille), options):
             cplt.plot_line(
                 panneau,
                 alpha,
@@ -215,16 +230,21 @@ def main() -> int:
                 color="C0",
                 marker="",
             )
-            # `reference=df_reference` sauf quand la variante dit le contraire.
-            reglages: dict[str, Any] = {"reference": df_reference, **options}
             superposer_depuis_tableau(
-                panneau, df_disperse, x="alpha", y="CN", serie="CN", **reglages
+                panneau,
+                df_disperse,
+                x="alpha",
+                y="CN",
+                serie="CN",
+                # `reference=df_reference` sauf quand le réglage dit le contraire
+                **{"reference": df_reference, **reglages},
             )
             cplt.set_title(panneau, nom)
             panneau.set_xlabel(LIBELLE_ALPHA)
-        np.ravel(grille)[0].set_ylabel(LIBELLE_CN)
+        for panneau in np.ravel(grille)[::3]:
+            panneau.set_ylabel(LIBELLE_CN)
 
-        (chemin,) = enregistrer(figure, args.sortie / "polaire_variantes", formats=("svg",))
+        (chemin,) = cplt.save_figure(figure, args.sortie / "polaire_options", formats=("svg",))
         plt.close(figure)
     console.print(f"[green]écrit :[/] {chemin}")
 
@@ -261,7 +281,7 @@ def main() -> int:
         ax.set_ylabel("coefficient")
         cplt.set_title(ax, "Trois coefficients dispersés — M = 0.80")
 
-        (chemin,) = enregistrer(figure, args.sortie / "polaire_trois_coeffs", formats=("svg",))
+        (chemin,) = cplt.save_figure(figure, args.sortie / "polaire_trois_coeffs", formats=("svg",))
         plt.close(figure)
     console.print(f"[green]écrit :[/] {chemin}")
 
