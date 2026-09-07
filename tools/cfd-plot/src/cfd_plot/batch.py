@@ -170,6 +170,7 @@ class _ComparePlotJob:
     case_label: str
     panels: tuple[_ComparePanel, ...]
     max_cols: int
+    sync_axes: str | None = "both"
 
 
 def _concat_configurations(configuration_dict: dict[str, dict[str, Any]]) -> pd.DataFrame:
@@ -838,7 +839,10 @@ FOLD_Y_STEM = "FOLD_Y"
 
 _FOLD_KINDS = ("y", "context")
 _FOLD_LAYOUTS = ("subplot", "overlay")
-_FOLD_SYNC_VALUES = ("x", "y", "both")
+# Accepted axis-synchronisation modes, shared by folded sheets and compare
+# figures: both put several panels of the same quantity side by side, and both
+# lie if the panels autoscale independently.
+_SYNC_AXES_VALUES = ("x", "y", "both")
 _FOLD_OVERLAY_COLOR = ("fold", "source")
 
 # Line styles cycled per folded condition when overlay_color="source", so the
@@ -920,9 +924,9 @@ class FoldSpec:
             raise ValueError(f"FoldSpec.max_panels must be >= 2, got {self.max_panels}.")
         if not 1 <= self.max_cols <= 3:
             raise ValueError(f"FoldSpec.max_cols must be between 1 and 3, got {self.max_cols}.")
-        if self.sync_axes not in (None, "auto", *_FOLD_SYNC_VALUES):
+        if self.sync_axes not in (None, "auto", *_SYNC_AXES_VALUES):
             raise ValueError(
-                f"FoldSpec.sync_axes must be None, 'auto' or one of {_FOLD_SYNC_VALUES}, "
+                f"FoldSpec.sync_axes must be None, 'auto' or one of {_SYNC_AXES_VALUES}, "
                 f"got {self.sync_axes!r}."
             )
         if self.overlay_color not in _FOLD_OVERLAY_COLOR:
@@ -2328,6 +2332,7 @@ def _enumerate_compare_jobs(
     output_base: str | Path,
     max_cols: int,
     include_curve: Callable[..., bool] | None,
+    sync_axes: str | None = "both",
 ) -> list[_ComparePlotJob]:
     """Build compare jobs: one multi-panel figure per polar / fixed-sweep / Y."""
     sweep_keys = list(completed_sweeps.keys())
@@ -2420,6 +2425,7 @@ def _enumerate_compare_jobs(
                         case_label=case_label,
                         panels=tuple(panels),
                         max_cols=max_cols,
+                        sync_axes=sync_axes,
                     )
                 )
     return jobs
@@ -2451,9 +2457,9 @@ def _render_one_compare_job(
         sharey=False,
     )
     axes_flat = list(axes.ravel())
+    used_axes = axes_flat[:n_panels]
 
-    for index, panel in enumerate(job.panels):
-        ax = axes_flat[index]
+    for ax, panel in zip_strict(used_axes, list(job.panels)):
         for curve in panel.curves:
             plot_line(
                 ax,
@@ -2467,23 +2473,40 @@ def _render_one_compare_job(
         make_legend(ax)
         set_title(ax, panel.title)
 
-        context = BatchPlotContext(
-            flight_point=panel.flight_point,
-            fixed_sweeps=job.fixed_sweeps,
-            sweep_key=job.sweep_key,
-            y_key=job.y_key,
-            x_spec=job.x_spec,
-            y_spec=job.y_spec,
-            polar_prefix=job.polar_prefix,
-            output_path=job.output_path,
-            compare_name=panel.name,
-            panel_index=index,
-        )
-        if on_before_save is not None:
-            on_before_save(fig, ax, context)
-
     for ax in axes_flat[n_panels:]:
         ax.set_visible(False)
+
+    # The whole point of a compare figure is that the panels are the same
+    # quantity at different flight points: left to autoscale independently, a
+    # curve that looks steep in one panel and flat in the next may be the same
+    # curve. Only the panels that carry data are synced — a hidden filler cell
+    # would contribute nothing and take limits it never shows.
+    #
+    # Before the hooks, never after, exactly as a folded sheet does it:
+    # on_before_save is the caller's last word, so a hook that pins its own
+    # limits must not be undone, and a hook reading ax.get_ylim() (to place a
+    # label, to slope an annotation) must read the limits the figure ships with.
+    if job.sync_axes is not None and len(used_axes) > 1:
+        sync_axes_limits(used_axes, which=job.sync_axes)
+
+    if on_before_save is not None:
+        for index, (ax, panel) in enumerate(zip_strict(used_axes, list(job.panels))):
+            on_before_save(
+                fig,
+                ax,
+                BatchPlotContext(
+                    flight_point=panel.flight_point,
+                    fixed_sweeps=job.fixed_sweeps,
+                    sweep_key=job.sweep_key,
+                    y_key=job.y_key,
+                    x_spec=job.x_spec,
+                    y_spec=job.y_spec,
+                    polar_prefix=job.polar_prefix,
+                    output_path=job.output_path,
+                    compare_name=panel.name,
+                    panel_index=index,
+                ),
+            )
 
     panel_titlesize = plt.rcParams["axes.titlesize"]
     set_suptitle(fig, job.suptitle, fontsize=panel_titlesize * 1.3, fontweight="bold")
@@ -2609,6 +2632,7 @@ def _print_compare_plan(
     formats: Sequence[str],
     style_profile: str,
     max_cols: int,
+    sync_axes: str | None,
     n_jobs: int,
     dry_run: bool,
     include_curve: Callable[..., bool] | None,
@@ -2643,6 +2667,7 @@ def _print_compare_plan(
         f"Sweeps          : {', '.join(completed_sweeps.keys())}  ({len(completed_sweeps)})",
         f"Compared points : {', '.join(normalized_compare.keys())}  ({len(normalized_compare)})",
         f"Panels / figure : up to {max_cols} column(s)",
+        f"Sync axes       : {sync_axes if sync_axes else 'no (each panel autoscales)'}",
         f"Output base     : {output_base}",
         f"Formats         : {', '.join(formats)}",
         f"Style           : {style_profile}",
@@ -2794,6 +2819,7 @@ def batch_compare_flight_points(
     style_profile: str = "paper",
     formats: tuple[str, ...] = ("svg",),
     max_cols: int = 3,
+    sync_axes: str | None = "both",
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None = None,
     include_curve: Callable[..., bool] | None = None,
     report: bool = True,
@@ -2817,6 +2843,19 @@ def batch_compare_flight_points(
         variables (via ``flight_point_dict`` exclusion) are not required.
     max_cols :
         Maximum subplot columns per row (1–3, default 3).
+    sync_axes : {"both", "y", "x", None}
+        Give every panel the same limits, via
+        :func:`~cfd_plot.sync_axes_limits`. On by default on **both** axes:
+        panels autoscaled independently make the same curve look steep in one
+        and flat in the next, which is the one thing a compare figure exists to
+        rule out. ``None`` leaves each panel to autoscale.
+
+        The sync runs **before** ``on_before_save``, as on a folded sheet: the
+        hook is the caller's last word, so limits it pins survive, and limits it
+        reads are the ones the figure ships with. A hook that adds data wider
+        than the curves (a dispersion band, say) should widen the limits itself,
+        or pass ``sync_axes=None`` and call
+        :func:`~cfd_plot.sync_axes_limits` on ``fig.axes`` from the last panel.
     flight_point_dict :
         Optional metadata (labels / units / template keys). Sweep keys listed
         here are excluded automatically, same as ``batch_plot``.
@@ -2835,6 +2874,10 @@ def batch_compare_flight_points(
         raise ValueError("y_axis_dict must contain at least one entry.")
     if max_cols < 1 or max_cols > 3:
         raise ValueError("max_cols must be between 1 and 3.")
+    if sync_axes is not None and sync_axes not in _SYNC_AXES_VALUES:
+        raise ValueError(
+            f"sync_axes must be None or one of {_SYNC_AXES_VALUES}, got {sync_axes!r}."
+        )
 
     resolved_sweep_dict = _coalesce_sweep_dict(sweep_dict, x_axis_dict)
     if not resolved_sweep_dict:
@@ -2874,6 +2917,7 @@ def batch_compare_flight_points(
         output_base=output_base,
         max_cols=max_cols,
         include_curve=include_curve,
+        sync_axes=sync_axes,
     )
 
     if verbose:
@@ -2888,6 +2932,7 @@ def batch_compare_flight_points(
             formats=formats,
             style_profile=style_profile,
             max_cols=max_cols,
+            sync_axes=sync_axes,
             n_jobs=n_jobs,
             dry_run=dry_run,
             include_curve=include_curve,

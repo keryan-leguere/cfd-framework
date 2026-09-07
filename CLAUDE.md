@@ -290,6 +290,9 @@ not part of the Bash framework's runtime:
   panels or, `layout="overlay"`, on one axes under `FOLD_OVERLAY/` where colour reads the
   condition and marker/linestyle the source; families larger than `max_panels` split into
   numbered sheets rather than shrinking).
+  `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
+  out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
+  hook's own limits are the last word.
   `cfd_plot.domains` (`plot_domains`) shades and names the regions a curve crosses from a
   per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
   the samples that disagree, a hole in the column left blank rather than shaded through, and

@@ -741,12 +741,30 @@ batch_compare_flight_points(
     configuration_dict=configuration_dict, y_axis_dict=y_axis_dict,
     sweep_dict=sweep_dict, flight_point_dict=flight_point_dict,
     compare_flight_points=compare, output_base="FIGURE",
-    max_cols=3,      # 1–3 panels per row
+    max_cols=3,          # 1–3 panels per row
+    sync_axes="both",    # the default; "y", "x", or None
 )
 ```
 
 Omitting a key raises `KeyError: compare_flight_points['…'] missing flight-point keys: [...]`.
 The sweep variable (`alpha` here) is excluded automatically.
+
+**The panels share their limits by default** (`sync_axes="both"`, through
+[`sync_axes_limits`](#sync_axes_limits)). Panels autoscaled independently make the same curve
+look steep in one and flat in the next — the one thing a compare figure exists to rule out. A
+Mach 0.85 panel whose `CN` runs five times higher than the Mach 0.70 one is exactly the case
+you want to *see*, not to have normalised away by three separate autoscales. Pass
+`sync_axes="y"` to leave the x ranges alone (each panel then ends where its own sweep does),
+or `sync_axes=None` for the old per-panel behaviour.
+
+Two details worth knowing:
+
+- Only the panels that carry data are synced. A three-panel figure on a two-wide grid has a
+  hidden fourth cell; it takes no limits and its emptiness never enters the shared range.
+- **The sync runs before `on_before_save`**, exactly as on a folded sheet: the hook is your last
+  word, so limits it pins survive, and limits it reads are the ones the figure ships with. A
+  hook that adds data wider than the curves (a dispersion band) should widen the limits itself,
+  or take `sync_axes=None` and call `sync_axes_limits(fig.axes)` from the last panel.
 
 ### Cleaning the output tree
 

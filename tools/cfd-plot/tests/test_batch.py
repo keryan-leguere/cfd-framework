@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
+from cfd_plot import batch as batch_module
 from cfd_plot import (
     batch_compare_flight_points,
     batch_plot,
@@ -119,6 +120,47 @@ _EMPTY_FLIGHT_POINTS = {
     key: {"values": [], "label": key, "save_name": key.upper()}
     for key in ("Mach", "Altitude_m", "beta", "DL", "DM", "DN")
 }
+
+
+
+@pytest.fixture()
+def compare_configuration_dict() -> dict:
+    """Two flight points whose CN differ by a factor of five.
+
+    Deliberately lopsided: panels left to autoscale independently would draw
+    the same-looking curve at two scales, which is what a compare figure is
+    there to rule out.
+    """
+    rows = [
+        _make_row(mach, altitude, alpha, scale * 0.1 * alpha, "CFD")
+        for mach, altitude, scale, alphas in (
+            (0.80, 8000, 1.0, [0.0, 2.0, 4.0, 6.0]),
+            (0.85, 10000, 5.0, [0.0, 2.0, 4.0, 6.0, 8.0]),
+        )
+        for alpha in alphas
+    ]
+    return {"CFD": {"name": "CFD", "label": "CFD", "df": pd.DataFrame(rows)}}
+
+
+_COMPARE_POINTS = {
+    "design": {"Mach": 0.80, "Altitude_m": 8000, "beta": 0.0, "DL": 0.0, "DM": 0.0, "DN": 0.0},
+    "high": {"Mach": 0.85, "Altitude_m": 10000, "beta": 0.0, "DL": 0.0, "DM": 0.0, "DN": 0.0},
+}
+
+
+def _compare(config, tmp_path, **kwargs):
+    """Run a two-panel compare figure over the lopsided fixture."""
+    return batch_compare_flight_points(
+        configuration_dict=config,
+        y_axis_dict=_CN_AXIS,
+        compare_flight_points=_COMPARE_POINTS,
+        sweep_dict=_ALPHA_SWEEP,
+        flight_point_dict=_EMPTY_FLIGHT_POINTS,
+        output_base=tmp_path,
+        formats=("svg",),
+        report=False,
+        **kwargs,
+    )
 
 
 class TestDiscoverFlightPointValues:
@@ -676,6 +718,128 @@ class TestBatchCompareFlightPoints:
         assert len(written) == 1
         assert "design_high" in str(written[0])
         assert written[0].exists()
+
+    def test_panels_share_their_limits_by_default(self, compare_configuration_dict, tmp_path):
+        """The comparison is the point: two panels, one scale."""
+        seen: list[tuple] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append((ax.get_xlim(), ax.get_ylim()))
+
+        _compare(compare_configuration_dict, tmp_path, on_before_save=on_before_save)
+
+        assert len(seen) == 2
+        assert seen[0] == seen[1]
+        # And the shared range covers both panels: alpha to 8, CN to 5 * 0.8.
+        (x_low, x_high), (y_low, y_high) = seen[0]
+        assert x_high > 8.0 and x_low < 0.0
+        assert y_high > 4.0 and y_low < 0.0
+
+    def test_sync_axes_none_leaves_every_panel_to_autoscale(
+        self, compare_configuration_dict, tmp_path
+    ):
+        seen: list[tuple] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append(ax.get_ylim())
+
+        _compare(compare_configuration_dict, tmp_path, sync_axes=None, on_before_save=on_before_save)
+
+        assert seen[0] != seen[1]
+        assert seen[0][1] < 1.0 < seen[1][1]
+
+    def test_sync_axes_y_leaves_x_alone(self, compare_configuration_dict, tmp_path):
+        seen: list[tuple] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append((ax.get_xlim(), ax.get_ylim()))
+
+        _compare(compare_configuration_dict, tmp_path, sync_axes="y", on_before_save=on_before_save)
+
+        assert seen[0][1] == seen[1][1]
+        assert seen[0][0] != seen[1][0]
+
+    def test_the_sync_runs_before_the_hooks(self, compare_configuration_dict, tmp_path, monkeypatch):
+        """Order is the contract: the hook is the caller's last word.
+
+        A hook that pins its own limits must not be undone, and one that reads
+        ``ax.get_ylim()`` must read the limits the figure ships with.
+        """
+        events: list[str] = []
+        real_sync = batch_module.sync_axes_limits
+
+        def recording_sync(axes, **kwargs):
+            events.append(f"sync:{len(list(axes))}")
+            return real_sync(axes, **kwargs)
+
+        monkeypatch.setattr(batch_module, "sync_axes_limits", recording_sync)
+
+        def on_before_save(fig, ax, context):
+            events.append(f"hook:{context.panel_index}")
+
+        _compare(compare_configuration_dict, tmp_path, on_before_save=on_before_save)
+
+        assert events == ["sync:2", "hook:0", "hook:1"]
+
+    def test_only_the_panels_carrying_data_are_synced(
+        self, compare_configuration_dict, tmp_path, monkeypatch
+    ):
+        """A 3-panel figure on a 2-wide grid has a hidden fourth cell.
+
+        Handing it to the sync would give limits to an axes that shows nothing,
+        and let its emptiness into the shared range.
+        """
+        synced: list[int] = []
+        real_sync = batch_module.sync_axes_limits
+
+        def recording_sync(axes, **kwargs):
+            synced.append(len(list(axes)))
+            return real_sync(axes, **kwargs)
+
+        monkeypatch.setattr(batch_module, "sync_axes_limits", recording_sync)
+
+        three_points = {
+            **_COMPARE_POINTS,
+            "third": {"Mach": 0.80, "Altitude_m": 8000, "beta": 0.0, "DL": 0.0, "DM": 0.0, "DN": 0.0},
+        }
+        batch_compare_flight_points(
+            configuration_dict=compare_configuration_dict,
+            y_axis_dict=_CN_AXIS,
+            compare_flight_points=three_points,
+            sweep_dict=_ALPHA_SWEEP,
+            flight_point_dict=_EMPTY_FLIGHT_POINTS,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            max_cols=2,
+        )
+
+        assert synced == [3]
+
+    def test_a_single_panel_is_not_synced(self, compare_configuration_dict, tmp_path, monkeypatch):
+        synced: list[int] = []
+        monkeypatch.setattr(
+            batch_module, "sync_axes_limits", lambda axes, **kw: synced.append(len(list(axes)))
+        )
+        batch_compare_flight_points(
+            configuration_dict=compare_configuration_dict,
+            y_axis_dict=_CN_AXIS,
+            compare_flight_points={"design": _COMPARE_POINTS["design"]},
+            sweep_dict=_ALPHA_SWEEP,
+            flight_point_dict=_EMPTY_FLIGHT_POINTS,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+        )
+        assert synced == []
+
+    def test_an_unknown_sync_axes_is_rejected(self, compare_configuration_dict, tmp_path):
+        with pytest.raises(ValueError, match="sync_axes must be None or one of"):
+            _compare(compare_configuration_dict, tmp_path, sync_axes="all")
+
+    def test_the_plan_states_the_sync(self, compare_configuration_dict, tmp_path, capsys):
+        _compare(compare_configuration_dict, tmp_path, dry_run=True, verbose=True)
+        assert "Sync axes" in capsys.readouterr().out
 
     def test_build_compare_output_path(self):
         path = build_compare_output_path(
