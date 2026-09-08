@@ -119,6 +119,9 @@ class BatchPlotContext:
     carto_sweep_key: str | None = None
     carto_sweep_spec: dict[str, Any] | None = None
     carto_source: str | None = None
+    # Set on a cartography's difference panel only ("absolute" / "relative"),
+    # where `carto_source` is None because the panel belongs to no one source.
+    carto_delta: str | None = None
 
 
 @dataclass(frozen=True)

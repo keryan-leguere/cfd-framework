@@ -82,6 +82,7 @@ from .batch import (
 from .carto import (
     CARTO_KEY,
     CartoSpec,
+    DeltaSpec,
     batch_carto,
 )
 
@@ -194,6 +195,7 @@ __all__ = [
     # Cartographies
     "CARTO_KEY",
     "CartoSpec",
+    "DeltaSpec",
     "batch_carto",
     # Domain regions
     "Domain",

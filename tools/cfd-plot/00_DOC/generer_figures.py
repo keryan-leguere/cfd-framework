@@ -856,8 +856,12 @@ def _carto_config():
             ca = 0.02 + 0.35 * max(0.0, mach - 0.85) ** 2 + 4e-4 * alpha**2
             rows.append({"Mach": mach, "alpha": alpha, "Altitude_m": 8000.0,
                          "beta": 0.0, "CN": cn, "CA": ca, "src": "CFD"})
+            # The model is built on subsonic data: it holds below M 0.8 and
+            # drifts through the transonic rise, which is the whole point of
+            # looking at the difference.
+            drift = 0.045 * peak - 0.012 * (alpha / 12.0)
             rows.append({"Mach": mach, "alpha": alpha, "Altitude_m": 8000.0,
-                         "beta": 0.0, "CN": cn * (1.0 - 0.05 * peak),
+                         "beta": 0.0, "CN": cn * (1.0 - drift),
                          "CA": ca * 0.95, "src": "MODEL"})
     frame = pd.DataFrame(rows)
 
@@ -913,6 +917,53 @@ def fig_carto() -> None:
     )
     shutil.copy(sorted(written)[0], FIGURES / "34_batch_carto_tuned.png")
     print("  34_batch_carto_tuned.png")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fig_carto_rapport() -> None:
+    """A report-grade cartography: jet field, delta panel, readable type.
+
+    Everything here is a deliberate setting, and the README quotes this exact
+    block as the copy/paste starting point.
+    """
+    import shutil
+
+    cfg, y_axis, sweep, fp = _carto_config()
+    tmp = FIGURES / "_tmp_carto_rapport"
+
+    y_axis_rapport = {
+        "CN": {
+            **y_axis["CN"],
+            "CARTO": {
+                # jet is what a wind-tunnel report still looks like; "turbo" is
+                # the perceptually corrected drop-in if you want one.
+                "cmap": "jet",
+                "levels": 25,        # smooth fill
+                "line_levels": 9,    # far fewer labelled lines: that is what reads
+                "line_width": 0.7,
+                "clabel_fmt": "%.2f",
+                "clabel_fontsize": 8,
+                "panel_size": (4.6, 4.0),
+                "delta": {
+                    "mode": "relative",
+                    "cmap": "RdBu_r",
+                    "levels": 13,    # odd: one boundary lands exactly on zero
+                    "bound": 6.0,    # +/- 6 %, pinned so every sheet compares
+                    "line_levels": 7,
+                    "clabel_fmt": "%+.1f%%",
+                    "clabel_fontsize": 8,
+                },
+            },
+        },
+    }
+    written = batch_carto(
+        configuration_dict=cfg, y_axis_dict=y_axis_rapport, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+    )
+    shutil.copy(sorted(written)[0], FIGURES / "35_batch_carto_rapport.png")
+    print("  35_batch_carto_rapport.png")
 
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1068,6 +1119,7 @@ def main() -> None:
     fig_animation()
     fig_domains()
     fig_carto()
+    fig_carto_rapport()
     fig_panel_labels()
     fig_palettes()
     fig_pdf_report()

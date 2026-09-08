@@ -302,6 +302,11 @@ not part of the Bash framework's runtime:
   `configuration_dict` entry overrides the drawing options; it is metadata, so the same
   `configuration_dict` still drives `batch_plot`. Rows are pivoted, never interpolated: an
   unrun cell stays a hole, and two rows in one cell is an error naming the unpinned column.
+  With exactly two configurations, `delta=True` / `"relative"` (`DeltaSpec`) adds a third panel,
+  `conf2 - conf1` (the first entry is the reference): diverging colormap, scale symmetric about
+  zero with an odd level count so a boundary lands on zero, its own colorbar (the field's spans
+  the field panels only), `bound=` to pin the range across a study. Different grids raise rather
+  than being resampled, and a zero reference in relative mode is a hole, not an infinity.
   `cfd_plot.domains` (`plot_domains`) shades and names the regions a curve crosses from a
   per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
   the samples that disagree, a hole in the column left blank rather than shaded through, and

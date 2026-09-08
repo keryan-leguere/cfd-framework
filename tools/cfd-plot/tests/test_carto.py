@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cfd_plot import CartoSpec, batch_carto
+from cfd_plot import CartoSpec, DeltaSpec, batch_carto
 from cfd_plot.batch import (
     _extract_plot_style_kwargs,
     _prepare_flight_point_dict,
@@ -21,7 +21,9 @@ from cfd_plot.batch import (
 )
 from cfd_plot.carto import (
     _CartoPlotJob,
+    _delta_levels,
     _enumerate_carto_jobs,
+    _resolve_delta_arg,
     _resolve_pairs,
     _shared_levels,
 )
@@ -594,3 +596,311 @@ class TestPipeline:
                 output_base=tmp_path,
                 report=False,
             )
+
+
+class TestDeltaSpec:
+    def test_defaults_suit_a_signed_field(self):
+        spec = DeltaSpec()
+        assert spec.mode == "absolute"
+        # Diverging, and an ODD count so a boundary lands exactly on zero.
+        assert spec.cmap == "RdBu_r"
+        assert spec.levels % 2 == 1
+        assert spec.bound is None
+        # Matplotlib would dash every negative level; on a delta that is most.
+        assert spec.line_style == "solid"
+
+    def test_an_unknown_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="mode must be 'absolute' or 'relative'"):
+            DeltaSpec(mode="percent")
+
+    def test_a_non_positive_bound_is_rejected(self):
+        with pytest.raises(ValueError, match="bound must be > 0"):
+            DeltaSpec(bound=0.0)
+
+    def test_levels_are_validated(self):
+        with pytest.raises(ValueError, match="levels must be >= 2"):
+            DeltaSpec(levels=1)
+        with pytest.raises(TypeError, match="levels must be an int or a sequence"):
+            DeltaSpec(levels="lots")
+
+    def test_extend_is_validated(self):
+        with pytest.raises(ValueError, match="extend must be None"):
+            DeltaSpec(extend="up")
+
+    def test_extend_defaults_to_both_only_when_the_bound_clips(self):
+        assert DeltaSpec().resolved_extend == "neither"
+        assert DeltaSpec(bound=5.0).resolved_extend == "both"
+        assert DeltaSpec(bound=5.0, extend="neither").resolved_extend == "neither"
+
+    def test_the_label_format_follows_the_mode(self):
+        assert DeltaSpec().resolved_clabel_fmt == "%+.3g"
+        assert DeltaSpec(mode="relative").resolved_clabel_fmt == "%+.1f%%"
+        assert DeltaSpec(clabel_fmt="%.1f").resolved_clabel_fmt == "%.1f"
+
+
+class TestDeltaPanel:
+    def test_the_shorthands_all_resolve(self, configuration_dict, tmp_path):
+        for shorthand, mode in (
+            (True, "absolute"),
+            ("relative", "relative"),
+            ({"mode": "relative"}, "relative"),
+            (DeltaSpec(mode="relative"), "relative"),
+        ):
+            spec = _resolve_delta_arg(shorthand, where="test")
+            assert spec is not None and spec.mode == mode
+        assert _resolve_delta_arg(None, where="test") is None
+        assert _resolve_delta_arg(False, where="test") is None
+
+    def test_an_unknown_delta_key_is_rejected_by_name(self):
+        with pytest.raises(ValueError, match="unknown delta key 'colormap'"):
+            _resolve_delta_arg({"colormap": "RdBu"}, where="test")
+
+    def test_a_delta_of_the_wrong_type_is_rejected(self):
+        with pytest.raises(TypeError, match="must be a bool, a mode string"):
+            _resolve_delta_arg(3.5, where="test")
+
+    def test_the_absolute_difference_is_conf2_minus_conf1(
+        self, configuration_dict, tmp_path
+    ):
+        """conf1 is the reference by convention: the sign reads as conf2's excess."""
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))[0]
+        reference, other = job.panels
+        assert job.delta is not None
+        assert job.delta.reference == "CFD"
+        assert job.delta.other == "MODEL"
+        assert job.delta.z == pytest.approx(other.z - reference.z)
+        assert np.all(job.delta.z <= 0.0)  # MODEL is 0.9 x CFD
+
+    def test_the_relative_difference_is_a_percentage_of_the_reference(
+        self, configuration_dict, tmp_path
+    ):
+        spec = CartoSpec(delta=DeltaSpec(mode="relative"))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        finite = job.delta.z[np.isfinite(job.delta.z)]
+        assert finite == pytest.approx(-10.0)  # MODEL is 0.9 x CFD, everywhere
+
+    def test_a_zero_reference_leaves_a_hole_not_an_infinity(
+        self, configuration_dict, tmp_path
+    ):
+        """A percentage of nothing is undefined; an inf would rescale the map."""
+        for config in configuration_dict.values():
+            frame = config["df"]
+            config["df"] = frame.assign(CN=frame["CN"].where(frame["alpha"] > 0.0, 0.0))
+        spec = CartoSpec(delta=DeltaSpec(mode="relative"))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert np.isnan(job.delta.z[:, 0]).all()      # alpha = 0 column
+        assert np.isfinite(job.delta.z[:, 1:]).all()
+
+    def test_the_panel_title_reads_as_the_subtraction(self, configuration_dict, tmp_path):
+        absolute = _jobs(
+            configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec())
+        )[0]
+        assert absolute.delta.label == "Model − CFD"
+        relative = _jobs(
+            configuration_dict,
+            tmp_path,
+            base_spec=CartoSpec(delta=DeltaSpec(mode="relative")),
+        )[0]
+        assert relative.delta.label == "(Model − CFD) / CFD"
+
+    def test_the_colorbar_label_carries_the_unit_or_the_percent(
+        self, configuration_dict, tmp_path
+    ):
+        absolute = _jobs(
+            configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec())
+        )[0]
+        assert absolute.delta.cbar_label == r"Δ$C_N$ (-)"
+        relative = _jobs(
+            configuration_dict,
+            tmp_path,
+            base_spec=CartoSpec(delta=DeltaSpec(mode="relative")),
+        )[0]
+        assert relative.delta.cbar_label == r"Δ$C_N$ / $C_N$ (%)"
+
+    def test_an_explicit_label_wins(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(label="Écart modèle"))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.delta.cbar_label == "Écart modèle"
+
+    def test_different_grids_cannot_be_subtracted(self, configuration_dict, tmp_path):
+        """Cell by cell is the only honest subtraction."""
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[frame["alpha"] < 6.0]
+        with pytest.raises(ValueError, match="run on different grids"):
+            _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))
+
+    def test_a_flight_point_with_one_source_simply_has_no_delta(
+        self, configuration_dict, tmp_path
+    ):
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[frame["Altitude_m"] == 5000.0]
+        jobs = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))
+        by_altitude = {job.flight_point["Altitude_m"]: job for job in jobs}
+        assert by_altitude[5000.0].delta is not None
+        assert by_altitude[10000.0].delta is None
+
+    def test_delta_needs_exactly_two_configurations(self, configuration_dict, tmp_path):
+        configuration_dict["THIRD"] = {"label": "Third", "df": pd.DataFrame(_rows(1.1))}
+        with pytest.raises(ValueError, match="delta compares exactly two configurations"):
+            _carto(configuration_dict, tmp_path, delta=True)
+
+    def test_delta_is_not_a_property_of_one_panel(self, configuration_dict, tmp_path):
+        configuration_dict["CFD"]["CARTO"] = {"delta": True}
+        with pytest.raises(ValueError, match="'delta' is a property of the figure"):
+            _jobs(configuration_dict, tmp_path)
+
+    def test_a_quantity_may_carry_its_own_delta(self, configuration_dict, tmp_path):
+        y_axis = {"CN": {**_Y_AXIS["CN"], "CARTO": {"delta": {"mode": "relative"}}}}
+        job = _jobs(configuration_dict, tmp_path, y_axis_dict=y_axis)[0]
+        assert job.delta is not None and job.delta.spec.mode == "relative"
+
+
+class TestDeltaScale:
+    def test_the_scale_is_symmetric_around_zero(self, configuration_dict, tmp_path):
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))[0]
+        levels = _delta_levels(job.delta)
+        assert levels[0] == pytest.approx(-levels[-1])
+        assert levels[len(levels) // 2] == pytest.approx(0.0)
+
+    def test_an_odd_count_puts_a_boundary_exactly_on_zero(
+        self, configuration_dict, tmp_path
+    ):
+        """Even, and a band straddles zero: a neighbourhood of nothing takes a side."""
+        spec = CartoSpec(delta=DeltaSpec(levels=13))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        levels = _delta_levels(job.delta)
+        assert min(abs(value) for value in levels) == pytest.approx(0.0)
+
+    def test_the_bound_pins_the_scale(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(mode="relative", bound=25.0))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        levels = _delta_levels(job.delta)
+        assert levels[0] == pytest.approx(-25.0)
+        assert levels[-1] == pytest.approx(25.0)
+
+    def test_identical_configurations_still_produce_a_drawable_scale(
+        self, configuration_dict, tmp_path
+    ):
+        configuration_dict["MODEL"]["df"] = configuration_dict["CFD"]["df"].copy()
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))[0]
+        levels = _delta_levels(job.delta)
+        assert np.all(np.diff(levels) > 0)
+        written = _carto(configuration_dict, tmp_path, delta=True)
+        assert written and written[0].exists()
+
+    def test_explicit_levels_are_used_as_given(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(levels=(-1.0, 0.0, 1.0)))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert _delta_levels(job.delta).tolist() == [-1.0, 0.0, 1.0]
+
+
+class TestDeltaRendering:
+    def test_the_figure_gains_a_third_panel(self, configuration_dict, tmp_path):
+        titles: list[str] = []
+
+        def on_before_save(fig, ax, context):
+            titles.append(ax.get_title())
+
+        _carto(configuration_dict, tmp_path, delta=True, on_before_save=on_before_save)
+        assert titles[:3] == ["CFD", "Model", "Model − CFD"]
+
+    def test_the_hook_can_tell_the_delta_panel_apart(self, configuration_dict, tmp_path):
+        seen: list[tuple] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append((context.carto_source, context.carto_delta))
+
+        _carto(configuration_dict, tmp_path, delta="relative", on_before_save=on_before_save)
+        assert seen[:3] == [("CFD", None), ("MODEL", None), (None, "relative")]
+
+    def test_the_field_colorbar_does_not_span_the_delta(
+        self, configuration_dict, tmp_path
+    ):
+        """Two scales, two bars: one spanning all three would suggest they share."""
+        counts: list[int] = []
+
+        def on_before_save(fig, ax, context):
+            counts.append(len(fig.axes))
+
+        _carto(configuration_dict, tmp_path, delta=True, on_before_save=on_before_save)
+        # 3 panels + the shared field bar + the delta's own bar.
+        assert set(counts) == {5}
+
+    def test_the_delta_colorbar_can_be_dropped(self, configuration_dict, tmp_path):
+        counts: list[int] = []
+
+        def on_before_save(fig, ax, context):
+            counts.append(len(fig.axes))
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            delta={"colorbar": False},
+            on_before_save=on_before_save,
+        )
+        assert set(counts) == {4}
+
+    def test_the_delta_lines_are_solid(self, configuration_dict, tmp_path):
+        """Matplotlib dashes negative levels; a delta is mostly negative here."""
+        styles: list = []
+
+        def on_before_save(fig, ax, context):
+            if context.carto_delta:
+                styles.extend(
+                    collection.get_linestyle() for collection in ax.collections[1:]
+                )
+
+        _carto(configuration_dict, tmp_path, delta=True, on_before_save=on_before_save)
+        assert styles
+        # A solid line has no dash pattern.
+        assert all(pattern is None for _offset, pattern in
+                   [style[0] for style in styles if style])
+
+    def test_the_report_grade_settings_render(self, configuration_dict, tmp_path):
+        """The block the README hands out, exercised end to end."""
+        y_axis = {
+            "CN": {
+                **_Y_AXIS["CN"],
+                "CARTO": {
+                    "cmap": "jet",
+                    "levels": 25,
+                    "line_levels": 9,
+                    "clabel_fmt": "%.2f",
+                    "clabel_fontsize": 8,
+                    "panel_size": (4.6, 4.0),
+                    "delta": {
+                        "mode": "relative",
+                        "levels": 13,
+                        "bound": 6.0,
+                        "line_levels": 7,
+                        "clabel_fmt": "%+.1f%%",
+                    },
+                },
+            },
+        }
+        written = _carto(configuration_dict, tmp_path, y_axis_dict=y_axis)
+        assert written and all(path.exists() for path in written)
+
+    def test_panel_size_sets_the_figure_size(self, configuration_dict, tmp_path):
+        sizes: list[tuple[float, float]] = []
+
+        def on_before_save(fig, ax, context):
+            sizes.append(tuple(fig.get_size_inches()))
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"panel_size": (4.0, 3.0)},
+            on_before_save=on_before_save,
+        )
+        assert sizes[0] == (8.0, 3.0)  # two panels wide, one row
+
+    def test_a_bad_panel_size_is_rejected(self):
+        with pytest.raises(ValueError, match="panel_size must be two positive inches"):
+            CartoSpec(panel_size=(0.0, 3.0))
+
+    def test_the_plan_names_the_subtraction(self, configuration_dict, tmp_path, capsys):
+        _carto(configuration_dict, tmp_path, delta="relative", dry_run=True, verbose=True)
+        out = capsys.readouterr().out
+        assert "Delta panel" in out
+        assert "MODEL - CFD" in out

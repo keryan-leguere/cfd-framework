@@ -105,6 +105,7 @@ from .prep import dataframe_to_grid
 __all__ = [
     "CARTO_KEY",
     "CartoSpec",
+    "DeltaSpec",
     "batch_carto",
 ]
 
@@ -121,6 +122,98 @@ _CARTO_PANEL_SIZE_FACTOR = (0.95, 1.05)
 # Matplotlib does *not* use). Accepted, mapped, documented — a silent no-op
 # would be the worst of the three options.
 _CARTO_ALIASES = {"level": "levels", "line_level": "line_levels"}
+
+
+@dataclass(frozen=True)
+class DeltaSpec:
+    """The extra panel comparing two configurations, ``conf2 - conf1``.
+
+    The reference is the **first** entry of ``configuration_dict``, by
+    convention, so the sign reads "what the second one adds".
+
+    A delta is a diverging quantity around zero, and that drives every default
+    here: a diverging colormap, a scale centred on zero and symmetric by
+    construction, and an odd number of level boundaries so one of them falls
+    *exactly* on zero. Get any of those wrong and the neutral colour stops
+    meaning "no difference" — a map where blue starts at +0.3 is worse than no
+    map at all.
+
+    Parameters
+    ----------
+    mode : {"absolute", "relative"}
+        ``conf2 - conf1``, or ``100 x (conf2 - conf1) / conf1`` in percent.
+    cmap :
+        Diverging by default. A sequential map on a signed field hides the sign.
+    levels :
+        Level boundaries, or their count. **Keep it odd**: an even count puts
+        zero in the middle of a band, so a whole neighbourhood of zero takes
+        one side's colour.
+    bound :
+        Half-range of the colour scale: the map runs ``-bound .. +bound``.
+        ``None`` (default) takes the largest absolute difference on the figure.
+        Pin it to compare figures across a study — an auto bound rescales on
+        every sheet, which makes a small difference look like a large one.
+    line_levels, line_color, line_width, line_style, clabel, clabel_fmt,
+    clabel_fontsize :
+        Iso-lines and their labels, as in :class:`CartoSpec`. Solid by default
+        here too — on a delta almost every level is negative, and Matplotlib
+        would dash the lot. ``clabel_fmt``
+        defaults to a signed format, ``"%+.3g"`` or ``"%+.1f%%"``.
+    colorbar, label :
+        Its own colorbar, with its own label — the delta scale has nothing to
+        do with the field's. ``label=None`` derives one from the quantity.
+    extend :
+        ``None`` (default) means "both" when *bound* clips the data and
+        "neither" otherwise.
+    """
+
+    mode: str = "absolute"
+    cmap: str = "RdBu_r"
+    levels: int | tuple[float, ...] = 13
+    bound: float | None = None
+    line_levels: int | tuple[float, ...] | None = None
+    line_color: str | None = "black"
+    line_width: float = 0.6
+    line_style: str = "solid"
+    clabel: bool = True
+    clabel_fmt: str | None = None
+    clabel_fontsize: float | None = None
+    colorbar: bool = True
+    label: str | None = None
+    extend: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("absolute", "relative"):
+            raise ValueError(
+                f"DeltaSpec.mode must be 'absolute' or 'relative', got {self.mode!r}."
+            )
+        if isinstance(self.levels, int) and not isinstance(self.levels, bool):
+            if self.levels < 2:
+                raise ValueError(f"DeltaSpec.levels must be >= 2, got {self.levels}.")
+        elif not isinstance(self.levels, (list, tuple, np.ndarray)):
+            raise TypeError(
+                f"DeltaSpec.levels must be an int or a sequence of values, "
+                f"got {type(self.levels).__name__}."
+            )
+        if self.bound is not None and self.bound <= 0:
+            raise ValueError(f"DeltaSpec.bound must be > 0, got {self.bound}.")
+        if self.extend is not None and self.extend not in ("neither", "both", "min", "max"):
+            raise ValueError(
+                f"DeltaSpec.extend must be None, 'neither', 'both', 'min' or 'max', "
+                f"got {self.extend!r}."
+            )
+
+    @property
+    def resolved_extend(self) -> str:
+        if self.extend is not None:
+            return self.extend
+        return "both" if self.bound is not None else "neither"
+
+    @property
+    def resolved_clabel_fmt(self) -> str:
+        if self.clabel_fmt is not None:
+            return self.clabel_fmt
+        return "%+.1f%%" if self.mode == "relative" else "%+.3g"
 
 
 @dataclass(frozen=True)
@@ -141,8 +234,11 @@ class CartoSpec:
         a labelled line is exactly the edge of a colour band. An int or an
         explicit list draws fewer lines than bands, which is the readable
         choice past ~10 levels.
-    line_color, line_width :
+    line_color, line_width, line_style :
         Iso-line style. ``None`` as the colour drops the lines entirely.
+        ``line_style`` is ``"solid"`` rather than Matplotlib's default, which
+        dashes every *negative* level: on a signed field that halves the
+        legibility of the lines to say what the colour already says.
     clabel, clabel_fmt, clabel_fontsize :
         In-place labels on the iso-lines (``ax.clabel``).
     colorbar :
@@ -155,10 +251,19 @@ class CartoSpec:
         Panels per row (1–3).
     extend :
         Colorbar arrows: ``"neither"``, ``"both"``, ``"min"``, ``"max"``.
+    panel_size :
+        ``(width, height)`` of one panel, in inches. ``None`` (default) scales
+        the style's own figure size. Worth setting for a report: the default is
+        cut for a wide curve panel, and a map usually wants to be squarer.
     aspect :
         Axes aspect. ``None`` (default) leaves it auto — a map over
         (Mach, alpha) has two unrelated units, and forcing ``"equal"`` would
         squash it to a sliver.
+    delta :
+        Add a third panel comparing the two configurations — see
+        :class:`DeltaSpec`. A property of the *figure*, so it is read from
+        ``carto=`` or a ``y_axis_dict`` entry, never from a source's own
+        ``CARTO``.
     """
 
     cmap: str = "viridis"
@@ -166,6 +271,7 @@ class CartoSpec:
     line_levels: int | tuple[float, ...] | None = None
     line_color: str | None = "black"
     line_width: float = 0.6
+    line_style: str = "solid"
     clabel: bool = True
     clabel_fmt: str = "%.3g"
     clabel_fontsize: float | None = None
@@ -174,6 +280,8 @@ class CartoSpec:
     max_cols: int = 3
     extend: str = "neither"
     aspect: str | float | None = None
+    panel_size: tuple[float, float] | None = None
+    delta: DeltaSpec | None = None
 
     def __post_init__(self) -> None:
         for name, value in (("levels", self.levels), ("line_levels", self.line_levels)):
@@ -185,6 +293,13 @@ class CartoSpec:
                     f"CartoSpec.{name} must be an int or a sequence of values, "
                     f"got {type(value).__name__}."
                 )
+        if self.panel_size is not None and (
+            len(self.panel_size) != 2 or any(value <= 0 for value in self.panel_size)
+        ):
+            raise ValueError(
+                f"CartoSpec.panel_size must be two positive inches, "
+                f"got {self.panel_size!r}."
+            )
         if self.max_cols < 1 or self.max_cols > 3:
             raise ValueError(f"CartoSpec.max_cols must be between 1 and 3, got {self.max_cols}.")
         if self.extend not in ("neither", "both", "min", "max"):
@@ -200,6 +315,7 @@ class CartoSpec:
 
 
 CartoArg = Union[CartoSpec, Mapping[str, Any], None]
+DeltaArg = Union[DeltaSpec, Mapping[str, Any], str, bool, None]
 
 
 def _levels_key(levels: int | tuple[float, ...] | None) -> Any:
@@ -213,6 +329,37 @@ def _spec_field_names() -> tuple[str, ...]:
     return tuple(field.name for field in fields(CartoSpec))
 
 
+def _resolve_delta_arg(delta: DeltaArg, *, where: str) -> DeltaSpec | None:
+    """``True`` / a mode string / a dict / a spec, all to a spec (or nothing)."""
+    if delta is None or delta is False:
+        return None
+    if delta is True:
+        return DeltaSpec()
+    if isinstance(delta, DeltaSpec):
+        return delta
+    if isinstance(delta, str):
+        return DeltaSpec(mode=delta)
+    if isinstance(delta, Mapping):
+        known = tuple(field.name for field in fields(DeltaSpec))
+        resolved: dict[str, Any] = {}
+        for key, value in delta.items():
+            name = _CARTO_ALIASES.get(key, key)
+            if name not in known:
+                raise ValueError(
+                    f"unknown delta key {key!r} in {where}; expected one of {list(known)}."
+                )
+            resolved[name] = (
+                tuple(value)
+                if name in ("levels", "line_levels") and isinstance(value, (list, np.ndarray))
+                else value
+            )
+        return DeltaSpec(**resolved)
+    raise TypeError(
+        f"delta in {where} must be a bool, a mode string, a dict or a DeltaSpec, "
+        f"got {type(delta).__name__}."
+    )
+
+
 def _override_spec(base: CartoSpec, overrides: Mapping[str, Any], *, where: str) -> CartoSpec:
     """Apply one ``CARTO`` sub-dict on top of *base*."""
     known = _spec_field_names()
@@ -223,6 +370,9 @@ def _override_spec(base: CartoSpec, overrides: Mapping[str, Any], *, where: str)
             raise ValueError(
                 f"unknown CARTO key {key!r} in {where}; expected one of {list(known)}."
             )
+        if name == "delta":
+            resolved[name] = _resolve_delta_arg(value, where=where)
+            continue
         resolved[name] = tuple(value) if name in ("levels", "line_levels") and isinstance(
             value, (list, np.ndarray)
         ) else value
@@ -239,6 +389,22 @@ def _resolve_carto_arg(carto: CartoArg) -> CartoSpec:
     raise TypeError(
         f"carto must be a CartoSpec, a dict or None, got {type(carto).__name__}."
     )
+
+
+def _panel_spec(base: CartoSpec, entry: Mapping[str, Any], *, where: str) -> CartoSpec:
+    """One source's spec — everything but the figure-level delta.
+
+    Silently ignoring a ``delta`` written on a source would leave the user
+    staring at a figure that does not have the panel they asked for.
+    """
+    overrides = entry.get(CARTO_KEY)
+    if isinstance(overrides, Mapping) and "delta" in overrides:
+        raise ValueError(
+            f"{where}: 'delta' is a property of the figure, not of one panel — "
+            "the extra panel compares the two configurations, so neither owns it. "
+            "Put it on carto= or on the y_axis_dict entry."
+        )
+    return _spec_for(base, entry, where=where)
 
 
 def _spec_for(base: CartoSpec, entry: Mapping[str, Any], *, where: str) -> CartoSpec:
@@ -276,6 +442,98 @@ class _CartoPanel:
 
 
 @dataclass(frozen=True)
+class _DeltaPanel:
+    """The difference between two configurations, gridded and ready to draw."""
+
+    label: str
+    reference: str
+    other: str
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+    spec: DeltaSpec
+    cbar_label: str
+
+    @property
+    def half_range(self) -> float:
+        """Largest absolute difference on the panel — the symmetric bound."""
+        finite = self.z[np.isfinite(self.z)]
+        if finite.size == 0:
+            return 0.0
+        return float(np.max(np.abs(finite)))
+
+
+def _delta_field(
+    reference: np.ndarray, other: np.ndarray, mode: str
+) -> np.ndarray:
+    """``conf2 - conf1``, absolute or in percent of the reference."""
+    if mode == "absolute":
+        return np.asarray(other - reference, dtype=float)
+    # A percentage of nothing is not a number, and a huge one drawn next to a
+    # real one would rescale the whole map. NaN leaves the cell blank instead.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        relative = 100.0 * (other - reference) / reference
+    return np.where(reference == 0.0, np.nan, relative)
+
+
+def _delta_labels(
+    spec: DeltaSpec,
+    reference: _CartoPanel,
+    other: _CartoPanel,
+    qoi_spec: Mapping[str, Any],
+    qoi_key: str,
+) -> tuple[str, str]:
+    """Panel title and colorbar label, in the order the subtraction reads."""
+    symbol = format_axis_title_label(dict(qoi_spec), qoi_key)
+    if spec.mode == "relative":
+        title = f"({other.label} − {reference.label}) / {reference.label}"
+        cbar = spec.label or f"Δ{symbol} / {symbol} (%)"
+        return title, cbar
+    title = f"{other.label} − {reference.label}"
+    unit = qoi_spec.get("unit")
+    cbar = spec.label or (f"Δ{symbol} ({unit})" if unit else f"Δ{symbol}")
+    return title, cbar
+
+
+def _build_delta_panel(
+    spec: DeltaSpec,
+    panels: Sequence[_CartoPanel],
+    qoi_spec: Mapping[str, Any],
+    qoi_key: str,
+) -> _DeltaPanel | None:
+    """The third panel, when exactly two configurations are on this figure.
+
+    A flight point where only one source ran has nothing to subtract; the
+    figure is still valid, so it simply comes out with its one panel.
+    """
+    if len(panels) != 2:
+        return None
+    reference, other = panels
+    if not (
+        np.array_equal(reference.x, other.x) and np.array_equal(reference.y, other.y)
+    ):
+        raise ValueError(
+            f"cannot difference {other.source!r} against {reference.source!r} for "
+            f"{qoi_key!r}: they were run on different grids "
+            f"({reference.z.shape} vs {other.z.shape} over "
+            f"x={reference.x.size}/{other.x.size}, y={reference.y.size}/{other.y.size} "
+            "points). Cell by cell is the only honest subtraction — resample the "
+            "tables onto one grid first, or drop the delta panel."
+        )
+    title, cbar_label = _delta_labels(spec, reference, other, qoi_spec, qoi_key)
+    return _DeltaPanel(
+        label=title,
+        reference=reference.source,
+        other=other.source,
+        x=reference.x,
+        y=reference.y,
+        z=_delta_field(reference.z, other.z, spec.mode),
+        spec=spec,
+        cbar_label=cbar_label,
+    )
+
+
+@dataclass(frozen=True)
 class _CartoPlotJob:
     """One cartography figure: a quantity over a sweep pair, panel per source."""
 
@@ -296,6 +554,7 @@ class _CartoPlotJob:
     case_label: str
     panels: tuple[_CartoPanel, ...]
     spec: CartoSpec
+    delta: _DeltaPanel | None = None
 
     def cli_label(self) -> str:
         """Progress-bar description (``batch._any_job_label`` calls this)."""
@@ -332,6 +591,66 @@ def _shared_levels(job: _CartoPlotJob) -> np.ndarray | None:
         span = max(abs(low), 1.0) * 1e-3
         low, high = low - span, high + span
     return np.linspace(low, high, int(spec.levels))
+
+
+def _delta_levels(panel: _DeltaPanel) -> np.ndarray:
+    """Level boundaries centred on zero, symmetric by construction.
+
+    Symmetry is the whole point: with -bound..+bound and an odd number of
+    boundaries, one lands exactly on zero and the diverging map's neutral
+    colour means "no difference". An asymmetric scale would put neutral at
+    some arbitrary non-zero value and quietly mislead every reader.
+    """
+    spec = panel.spec
+    if not isinstance(spec.levels, int) or isinstance(spec.levels, bool):
+        return np.asarray(spec.levels, dtype=float)
+    bound = spec.bound if spec.bound is not None else panel.half_range
+    if not np.isfinite(bound) or bound <= 0.0:
+        # Two identical configurations: a flat zero everywhere is a result
+        # worth showing, and Matplotlib still needs increasing levels.
+        bound = 1.0
+    return np.linspace(-bound, bound, int(spec.levels))
+
+
+def _delta_line_levels(panel: _DeltaPanel, fill_levels: np.ndarray) -> Any:
+    spec = panel.spec
+    if spec.line_levels is None:
+        return fill_levels
+    if isinstance(spec.line_levels, int) and not isinstance(spec.line_levels, bool):
+        return np.linspace(fill_levels[0], fill_levels[-1], spec.line_levels)
+    return np.asarray(spec.line_levels, dtype=float)
+
+
+def _draw_iso_lines(
+    ax: Any,
+    x: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray,
+    *,
+    levels: Any,
+    color: str,
+    width: float,
+    style: str,
+    clabel: bool,
+    clabel_fmt: str,
+    clabel_fontsize: float | None,
+    aspect: str | float | None,
+) -> None:
+    """Black iso-lines over a filled map, labelled in place."""
+    lines, _ = plot_contour(
+        ax, x, y, z,
+        levels=levels,
+        colors=color,
+        linewidths=width,
+        linestyles=style,
+        colorbar=False,
+        aspect=aspect,
+    )
+    if clabel:
+        kwargs: dict[str, Any] = {"fmt": clabel_fmt, "inline": True}
+        if clabel_fontsize is not None:
+            kwargs["fontsize"] = clabel_fontsize
+        ax.clabel(lines, **kwargs)
 
 
 def _line_levels(spec: CartoSpec, fill_levels: np.ndarray | int) -> Any:
@@ -377,18 +696,24 @@ def _render_one_carto_job(
     _check_panels_agree(job)
 
     spec = job.spec
-    n_panels = len(job.panels)
+    n_fields = len(job.panels)
+    n_panels = n_fields + (1 if job.delta is not None else 0)
     nrows, ncols = _subplot_grid_shape(n_panels, spec.max_cols)
-    base_w, base_h = plt.rcParams["figure.figsize"]
-    width_factor, height_factor = _CARTO_PANEL_SIZE_FACTOR
+    if spec.panel_size is not None:
+        panel_w, panel_h = spec.panel_size
+    else:
+        base_w, base_h = plt.rcParams["figure.figsize"]
+        width_factor, height_factor = _CARTO_PANEL_SIZE_FACTOR
+        panel_w, panel_h = base_w * width_factor, base_h * height_factor
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=(base_w * width_factor * ncols, base_h * height_factor * nrows),
+        figsize=(panel_w * ncols, panel_h * nrows),
         squeeze=False,
     )
     axes_flat = list(axes.ravel())
     used_axes = axes_flat[:n_panels]
+    field_axes = axes_flat[:n_fields]
 
     shared = _shared_levels(job)
     x_label = format_axis_label(job.sweep_x_spec, job.sweep_x_key)
@@ -396,7 +721,7 @@ def _render_one_carto_job(
     qoi_label = format_axis_label(job.qoi_spec, job.qoi_key)
 
     last_fill = None
-    for ax, panel in zip_strict(used_axes, list(job.panels)):
+    for ax, panel in zip_strict(field_axes, list(job.panels)):
         panel_spec = panel.spec
         fill_levels: Any = shared if shared is not None else panel_spec.levels
         fill, _ = plot_contourf(
@@ -414,26 +739,24 @@ def _render_one_carto_job(
         last_fill = fill
 
         if panel_spec.line_color is not None:
-            lines, _ = plot_contour(
-                ax,
-                panel.x,
-                panel.y,
-                panel.z,
+            _draw_iso_lines(
+                ax, panel.x, panel.y, panel.z,
                 levels=_line_levels(panel_spec, fill_levels),
-                colors=panel_spec.line_color,
-                linewidths=panel_spec.line_width,
-                colorbar=False,
+                color=panel_spec.line_color,
+                width=panel_spec.line_width,
+                style=panel_spec.line_style,
+                clabel=panel_spec.clabel,
+                clabel_fmt=panel_spec.clabel_fmt,
+                clabel_fontsize=panel_spec.clabel_fontsize,
                 aspect=panel_spec.aspect,
             )
-            if panel_spec.clabel:
-                clabel_kwargs: dict[str, Any] = {"fmt": panel_spec.clabel_fmt, "inline": True}
-                if panel_spec.clabel_fontsize is not None:
-                    clabel_kwargs["fontsize"] = panel_spec.clabel_fontsize
-                ax.clabel(lines, **clabel_kwargs)
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         set_title(ax, panel.label)
+
+    if job.delta is not None:
+        _render_delta_panel(axes_flat[n_fields], job.delta, x_label, y_label, spec.aspect)
 
     for ax in axes_flat[n_panels:]:
         ax.set_visible(False)
@@ -442,8 +765,10 @@ def _render_one_carto_job(
         # match_axes=False keeps constrained_layout in charge: the manual
         # placement reads axes positions that the engine has not settled yet,
         # and every style profile here runs constrained.
+        # ``ax=field_axes``, not every panel: the delta has its own scale and
+        # its own bar, and letting this one span it would suggest they share.
         add_shared_colorbar(
-            fig, last_fill, match_axes=False, label=qoi_label, ax=used_axes
+            fig, last_fill, match_axes=False, label=qoi_label, ax=field_axes
         )
 
     panel_titlesize = plt.rcParams["axes.titlesize"]
@@ -451,7 +776,14 @@ def _render_one_carto_job(
     set_suptitle(fig, heading, fontsize=panel_titlesize * 1.25, fontweight="bold")
 
     if on_before_save is not None:
-        for index, (ax, panel) in enumerate(zip_strict(used_axes, list(job.panels))):
+        sources: list[str | None] = [panel.source for panel in job.panels]
+        deltas: list[str | None] = [None] * n_fields
+        if job.delta is not None:
+            sources.append(None)
+            deltas.append(job.delta.spec.mode)
+        for index, (ax, source, delta_mode) in enumerate(
+            zip_strict(used_axes, sources, deltas)
+        ):
             on_before_save(
                 fig,
                 ax,
@@ -467,7 +799,8 @@ def _render_one_carto_job(
                     panel_index=index,
                     carto_sweep_key=job.sweep_y_key,
                     carto_sweep_spec=job.sweep_y_spec,
-                    carto_source=panel.source,
+                    carto_source=source,
+                    carto_delta=delta_mode,
                 ),
             )
 
@@ -476,6 +809,45 @@ def _render_one_carto_job(
         builder.add(fig)
     plt.close(fig)
     return written
+
+
+def _render_delta_panel(
+    ax: Any,
+    panel: _DeltaPanel,
+    x_label: str,
+    y_label: str,
+    aspect: str | float | None,
+) -> None:
+    """Draw the difference panel: symmetric diverging fill, iso-lines, own bar."""
+    spec = panel.spec
+    levels = _delta_levels(panel)
+    plot_contourf(
+        ax,
+        panel.x,
+        panel.y,
+        panel.z,
+        levels=levels,
+        cmap=spec.cmap,
+        colorbar=spec.colorbar,
+        cbar_label=panel.cbar_label,
+        extend=spec.resolved_extend,
+        aspect=aspect,
+    )
+    if spec.line_color is not None:
+        _draw_iso_lines(
+            ax, panel.x, panel.y, panel.z,
+            levels=_delta_line_levels(panel, levels),
+            color=spec.line_color,
+            width=spec.line_width,
+            style=spec.line_style,
+            clabel=spec.clabel,
+            clabel_fmt=spec.resolved_clabel_fmt,
+            clabel_fontsize=spec.clabel_fontsize,
+            aspect=aspect,
+        )
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    set_title(ax, panel.label)
 
 
 # ---------------------------------------------------------------------------
@@ -624,7 +996,7 @@ def _enumerate_carto_jobs(
                             x_col=x_col,
                             y_col=y_col,
                             qoi_col=qoi_col,
-                            spec=_spec_for(
+                            spec=_panel_spec(
                                 figure_spec,
                                 config,
                                 where=f"configuration_dict[{source!r}]",
@@ -634,6 +1006,11 @@ def _enumerate_carto_jobs(
                             panels.append(panel)
                     if not panels:
                         continue
+                    delta_panel = (
+                        _build_delta_panel(figure_spec.delta, panels, qoi_spec, qoi_key)
+                        if figure_spec.delta is not None
+                        else None
+                    )
 
                     output_path = build_output_path(
                         output_base,
@@ -682,6 +1059,7 @@ def _enumerate_carto_jobs(
                             case_label=case_label,
                             panels=tuple(panels),
                             spec=figure_spec,
+                            delta=delta_panel,
                         )
                     )
     return jobs
@@ -702,6 +1080,7 @@ def batch_carto(
     output_base: str | Path,
     pairs: Sequence[tuple[str, str]] | None = None,
     carto: CartoArg = None,
+    delta: DeltaArg = None,
     style_profile: str = "paper",
     formats: tuple[str, ...] = ("svg",),
     on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None = None,
@@ -738,6 +1117,14 @@ def batch_carto(
     carto :
         Defaults for every panel: a :class:`CartoSpec` or a plain dict of the
         same keys.
+    delta :
+        Add a third panel with the difference between the two configurations,
+        ``conf2 - conf1`` — the first entry of ``configuration_dict`` is the
+        reference, by convention. ``True`` for the absolute difference,
+        ``"relative"`` for a percentage of the reference, or a
+        :class:`DeltaSpec` / dict to tune its own diverging scale. Only with
+        exactly two configurations; a flight point where one of them did not
+        run simply comes out without the panel.
     include_panel :
         ``f(source, flight_point, (x_key, y_key), qoi_key, fixed_sweeps) -> bool``
         — the cartography analogue of ``batch_plot``'s ``include_curve``.
@@ -761,6 +1148,14 @@ def batch_carto(
         raise ValueError("y_axis_dict must contain at least one entry.")
 
     base_spec = _resolve_carto_arg(carto)
+    if delta is not None and delta is not False:
+        base_spec = replace(base_spec, delta=_resolve_delta_arg(delta, where="delta="))
+    if base_spec.delta is not None and len(configuration_dict) != 2:
+        raise ValueError(
+            f"delta compares exactly two configurations, but configuration_dict has "
+            f"{len(configuration_dict)}: {list(configuration_dict)}. Narrow it, or use "
+            "include_panel to keep two per figure."
+        )
     resolved_sweep_dict = _coalesce_sweep_dict(sweep_dict, x_axis_dict)
     if not resolved_sweep_dict:
         raise ValueError("Either sweep_dict or x_axis_dict must be provided.")
@@ -862,6 +1257,18 @@ def _carto_summary(
     return rows
 
 
+def _delta_note(spec: CartoSpec, configuration_dict: Mapping[str, Any]) -> str:
+    """Which subtraction the plan is about to draw, in the order it reads."""
+    if spec.delta is None:
+        return "no"
+    sources = list(configuration_dict)
+    if len(sources) == 2:
+        subtraction = f"{sources[1]} - {sources[0]}"
+    else:
+        subtraction = "needs exactly two configurations"
+    return f"{spec.delta.mode} ({subtraction})"
+
+
 def _print_carto_plan(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -895,6 +1302,7 @@ def _print_carto_plan(
         f"Mode         : {'dry-run (no files written)' if dry_run else 'write'}",
         f"Colour scale : {'shared across panels' if spec.shared_scale else 'per panel'}"
         f", cmap={spec.cmap}, levels={spec.levels}  (defaults)",
+        "Delta panel  : " + _delta_note(spec, configuration_dict),
         f"Parallel     : {'sequential (n_jobs=1)' if n_jobs == 1 else f'{n_jobs} workers'}",
         f"Clean        : {_batch._clean_note(clean)}",
         f"Figures      : {len(jobs)}  ({panels} panels)  →  "

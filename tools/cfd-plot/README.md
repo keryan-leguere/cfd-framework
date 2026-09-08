@@ -1572,7 +1572,8 @@ batch_carto(
 ```
 
 The four dictionaries are `batch_plot`'s, read the same way — `sweep_dict` just needs **two**
-entries or more. Each panel is `plot_contourf` + `plot_contour` in black + `ax.clabel`.
+entries or more. Each panel is `plot_contourf` + `plot_contour` in black + `ax.clabel`. With
+exactly two configurations, `delta=True` adds a third panel with their difference.
 
 ### The tree it writes
 
@@ -1653,18 +1654,141 @@ metadata like `df` or `label` — it never reaches `plot_line`, so **the same
 | `line_levels` | `None` | Levels of the black iso-lines. `None` reuses the fill's, so a labelled line is exactly the edge of a band. Set it lower past ~10 levels |
 | `line_color` | `"black"` | Iso-line colour; `None` drops the lines entirely |
 | `line_width` | `0.6` | Iso-line width |
+| `line_style` | `"solid"` | Matplotlib dashes every *negative* level by default; on a signed field that halves legibility to say what the colour already says |
 | `clabel` | `True` | Label the iso-lines in place (`ax.clabel`) |
 | `clabel_fmt` | `"%.3g"` | Label format |
 | `clabel_fontsize` | `None` | Label size (default: the style's) |
 | `colorbar` | `True` | One for the figure, or one per panel without a shared scale |
 | `shared_scale` | `True` | See above |
 | `max_cols` | `3` | Panels per row (1–3) |
+| `panel_size` | `None` | `(width, height)` of one panel in inches. The default scales the style's figure size, which is cut for a wide *curve* panel — a map usually wants to be squarer |
 | `extend` | `"neither"` | Colorbar arrows: `"both"`, `"min"`, `"max"` |
 | `aspect` | `None` | Axes aspect. **Not** `"equal"` — a map over (Mach, alpha) has two unrelated units, and forcing it square would squash the map to a sliver |
+| `delta` | `None` | The third panel — see below. A property of the *figure*, so it goes on `carto=` or a `y_axis_dict` entry; on a source's `CARTO` it raises |
 
 `"level"` is accepted as an alias for `"levels"` (and `"line_level"` for `"line_levels"`); any
 other unknown key raises, naming it. A typo that silently draws the default is worse than a
 stop.
+
+### The delta panel: `conf2 − conf1`
+
+With **exactly two configurations**, `delta=` adds a third panel with the difference. The
+**first** entry of `configuration_dict` is the reference, by convention, so the sign reads as
+"what the second one adds":
+
+```python
+batch_carto(..., delta=True)          # conf2 − conf1, in the quantity's own unit
+batch_carto(..., delta="relative")    # 100 × (conf2 − conf1) / conf1, in percent
+```
+
+A delta is a *signed* quantity around zero, and that drives every default of `DeltaSpec`:
+
+- **A diverging colormap** (`RdBu_r`). A sequential map on a signed field hides the sign.
+- **A scale symmetric about zero** — it runs `−bound … +bound`, `bound` being the largest
+  absolute difference on the figure. Neutral then means "no difference"; on an asymmetric
+  scale the neutral colour lands on some arbitrary non-zero value and quietly misleads
+  every reader.
+- **An odd number of level boundaries** (13). Even, and zero falls in the *middle* of a band,
+  so a whole neighbourhood of "no difference" takes one side's colour.
+- **Its own colorbar.** The field's shared bar spans the two field panels only — letting it
+  stretch over the delta would suggest they share a scale.
+
+`bound=6.0` pins the range instead of taking it from the data. Worth doing across a study: an
+auto bound rescales on every sheet, which makes a small difference look like a large one.
+
+| Key | Default | What it does |
+|:---|:---|:---|
+| `mode` | `"absolute"` | `"relative"` for a percentage of the reference |
+| `cmap` | `"RdBu_r"` | Diverging |
+| `levels` | `13` | Keep it **odd** |
+| `bound` | `None` | Half-range; `None` takes the largest absolute difference |
+| `line_levels`, `line_color`, `line_width`, `line_style` | `None`, `"black"`, `0.6`, `"solid"` | Iso-lines, as for the field |
+| `clabel`, `clabel_fmt`, `clabel_fontsize` | `True`, signed, `None` | `"%+.3g"` or `"%+.1f%%"` by mode |
+| `colorbar`, `label` | `True`, `None` | Its own bar; the label defaults to `Δ$C_N$ (-)` or `Δ$C_N$ / $C_N$ (%)` |
+| `extend` | `None` | `"both"` when `bound` clips, `"neither"` otherwise |
+
+Two rules the panel enforces rather than papering over:
+
+- **The two sources must be on the same grid.** Cell by cell is the only honest subtraction, so
+  a `MODEL` run on half the alphas raises instead of being resampled behind your back.
+- **In relative mode, a zero reference is a hole, not an infinity.** `CN = 0` at `α = 0` is the
+  common case; the column comes out blank (visible in the figure below) rather than as an
+  `inf` that would rescale the whole map. Use `mode="absolute"` there.
+
+A flight point where only one of the two ran simply comes out without the panel — the figure is
+still valid.
+
+### A report-grade cartography
+
+![report-grade cartography](00_DOC/FIGURES/35_batch_carto_rapport.png)
+
+Everything on that figure is a setting, and this is the block to copy into your script:
+
+```python
+from cfd_plot import batch_carto
+
+configuration_dict = {
+    "CFD":   {"name": "CFD",   "label": "CFD",               "df": df_cfd},    # reference
+    "MODEL": {"name": "MODEL", "label": "Engineering model", "df": df_model},
+}
+
+y_axis_dict = {
+    "CN": {
+        "col_name": "CN", "literal_name": "Normal force coefficient",
+        "symbol": r"$C_N$", "unit": "-", "y_save_name": "CN",
+        "CARTO": {
+            "cmap": "jet",              # the wind-tunnel-report look
+            "levels": 25,               # a smooth fill…
+            "line_levels": 9,           # …but only 9 labelled iso-lines: that is what reads
+            "line_width": 0.7,
+            "clabel_fmt": "%.2f",
+            "clabel_fontsize": 8,
+            "panel_size": (4.6, 4.0),   # squarer than the default curve panel
+            "delta": {
+                "mode": "relative",     # % of the CFD reference
+                "cmap": "RdBu_r",
+                "levels": 13,           # odd: one boundary lands exactly on zero
+                "bound": 6.0,           # ±6 %, pinned so every sheet compares
+                "line_levels": 7,
+                "clabel_fmt": "%+.1f%%",
+                "clabel_fontsize": 8,
+            },
+        },
+    },
+}
+
+sweep_dict = {
+    "alpha": {"col_name": "alpha", "literal_name": "Angle of attack",
+              "symbol": r"$\alpha$", "unit": "°", "x_save_name": "alpha", "save_name": "ALPHA"},
+    "Mach":  {"col_name": "Mach", "literal_name": "Mach number",
+              "symbol": r"$M$", "unit": "-", "x_save_name": "Mach", "save_name": "M"},
+}
+
+flight_point_dict = {
+    "Altitude_m": {"values": [], "label": "Z", "save_name": "Z", "unit": "m"},
+    "beta":       {"values": [], "label": r"$\beta$", "save_name": "BETA", "unit": "°"},
+}
+
+batch_carto(
+    configuration_dict=configuration_dict,
+    y_axis_dict=y_axis_dict,
+    sweep_dict=sweep_dict,
+    flight_point_dict=flight_point_dict,
+    output_base="FIGURE",
+    style_profile="paper",       # serif, thin frames, print-sized type
+    formats=("pdf", "png"),      # vector for the report, raster for the review
+    pairs=[("alpha", "Mach")],   # only the map you actually want
+)
+```
+
+Two notes on that figure. The **blank column at α = 0** on the delta panel is the rule above:
+`CN = 0` there, so a percentage is undefined and the cell stays empty. And `jet` is what a
+wind-tunnel report still looks like — `"turbo"` is the perceptually corrected drop-in if you
+want the same punch without the false banding.
+
+The `CARTO` block sits on the `y_axis_dict` entry rather than on `carto=`, so a second quantity
+next to `CN` keeps its own colormap, its own levels and its own delta bound. Everything not
+named there falls back to the defaults.
 
 ### Gridding, holes and duplicates
 
@@ -1687,9 +1811,14 @@ plus three fields only a map has:
 def annotate(fig, ax, context):
     if context.carto_source == "CFD":                  # whose panel this is
         ax.axhline(1.0, color="w", lw=0.8, ls="--")    # the sonic line
+    if context.carto_delta:                            # "absolute" / "relative"
+        ax.axhline(1.0, color="k", lw=0.8, ls="--")    # …and None on a field panel
     context.carto_sweep_key     # "Mach": the vertical sweep
     context.carto_sweep_spec    # its spec dict
 ```
+
+On the delta panel `carto_source` is `None` — it belongs to no single source — and
+`carto_delta` names the mode, so the two are how a hook tells the panels apart.
 
 The figure is finished when the hook runs — panels drawn, colorbar placed, heading set — so
 the hook is your last word, the same contract as folded sheets and compare figures.
@@ -1717,7 +1846,7 @@ fixed_sweeps)` is the analogue of `include_curve`.
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |
-| **Cartographies** | `batch_carto`, `CartoSpec`, `CARTO_KEY` |
+| **Cartographies** | `batch_carto`, `CartoSpec`, `DeltaSpec`, `CARTO_KEY` |
 | **Domain regions** | `plot_domains`, `domain_segments`, `Domain`, `DomainSpan` |
 | **PDF reports** | `pdf_report`, `contact_sheet`, `ReportSection`, `PdfReportSpec`, `PAGE_SIZES`; `batch_plot(..., pdf_report=...)` |
 
