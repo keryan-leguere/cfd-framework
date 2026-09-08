@@ -1164,7 +1164,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 762 tests
+pytest                                  # 769 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 12 figures de doc

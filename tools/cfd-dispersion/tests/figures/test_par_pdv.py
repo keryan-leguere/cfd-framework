@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import pickle
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
+import matplotlib
 import pandas as pd
 import pytest
 
@@ -14,6 +18,8 @@ from cfd_dispersion.core.lois import JeuDeLois, charger_lois
 from cfd_dispersion.core.tirage import tirage_neutre, tirer_lot
 from cfd_dispersion.figures.par_pdv import (
     MAX_TIRAGES_DEFAUT,
+    _init_ouvrier,
+    _main_rejouable,
     _nominaux_du_point,
     _Travail,
     chemin_du_point_de_vol,
@@ -554,6 +560,133 @@ class TestParallelisme:
         deux = figures_tirage_par_pdv(tableau, racine=tmp_path / "b", n_jobs=2, **commun)
         assert list(seul["figure"]) == list(deux["figure"])
         assert list(seul["tirage"]) == list(deux["tirage"])
+
+    def test_le_main_de_l_appelant_n_est_pas_rejoue(self, tmp_path: Path) -> None:
+        """La régression qui a motivé l'abandon de ``forkserver``.
+
+        ``forkserver`` emporte les données de préparation de ``spawn`` : chaque
+        ouvrier réexécutait le script appelant. Selon le point d'entrée, cela
+        allait du travail refait n fois au ``BrokenProcessPool`` sans rapport
+        visible avec la cause. Le témoin est une ligne écrite au niveau module :
+        il doit y en avoir **une**, quel que soit le nombre d'ouvriers.
+        """
+        temoin = tmp_path / "temoin.txt"
+        script = tmp_path / "appelant.py"
+        script.write_text(
+            textwrap.dedent(f"""
+            import os
+            import numpy as np, pandas as pd
+
+            with open({str(temoin)!r}, "a") as fichier:
+                fichier.write(f"{{os.getpid()}}\\n")
+
+            from cfd_dispersion import charger_lois, tirer_tableau
+            from cfd_dispersion.figures.par_pdv import figures_tirage_par_pdv
+
+            TABLE = {TABLE!r}
+
+            def main():
+                lois = charger_lois(TABLE)
+                lot = tirer_tableau(lois, 2, graine=1)
+                lot["CN"] = 0.85 + lot["CN_Biais"] + (lot["CN_FE"] - 1) * 0.85
+                lot["CA"] = 0.03 + lot["CA_Biais"] + (lot["CA_FE"] - 1) * 0.03
+                lot["Mach"] = 0.85
+                lot["tirage"] = np.arange(2)
+                reference = pd.DataFrame({{"Mach": [0.85], "CN": [0.85], "CA": [0.03]}})
+                figures_tirage_par_pdv(
+                    lot,
+                    points_de_vol={{"Mach": [0.85]}},
+                    racine={str(tmp_path / "FIGURES")!r},
+                    lois=lois,
+                    reference=reference,
+                    coefficients=["CN"],
+                    matrice=False,
+                    n_jobs=2,
+                )
+
+            if __name__ == "__main__":
+                main()
+            """)
+        )
+        acheve = subprocess.run(
+            [sys.executable, str(script)], capture_output=True, text=True, timeout=600
+        )
+        assert acheve.returncode == 0, acheve.stderr
+        executions = temoin.read_text().splitlines()
+        assert len(executions) == 1, f"__main__ rejoué {len(executions)} fois : {executions}"
+
+    def test_l_ouvrier_dessine_sans_fenetre(self) -> None:
+        """Un ouvrier n'a pas d'affichage ; le backend hérité peut en vouloir un."""
+        avant = matplotlib.get_backend()
+        try:
+            _init_ouvrier()
+            assert matplotlib.get_backend().lower() == "agg"
+        finally:
+            matplotlib.use(avant)
+
+    def test_le_backend_de_l_appelant_survit_au_parcours(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """L'initializer ne tourne que dans les ouvriers, jamais ici.
+
+        Un ``matplotlib.use("Agg")`` posé dans la fonction de travail tournerait
+        aussi en direct à ``n_jobs=1`` et casserait le tracé interactif de
+        l'appelant pour tout ce qu'il ferait ensuite.
+        """
+        avant = matplotlib.get_backend()
+        figures_tirage_par_pdv(tableau, points_de_vol={"Mach": [0.85]}, racine=tmp_path, **LEGER)
+        assert matplotlib.get_backend() == avant
+
+
+class TestMainRejouable:
+    """Le garde-fou des plateformes où le démarrage n'est pas ``fork``."""
+
+    def test_sous_fork_il_n_y_a_rien_a_verifier(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import multiprocessing
+
+        monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_: "fork")
+        assert _main_rejouable() is None
+
+    def test_un_main_qui_n_est_pas_un_fichier_est_refuse(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import multiprocessing
+        import types
+
+        monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_: "forkserver")
+        faux = types.ModuleType("__main__")
+        faux.__file__ = "<stdin>"
+        faux.__spec__ = None
+        monkeypatch.setitem(sys.modules, "__main__", faux)
+        motif = _main_rejouable()
+        assert motif is not None
+        assert "<stdin>" in motif
+        assert "n_jobs=1" in motif
+
+    def test_un_vrai_script_passe(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        import multiprocessing
+        import types
+
+        script = tmp_path / "appelant.py"
+        script.write_text("pass\n")
+        monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_: "spawn")
+        faux = types.ModuleType("__main__")
+        faux.__file__ = str(script)
+        faux.__spec__ = None
+        monkeypatch.setitem(sys.modules, "__main__", faux)
+        assert _main_rejouable() is None
+
+    def test_python_m_paquet_passe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``python -m`` : l'ouvrier réimporte le module par son nom."""
+        import multiprocessing
+        import types
+
+        monkeypatch.setattr(multiprocessing, "get_start_method", lambda **_: "spawn")
+        faux = types.ModuleType("__main__")
+        faux.__file__ = "<stdin>"
+        faux.__spec__ = types.SimpleNamespace(name="mon_paquet.__main__")  # type: ignore[assignment]
+        monkeypatch.setitem(sys.modules, "__main__", faux)
+        assert _main_rejouable() is None
 
 
 class TestNettoyage:

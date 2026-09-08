@@ -55,6 +55,7 @@ exécution donne les mêmes.
 from __future__ import annotations
 
 import pickle
+import sys
 import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -220,6 +221,19 @@ def _repartir(
     plutôt que codée en dur pour que l'histogramme par point de vol
     (:mod:`cfd_dispersion.figures.histogramme`) partage cette plomberie ; elle
     doit être de niveau module, faute de quoi elle ne se sérialiserait pas.
+
+    La méthode de démarrage est celle **par défaut** — ``fork`` sous Linux —
+    comme ``cfd_plot.batch_plot``, et non ``forkserver`` : voir
+    :func:`_main_rejouable` pour ce que ce dernier coûtait. Deux conséquences
+    assumées, l'une bonne et l'autre non :
+
+    * une ``Convention`` ou une fonction définie dans le script de l'appelant
+      marche telle quelle dans les ouvriers, alors que ``forkserver`` et
+      ``spawn`` exigeraient qu'elle vive dans un module importable ;
+    * ``fork`` depuis un processus qui a déjà des fils — et NumPy en ouvre huit
+      dès qu'on importe pandas — reste théoriquement à risque, et Python 3.12
+      le signale par un ``DeprecationWarning``. L'avertissement est laissé
+      visible ; ``n_jobs=1`` est la sortie de secours.
     """
     if not travaux:
         return []
@@ -227,13 +241,10 @@ def _repartir(
         executer = _executer
 
     if n_jobs != 1:
-        try:
-            pickle.dumps(travaux[0])
-        except Exception as erreur:  # pragma: no cover - dépend de l'appelant
+        motif = _pourquoi_pas_en_parallele(travaux[0])
+        if motif is not None:
             warnings.warn(
-                f"parcours ramené à un seul processus : le travail ne se sérialise pas "
-                f"({erreur}). Une Convention écrite en lambda en est la cause la plus "
-                "fréquente ; une fonction de module passe.",
+                f"parcours ramené à un seul processus : {motif}",
                 UserWarning,
                 stacklevel=3,
             )
@@ -243,27 +254,99 @@ def _repartir(
         return [ligne for travail in travaux for ligne in executer(travail)]
 
     ouvriers = None if n_jobs < 0 else n_jobs
-    with ProcessPoolExecutor(max_workers=ouvriers, mp_context=_contexte()) as pool:
+    with ProcessPoolExecutor(max_workers=ouvriers, initializer=_init_ouvrier) as pool:
         # `map` conserve l'ordre : l'inventaire ne dépend pas de l'ordonnancement.
         return [ligne for lot in pool.map(executer, travaux) for ligne in lot]
 
 
-def _contexte() -> Any:
-    """Le contexte multiprocessus, ``forkserver`` de préférence.
+def _init_ouvrier() -> None:
+    """Impose un backend sans fenêtre dans un processus de travail.
 
-    Un ``fork`` nu depuis un processus qui a déjà des fils — Matplotlib, un
-    pilote graphique, un pytest — peut se figer, et Python 3.12 le signale.
-    ``forkserver`` part d'un processus propre ; le module est préchargé pour
-    que les ouvriers démarrent chauds plutôt que de réimporter Matplotlib un
-    par un.
+    Passée en ``initializer`` du pool, cette fonction tourne une fois par
+    ouvrier au démarrage, et **jamais dans le processus appelant**. C'est ce
+    qui la distingue d'un ``matplotlib.use("Agg")`` posé dans la fonction de
+    travail : celle-ci tourne aussi en direct quand ``n_jobs=1``, et y changer
+    le backend global casserait le tracé interactif de l'appelant pour tout ce
+    qu'il fera ensuite.
+
+    Un ouvrier n'a pas d'affichage à lui. Sous ``fork``, il hérite pourtant du
+    backend du parent — ``tkagg`` ou ``qtagg`` si personne ne l'a forcé — donc
+    d'une connexion graphique à demi initialisée, ce qui est précisément le
+    montage qui se fige ou plante dans un processus fils.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+
+def _pourquoi_pas_en_parallele(travail: Any) -> str | None:
+    """Ce qui interdit le rendu parallèle, en une phrase, ou None.
+
+    Deux causes, et les deux valent mieux dites qu'un lot à mi-chemin : un
+    travail qui ne se sérialise pas, et une méthode de démarrage qui rejouerait
+    le script appelant alors qu'il n'est pas rejouable.
+    """
+    try:
+        pickle.dumps(travail)
+    except Exception as erreur:  # pragma: no cover - dépend de l'appelant
+        return (
+            f"le travail ne se sérialise pas ({erreur}). Une Convention écrite en "
+            "lambda en est la cause la plus fréquente ; une fonction de module passe."
+        )
+    return _main_rejouable()
+
+
+def _main_rejouable() -> str | None:
+    """Dit si le ``__main__`` de l'appelant survivrait à une réexécution.
+
+    Pourquoi la question se pose
+    ----------------------------
+    Ce module a longtemps forcé le contexte ``forkserver``, pour éviter un
+    ``fork`` nu depuis un processus qui a déjà des fils. C'était un mauvais
+    marché : ``forkserver`` emporte les données de préparation de ``spawn``,
+    et **chaque ouvrier réexécute le script de l'appelant** (``spawn.py``,
+    ``_fixup_main_from_path``). Cela se voyait de trois façons, toutes
+    dépendantes de la machine et du point d'entrée :
+
+    * un script non protégé par ``if __name__ == "__main__":`` relançait le
+      parcours entier dans chaque ouvrier ;
+    * un ``__main__`` qui n'est pas un fichier — entrée standard, notebook —
+      donnait un ``FileNotFoundError`` dans l'ouvrier, remonté en
+      ``BrokenProcessPool`` sans rapport visible avec la cause ;
+    * un script qui travaille au niveau module refaisait ce travail n fois.
+
+    ``cfd_plot.batch_plot`` n'a jamais eu le problème : il prend la méthode de
+    démarrage par défaut — ``fork`` sous Linux, qui ne rejoue rien — et neutralise
+    le backend graphique par un ``initializer``. C'est ce que fait ce module
+    désormais, et :func:`_init_ouvrier` est cet initializer.
+
+    Reste le cas des plateformes où le défaut n'est pas ``fork`` (macOS,
+    Windows, et Linux à partir de Python 3.14) : la réexécution y revient, et
+    cette fonction la refuse quand elle ne peut pas aboutir, plutôt que de
+    laisser tomber un ``BrokenProcessPool``.
     """
     import multiprocessing
 
-    if "forkserver" not in multiprocessing.get_all_start_methods():  # pragma: no cover
+    methode = multiprocessing.get_start_method(allow_none=False)
+    if methode == "fork":
         return None
-    contexte = multiprocessing.get_context("forkserver")
-    contexte.set_forkserver_preload(["cfd_dispersion.figures.par_pdv"])
-    return contexte
+
+    principal = sys.modules.get("__main__")
+    if principal is None or getattr(principal, "__spec__", None) is not None:
+        # `python -m paquet` : l'ouvrier réimporte le module par son nom.
+        return None
+    chemin = getattr(principal, "__file__", None)
+    if chemin is None:
+        # `python -c` : il n'y a pas de script à rejouer, donc rien à craindre.
+        return None
+    if not Path(chemin).is_file():
+        return (
+            f"la méthode de démarrage « {methode} » réexécute le script appelant dans "
+            f"chaque ouvrier, et celui-ci n'en est pas un ({chemin!r}) — entrée standard "
+            "ou notebook. Lancer le parcours depuis un fichier .py protégé par "
+            '`if __name__ == "__main__":`, ou garder n_jobs=1.'
+        )
+    return None
 
 
 def figures_tirage_par_pdv(

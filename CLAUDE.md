@@ -415,7 +415,8 @@ not part of the Bash framework's runtime:
       reads); the nominal is looked up in the column named like the coefficient, then
       `<coeff>_nominal`, and only if **constant** over the flight point — a varying column is a
       dispersed output, and taking it would centre the law on the draw it is meant to judge; and
-      `n_jobs` (forkserver pool, picklability checked up front like `batch_plot`'s hook) because a
+      `n_jobs` (process pool on the **default** start method — `fork` on Linux, like
+      `batch_plot`; picklability checked up front like `batch_plot`'s hook) because a
       single figure costs ~0.5 s to write — the house font is vectorised glyph by glyph.
       `01_EXEMPLE/sortie_modele.py` is a **hard-coded example of the model output table** (4 flight
       points × 100 draws = 400 rows, one lot replayed at every flight point) that later examples

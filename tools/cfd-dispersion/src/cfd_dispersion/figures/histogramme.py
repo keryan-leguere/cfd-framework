@@ -446,11 +446,14 @@ class _TravailHistogramme:
 
 
 def _executer_histogramme(travail: _TravailHistogramme) -> list[dict[str, Any]]:
-    """Trace et écrit les histogrammes d'un point de vol ; rend leur inventaire."""
-    import matplotlib
+    """Trace et écrit les histogrammes d'un point de vol ; rend leur inventaire.
 
-    matplotlib.use("Agg")
-
+    Le backend graphique n'est pas forcé ici : cette fonction tourne aussi en
+    direct quand ``n_jobs=1``, et y basculer Matplotlib en Agg casserait le
+    tracé interactif de l'appelant. C'est le rôle de
+    :func:`cfd_dispersion.figures.par_pdv._init_ouvrier`, qui ne tourne que
+    dans les processus de travail.
+    """
     inventaire: list[dict[str, Any]] = []
     commun = {**travail.point, "tirages": travail.effectif}
 
