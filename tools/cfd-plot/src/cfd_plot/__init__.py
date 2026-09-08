@@ -78,6 +78,13 @@ from .batch import (
     varying_flight_keys,
 )
 
+# --- Cartographies -----------------------------------------------------------
+from .carto import (
+    CARTO_KEY,
+    CartoSpec,
+    batch_carto,
+)
+
 # --- Domain regions ----------------------------------------------------------
 from .domains import (
     Domain,
@@ -184,6 +191,10 @@ __all__ = [
     "iter_fixed_sweep_combinations",
     "iter_flight_points",
     "varying_flight_keys",
+    # Cartographies
+    "CARTO_KEY",
+    "CartoSpec",
+    "batch_carto",
     # Domain regions
     "Domain",
     "DomainSpan",

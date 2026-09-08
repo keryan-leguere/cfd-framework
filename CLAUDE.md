@@ -293,6 +293,15 @@ not part of the Bash framework's runtime:
   `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
   out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
   hook's own limits are the last word.
+  `cfd_plot.carto` (`batch_carto`, `CartoSpec`) is the same loop one dimension wider: one
+  figure per **pair** of sweeps (every other sweep pinned as a directory, like `batch_plot`),
+  one panel per configuration, drawn as `plot_contourf` + black `plot_contour` + `clabel`.
+  Panels share their level *values* by default, so a band means the same thing in every panel —
+  and must then agree on `cmap`/`levels`, since one colorbar cannot describe two (it raises,
+  naming `shared_scale=False` as the way out). A `"CARTO"` sub-dict on a `y_axis_dict` or
+  `configuration_dict` entry overrides the drawing options; it is metadata, so the same
+  `configuration_dict` still drives `batch_plot`. Rows are pivoted, never interpolated: an
+  unrun cell stays a hole, and two rows in one cell is an error naming the unpinned column.
   `cfd_plot.domains` (`plot_domains`) shades and names the regions a curve crosses from a
   per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
   the samples that disagree, a hole in the column left blank rather than shaded through, and

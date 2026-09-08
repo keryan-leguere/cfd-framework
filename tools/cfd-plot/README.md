@@ -41,6 +41,7 @@ Four things it gives you that plain Matplotlib does not:
 - [17. Panel labels and palettes](#17-panel-labels-and-palettes)
 - [18. PDF reports and contact sheets](#18-pdf-reports-and-contact-sheets)
 - [19. Domain regions](#19-domain-regions)
+- [20. Cartographies](#20-cartographies)
 - [API reference](#api-reference)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -1549,6 +1550,155 @@ batch_plot(..., on_before_save=DomainBands(df, domains={0: "Subsonic", 1: "Trans
 
 ---
 
+## 20. Cartographies
+
+`batch_plot` answers "how does `CN` vary with alpha?", one curve at a time. Past two sweeps
+that stops scaling: on a Mach × alpha × altitude study it writes **252 curve figures**, and the
+shape of `CN(Mach, alpha)` is spread across all of them. `batch_carto` puts that shape on one
+sheet — **60 maps** for the same study — with one panel per configuration.
+
+![cartography](00_DOC/FIGURES/33_batch_carto.png)
+
+```python
+from cfd_plot import batch_carto
+
+batch_carto(
+    configuration_dict=configuration_dict,   # one panel per source
+    y_axis_dict=y_axis_dict,                 # one figure per quantity
+    sweep_dict=sweep_dict,                   # one figure per PAIR of sweeps
+    flight_point_dict=flight_point_dict,
+    output_base="FIGURE",
+)
+```
+
+The four dictionaries are `batch_plot`'s, read the same way — `sweep_dict` just needs **two**
+entries or more. Each panel is `plot_contourf` + `plot_contour` in black + `ax.clabel`.
+
+### The tree it writes
+
+Three sweeps make three pairs, and every sweep outside the pair is pinned as a directory
+level, exactly as `batch_plot` pins it. With `alpha` (9), `Mach` (3), `Altitude_m` (3) as
+sweeps, `beta` (2) as a flight point, and two quantities:
+
+```
+FIGURE/
+├── ALPHA_MACH_CARTO/          # alpha × Mach, altitude pinned
+│   ├── BETA_0/
+│   │   ├── Z_5000/
+│   │   │   ├── CN_vs_alpha_Mach.svg
+│   │   │   └── CA_vs_alpha_Mach.svg
+│   │   ├── Z_8000/  …
+│   │   └── Z_10000/ …
+│   └── BETA_2/ …                       12 figures
+├── ALPHA_Z_CARTO/             # alpha × altitude, Mach pinned
+│   └── BETA_{0,2}/M_{0.7,0.8,0.85}/    12 figures
+└── MACH_Z_CARTO/              # Mach × altitude, alpha pinned
+    └── BETA_{0,2}/ALPHA_{0…8}/         36 figures
+```
+
+`pairs=[("alpha", "Mach")]` restricts the run to the maps you want — the first key goes on the
+horizontal axis. The default is every combination, in `sweep_dict` order.
+
+### Reading a map honestly
+
+Panels of the same quantity share their colour scale by default: the level *values* are
+computed once from the combined range of every panel and handed to all of them, so a band
+means the same thing left and right and one colorbar describes them all. Independently
+levelled panels would make two different fields look alike, which is the one thing a
+side-by-side map exists to rule out.
+
+That is also why the panels must then agree on `cmap` and on an explicit `levels` array. A
+single colorbar cannot describe two colormaps, so disagreeing sources raise rather than
+produce a figure whose colorbar is wrong for half of it:
+
+```
+ValueError: cartography CN_vs_alpha_Mach: panels disagree on the colour scale
+(['CFD'] → cmap='viridis', levels=11 vs ['MODEL'] → cmap='magma', levels=11). One
+colorbar cannot describe two of them — make the 'CARTO' entries agree on 'cmap' and
+'levels', or pass shared_scale=False to give each panel its own scale and colorbar.
+```
+
+`shared_scale=False` is the way out: each panel then gets its own scale *and* its own
+colorbar, and anything goes.
+
+### The `CARTO` sub-dict
+
+Defaults come from `carto=` (a `CartoSpec`, or a plain dict of the same keys). A `"CARTO"`
+sub-dict overrides them — on a `y_axis_dict` entry (the quantity: its colormap, its levels)
+and then on a `configuration_dict` entry (that source's panel):
+
+```python
+y_axis_dict = {
+    "CN": {"col_name": "CN", "symbol": r"$C_N$", "unit": "-", "y_save_name": "CN",
+           "CARTO": {"cmap": "RdYlBu_r", "levels": 21, "line_levels": 7}},
+}
+configuration_dict = {
+    "CFD":   {"label": "CFD", "df": df_cfd},
+    "MODEL": {"label": "Engineering model", "df": df_model,
+              "CARTO": {"line_color": "0.25", "clabel": False}},
+}
+```
+
+![cartography with CARTO overrides](00_DOC/FIGURES/34_batch_carto_tuned.png)
+
+That is the figure above, redrawn by the `y_axis_dict` override alone: 21 filled bands for a
+smooth gradient, but only 7 labelled iso-lines, which is what makes it readable. `"CARTO"` is
+metadata like `df` or `label` — it never reaches `plot_line`, so **the same
+`configuration_dict` drives `batch_plot` and `batch_carto` unchanged**.
+
+| Key | Default | What it does |
+|:---|:---|:---|
+| `cmap` | `"viridis"` | Colormap of the filled contours |
+| `levels` | `11` | Level boundaries: a count, or the explicit values. An int becomes that many evenly spaced values across the shared range — Matplotlib's own "nice round numbers" would differ per panel |
+| `line_levels` | `None` | Levels of the black iso-lines. `None` reuses the fill's, so a labelled line is exactly the edge of a band. Set it lower past ~10 levels |
+| `line_color` | `"black"` | Iso-line colour; `None` drops the lines entirely |
+| `line_width` | `0.6` | Iso-line width |
+| `clabel` | `True` | Label the iso-lines in place (`ax.clabel`) |
+| `clabel_fmt` | `"%.3g"` | Label format |
+| `clabel_fontsize` | `None` | Label size (default: the style's) |
+| `colorbar` | `True` | One for the figure, or one per panel without a shared scale |
+| `shared_scale` | `True` | See above |
+| `max_cols` | `3` | Panels per row (1–3) |
+| `extend` | `"neither"` | Colorbar arrows: `"both"`, `"min"`, `"max"` |
+| `aspect` | `None` | Axes aspect. **Not** `"equal"` — a map over (Mach, alpha) has two unrelated units, and forcing it square would squash the map to a sliver |
+
+`"level"` is accepted as an alias for `"levels"` (and `"line_level"` for `"line_levels"`); any
+other unknown key raises, naming it. A typo that silently draws the default is worse than a
+stop.
+
+### Gridding, holes and duplicates
+
+Each source's rows are pivoted onto a grid — no interpolation, no smoothing. Two consequences
+worth knowing:
+
+- **A cell the study never ran stays blank.** It comes out `NaN` and `contourf` leaves a hole,
+  rather than inventing a value across it. A ragged sweep therefore reads as ragged.
+- **Two rows in one cell is an error**, naming the configuration and the flight point. Some
+  column varies that is in neither `sweep_dict` nor `flight_point_dict`, so it never became a
+  directory and the map has several values per cell.
+
+### Hooks, and the rest of the pipeline
+
+`on_before_save` fires once per panel, with a `BatchPlotContext` where `sweep_key` / `x_spec`
+are the horizontal sweep and `y_key` / `y_spec` the mapped quantity — as everywhere else —
+plus three fields only a map has:
+
+```python
+def annotate(fig, ax, context):
+    if context.carto_source == "CFD":                  # whose panel this is
+        ax.axhline(1.0, color="w", lw=0.8, ls="--")    # the sonic line
+    context.carto_sweep_key     # "Mach": the vertical sweep
+    context.carto_sweep_spec    # its spec dict
+```
+
+The figure is finished when the hook runs — panels drawn, colorbar placed, heading set — so
+the hook is your last word, the same contract as folded sheets and compare figures.
+`report=`, `verbose=`, `dry_run=`, `n_jobs=`, `pdf_report=` and `clean=` all behave as in
+`batch_plot`, and `include_panel(source, flight_point, (x_key, y_key), qoi_key,
+fixed_sweeps)` is the analogue of `include_curve`.
+
+---
+
 ## API reference
 
 | Group | Functions |
@@ -1567,6 +1717,7 @@ batch_plot(..., on_before_save=DomainBands(df, domains={0: "Subsonic", 1: "Trans
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |
+| **Cartographies** | `batch_carto`, `CartoSpec`, `CARTO_KEY` |
 | **Domain regions** | `plot_domains`, `domain_segments`, `Domain`, `DomainSpan` |
 | **PDF reports** | `pdf_report`, `contact_sheet`, `ReportSection`, `PdfReportSpec`, `PAGE_SIZES`; `batch_plot(..., pdf_report=...)` |
 

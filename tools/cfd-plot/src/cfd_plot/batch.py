@@ -89,7 +89,7 @@ DEFAULT_FLIGHT_POINT_KEYS: tuple[str, ...] = (
     "DN",
 )
 
-_CONFIG_METADATA_KEYS = frozenset({"name", "label", "dir", "CDG", "df", "style"})
+_CONFIG_METADATA_KEYS = frozenset({"name", "label", "dir", "CDG", "df", "style", "CARTO"})
 
 # Line2D setters that would collide with the data the batch itself supplies,
 # or with ax.plot's own "data" keyword mechanism.
@@ -113,6 +113,12 @@ class BatchPlotContext:
     fold_kind: str | None = None
     fold_layout: str | None = None
     fold_label: str | None = None
+    # Cartography: `sweep_key` / `x_spec` are the map's horizontal sweep and
+    # `y_key` / `y_spec` the mapped quantity, as everywhere else; these three
+    # carry what only a map has - the vertical sweep, and whose panel this is.
+    carto_sweep_key: str | None = None
+    carto_sweep_spec: dict[str, Any] | None = None
+    carto_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1885,14 +1891,25 @@ def _render_any(
     PDF builder — instead of needing a second pass with its own copy of all of
     it. It is also what the pool submits, so it must stay picklable-by-name
     (module level) and take its arguments positionally.
+
+    A job type defined *outside* this module - a cartography, say - cannot be
+    named here without an import cycle, so it carries its own ``render``
+    method instead. A bound method of a module-level frozen dataclass pickles
+    fine, so such a job still travels the process pool.
     """
+    renderer = getattr(job, "render", None)
+    if renderer is not None:
+        return renderer(style_profile, formats, on_before_save, builder)
     if isinstance(job, _FoldJob):
         return _render_one_fold_job(job, style_profile, formats, on_before_save, builder)
     return _render_one_job(job, style_profile, formats, on_before_save, builder)
 
 
 def _any_job_label(job: Any) -> str:
-    """Progress-bar description for either kind of job."""
+    """Progress-bar description for whichever kind of job this is."""
+    own_label = getattr(job, "cli_label", None)
+    if own_label is not None:
+        return str(own_label())
     if isinstance(job, _FoldJob):
         context = _cli_text(job.context_label) or "all conditions"
         return f"{job.polar_prefix} · fold · {context} · {_cli_text(job.label)}"

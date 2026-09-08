@@ -34,6 +34,7 @@ from cfd_plot import (
     animate_sweep,
     annotate_point,
     apply_oldschool_axes,
+    batch_carto,
     batch_compare_flight_points,
     batch_plot,
     compute_speed,
@@ -835,6 +836,87 @@ def fig_domains() -> None:
     _write(fig, "32_domains_variants")
 
 
+
+# ---------------------------------------------------------------------------
+# 33 — cartographies: a quantity over a pair of sweeps, one panel per source
+# ---------------------------------------------------------------------------
+
+def _carto_config():
+    """A transonic study on a full Mach x alpha grid, CFD against a model."""
+    machs = np.round(np.arange(0.50, 1.31, 0.05), 3)
+    alphas = np.arange(0.0, 12.1, 0.5)
+    rows = []
+    for mach in machs:
+        for alpha in alphas:
+            # A transonic rise on the normal force, and a drag bucket that
+            # opens past the sonic line: enough structure for iso-lines to say
+            # something.
+            peak = 0.6 / np.sqrt(abs(1.0 - mach**2) + 0.05)
+            cn = 0.075 * alpha * (1.0 + peak)
+            ca = 0.02 + 0.35 * max(0.0, mach - 0.85) ** 2 + 4e-4 * alpha**2
+            rows.append({"Mach": mach, "alpha": alpha, "Altitude_m": 8000.0,
+                         "beta": 0.0, "CN": cn, "CA": ca, "src": "CFD"})
+            rows.append({"Mach": mach, "alpha": alpha, "Altitude_m": 8000.0,
+                         "beta": 0.0, "CN": cn * (1.0 - 0.05 * peak),
+                         "CA": ca * 0.95, "src": "MODEL"})
+    frame = pd.DataFrame(rows)
+
+    configuration_dict = {
+        "CFD": {"name": "CFD", "label": "CFD", "color": "C0",
+                "df": frame[frame["src"] == "CFD"]},
+        "MODEL": {"name": "MODEL", "label": "Engineering model", "color": "C1",
+                  "df": frame[frame["src"] == "MODEL"]},
+    }
+    y_axis_dict = {
+        "CN": {"col_name": "CN", "literal_name": "Normal force coefficient",
+               "symbol": r"$C_N$", "unit": "-", "y_save_name": "CN"},
+    }
+    sweep_dict = {
+        "alpha": {"col_name": "alpha", "literal_name": "Angle of attack",
+                  "symbol": r"$\alpha$", "unit": "°", "x_save_name": "alpha",
+                  "save_name": "ALPHA"},
+        "Mach": {"col_name": "Mach", "literal_name": "Mach number",
+                 "symbol": r"$M$", "unit": "-", "x_save_name": "Mach",
+                 "save_name": "M"},
+    }
+    flight_point_dict = {
+        "Altitude_m": {"values": [], "label": "Z", "save_name": "Z", "unit": "m"},
+        "beta": {"values": [], "label": r"$\beta$", "save_name": "BETA", "unit": "°"},
+    }
+    return configuration_dict, y_axis_dict, sweep_dict, flight_point_dict
+
+
+def fig_carto() -> None:
+    import shutil
+
+    cfg, y_axis, sweep, fp = _carto_config()
+    tmp = FIGURES / "_tmp_carto"
+
+    written = batch_carto(
+        configuration_dict=cfg, y_axis_dict=y_axis, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+    )
+    shutil.copy(sorted(written)[0], FIGURES / "33_batch_carto.png")
+    print("  33_batch_carto.png")
+
+    # The same study with fewer labelled lines and a diverging map, to show
+    # what the CARTO sub-dict changes.
+    y_axis_tuned = {
+        "CN": {**y_axis["CN"],
+               "CARTO": {"cmap": "RdYlBu_r", "levels": 21, "line_levels": 7}},
+    }
+    written = batch_carto(
+        configuration_dict=cfg, y_axis_dict=y_axis_tuned, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+    )
+    shutil.copy(sorted(written)[0], FIGURES / "34_batch_carto_tuned.png")
+    print("  34_batch_carto_tuned.png")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # 22 — panel labels
 # ---------------------------------------------------------------------------
@@ -985,6 +1067,7 @@ def main() -> None:
     fig_batch_fold()
     fig_animation()
     fig_domains()
+    fig_carto()
     fig_panel_labels()
     fig_palettes()
     fig_pdf_report()

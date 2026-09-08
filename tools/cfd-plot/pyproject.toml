@@ -152,6 +152,7 @@ module = [
     "cfd_plot.palettes",
     "cfd_plot.cleanup",
     "cfd_plot.domains",
+    "cfd_plot.carto",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
