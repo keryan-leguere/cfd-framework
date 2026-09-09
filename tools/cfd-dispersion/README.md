@@ -30,6 +30,9 @@ produit déjà.
   - [2. Reconstruire : les conventions](#2-reconstruire--les-conventions)
   - [3. La loi du coefficient dispersé](#3-la-loi-du-coefficient-dispersé)
   - [4. Parcourir les points de vol](#4-parcourir-les-points-de-vol)
+    - [4.1 Choisir les coefficients tracés](#41-choisir-les-coefficients-tracés)
+    - [4.2 Les coefficients déduits : `relations=`](#42-les-coefficients-déduits--relations)
+    - [4.3 Le rendu terminal](#43-le-rendu-terminal)
   - [5. Les histogrammes d'un point de vol](#5-les-histogrammes-dun-point-de-vol)
   - [6. Valider mille appels du modèle](#6-valider-mille-appels-du-modèle)
   - [7. Synthétiser, et ne tracer que les rejets](#7-synthétiser-et-ne-tracer-que-les-rejets)
@@ -533,6 +536,128 @@ Un exemple de tableau de sortie est livré, écrit en dur :
 `01_EXEMPLE/sortie_modele.py` (4 points de vol × 100 tirages, les deux
 dictionnaires, les métadonnées, plus `sortie_modele_reference()` pour la base
 neutre), et `01_EXEMPLE/06_tirages_par_pdv.py` en fait le parcours complet.
+
+#### 4.1 Choisir les coefficients tracés
+
+Sans rien préciser, le parcours suit **ce qui est dispersé** : les coefficients
+de la table de lois, plus les cibles des relations (§4.2). Deux façons d'en
+changer, et elles ne font pas la même chose :
+
+| | |
+|:--|:--|
+| `coefficients=["CN", "CA"]` | **remplace** la liste par défaut — pour n'en tracer qu'une partie, ou en changer l'ordre |
+| `coefficients_en_plus=["CY"]` | **s'ajoute** au défaut — pour une colonne de sortie de plus, sans avoir à réécrire la liste des coefficients dispersés |
+
+```python
+figures_tirage_par_pdv(df, ..., coefficients_en_plus=["CY"])
+# tracé : CN, CA, Cm_alpha (les lois)  +  CY
+```
+
+Les doublons sont écartés, l'ordre d'écriture est conservé, et les deux
+arguments se combinent. Un nom qui n'est ni une loi, ni une relation, ni une
+colonne du tableau est **refusé en le nommant** : il n'y aurait rien à en dire.
+
+Les deux parcours — celui des tirages et celui des histogrammes — prennent les
+mêmes arguments.
+
+#### 4.2 Les coefficients déduits : `relations=`
+
+La table de lois porte sur ce que le modèle **consomme** ; le tableau de sortie
+sur ce qu'il **produit**. Les deux ne parlent pas toujours des mêmes
+coefficients, et le lien est souvent une simple relation linéaire :
+
+```
+lois       CZ                  CX1, CX2
+sorties    CN = -CZ            CA = CX1 + CX2
+```
+
+Sans rien de plus, `CN` et `CA` sont des colonnes sans loi : leur histogramme se
+trace, mais rien ne dit ce qu'il aurait dû être. Une ligne le comble :
+
+```python
+figures_tirage_par_pdv(df, ..., relations={"CN": "-CZ", "CA": "CX1 + CX2"})
+```
+
+Chaque cible reçoit alors **ses deux lois**, dérivées de celles de ses sources,
+et **ses valeurs tirées**, dérivées du tirage de la ligne. Elle est ensuite
+tracée comme un coefficient déclaré : deux panneaux de composantes, la loi
+combinée, l'écart au nominal — et le contrôle modèle / calcul, qui porte du coup
+sur la **relation elle-même**.
+
+Quatre écritures, toutes équivalentes :
+
+```python
+relations = {"CN": "-CZ", "CA": "CX1 + CX2"}  # la plus courante
+relations = ["CN = -CZ", "CA = CX1 + CX2"]
+relations = {"CN": {"CZ": -1.0}}  # quand la formule vient d'un calcul
+relations = Relation("CN", (("CZ", -1.0),))
+```
+
+La syntaxe admise est volontairement pauvre — sommes, différences, facteurs
+numériques, constante — parce qu'au-delà ce n'est plus une relation linéaire, et
+qu'une loi dérivée n'aurait plus de sens : `CX1 * CX2` est refusé.
+
+**Un coefficient n'a pas une loi mais deux, et la relation ne les transforme pas
+de la même façon.** Le facteur d'échelle multiplie le nominal : deux
+contributions qui s'additionnent ne partagent leur facteur qu'au **prorata de ce
+qu'elles pèsent**. D'où deux régimes :
+
+| | |
+|:--|:--|
+| **un terme, pas de constante** (`CN = -CZ`) | le biais suit le facteur, le facteur d'échelle est inchangé. La loi **reste dans sa famille** — une gaussienne ±3σ reste une gaussienne ±3σ, avec le même `ET` — et **aucune valeur nominale n'entre en jeu** |
+| **plusieurs termes** (`CA = CX1 + CX2`) | les poids du facteur d'échelle sont des parts, `aᵢ·cᵢ/c_cible`. Les **nominaux des sources sont nécessaires**, et la loi **change d'un point de vol à l'autre**. Elle n'appartient plus à aucune des six familles : c'est une combinaison, calculée exactement par OpenTURNS (`LoiDerivee`) |
+
+![Loi dérivée](00_DOC/FIGURES/12_loi_derivee.png)
+
+Le **biais** d'une somme disperse **plus** que chacune de ses sources ; le
+**facteur d'échelle**, moyenne pondérée, disperse **moins**. Écrire à la main
+une loi « raisonnable » pour `CA` se tromperait de sens dans un cas sur deux.
+
+Les nominaux des sources sont lus dans `reference=` — le modèle tourné une fois
+avec un tirage neutre — donc **votre modèle doit publier ses grandeurs
+intermédiaires** dès qu'une relation a plusieurs termes. À défaut, `nominaux=`
+les impose, quand ils ne dépendent pas du point de vol.
+
+La dérivation n'est jamais supposée : elle est **confrontée à la relation** sur
+quelques tirages fictifs avant d'être employée, et trois cas sont refusés plutôt
+que dérivés de travers :
+
+* une combinaison **sans les nominaux** de ses sources ;
+* une relation **qui n'est pas celle du modèle** — la référence porte `CA`, la
+  relation en donne une autre valeur : toutes les lois dérivées de ce point de
+  vol seraient fausses sans que rien ne le dise ;
+* une **convention non affine** en (biais, FE), ou un jeu de lois **corrélé** —
+  la loi d'une somme de composantes dépendantes n'est pas leur combinaison.
+
+Dans les histogrammes (§5), les composantes de la cible — que le modèle ne rend
+pas — sont **recomposées** depuis celles de ses sources avec les mêmes poids :
+les deux premiers panneaux confrontent donc pour de bon la loi dérivée à ce qui
+a été réalisé. `01_EXEMPLE/10_relations.py` fait le tour de tout cela.
+
+Hors parcours, la dérivation est accessible seule :
+
+```python
+from cfd_dispersion import charger_relations, loi_derivee, lois_avec_relations
+
+liens = charger_relations({"CA": "CX1 + CX2"})
+loi_CA = loi_derivee(liens["CA"], lois, nominaux={"CX1": 0.022, "CX2": 0.009})
+augmentees = lois_avec_relations(lois, liens, nominaux={...})
+```
+
+#### 4.3 Le rendu terminal
+
+Les deux parcours reprennent les trois arguments de `cfd_plot.batch_plot`, aux
+mêmes places et pour les mêmes raisons :
+
+| ici | `batch_plot` | |
+|:--|:--|:--|
+| `verbeux=True` | `verbose` | le **plan** avant — coefficients, relations, boucles de points de vol, mode parallèle, nombre de fichiers attendus — puis une barre de progression nommant le point de vol et le tirage en cours |
+| `rapport=True` *(défaut)* | `report` | le **bilan** après : les fichiers écrits, groupés par point de vol, avec leur taille |
+| `a_blanc=True` | `dry_run` | **énumère sans rien écrire** — ni figure, ni nettoyage. L'inventaire rendu a la même forme, colonnes de verdict comprises, mais celles-ci sont vides |
+
+L'énumération à blanc et l'exécution composent les mêmes noms de fichiers : un
+`a_blanc=True` dit exactement ce qu'un vrai parcours écrirait, et c'est ce qu'un
+test vérifie.
 
 ### 5. Les histogrammes d'un point de vol
 
@@ -1061,6 +1186,16 @@ montrent rien de plus que deux cents, et coûtent dix fois le poids.
 **Tracer les figures d'un point de vol précis.**
 `figures_par_pdv(..., seulement=[{"Mach": 0.85, "Altitude_m": 10000.0}])`.
 
+**Ajouter une sortie à ce qui est tracé, sans réécrire la liste.**
+`coefficients_en_plus=["CY"]` — `coefficients=`, lui, remplace le défaut.
+
+**Donner sa loi à un coefficient que le modèle rend sans le disperser.**
+`relations={"CN": "-CZ"}` — la loi de `CN` se déduit de celle de `CZ`.
+
+**Savoir ce qu'un parcours écrirait, avant de le lancer.**
+`figures_tirage_par_pdv(..., a_blanc=True, verbeux=True)` : le plan, et
+l'inventaire des fichiers, sans en écrire un seul.
+
 **Vérifier une table avant de lancer quoi que ce soit.**
 `cfd-dispersion check --lois LOIS.yaml` — les erreurs de table sortent là, pas
 après huit heures de calcul.
@@ -1083,6 +1218,8 @@ après huit heures de calcul.
 | `LoiCombinee`, `loi_combinee` | la loi du coefficient dispersé |
 | `AccordModele`, `comparer_au_modele`, `TOLERANCE_ACCORD` | le calcul confronté au modèle |
 | `figures_tirage_par_pdv`, `MAX_TIRAGES_DEFAUT` | le parcours des points de vol |
+| `Relation`, `charger_relations`, `loi_derivee`, `lois_avec_relations`, `composantes_derivees`, `poids_derives`, `LoiDerivee` | les sorties déduites de ce qu'on tire |
+| `LoiComposante` | le protocole que remplissent `LoiDispersion` **et** `LoiDerivee` |
 | `figure_histogramme`, `figure_histogramme_matrice`, `figures_histogramme_par_pdv` | les histogrammes d'un point de vol |
 | `tirage_depuis_ligne` | le tirage que porte une ligne de la sortie |
 | `tracer_loi`, `tracer_loi_combinee`, `figure_tirage`, `figure_tirage_matrice`, `FigureTirage`, `MAX_COEFFICIENTS_PAR_FIGURE` | figures du tirage |
@@ -1149,8 +1286,9 @@ cfd-dispersion/
 │   │   ├── tirage.py        tirer / tirer_lot (la liste) / tableau_des_tirages
 │   │   ├── bande.py         propagation le long d'un balayage
 │   │   ├── tableau.py       plan croisé, tableau large, tirage d'une ligne
+│   │   ├── relation.py      les sorties déduites : CN = -CZ, CA = CX1 + CX2
 │   │   └── validation.py    support / moments / Kolmogorov–Smirnov
-│   ├── report/              theme.py, console.py, _plotting_lib.py
+│   ├── report/              theme.py, console.py, parcours.py, _plotting_lib.py
 │   ├── figures/             _base, tirage, par_pdv, densite, histogramme,
 │   │                        monte_carlo, synthese, polaire
 │   ├── batch.py             la greffe sur cfd_plot.batch_plot (tableau ou lois)
@@ -1164,10 +1302,10 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 769 tests
+pytest                                  # 866 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
-python 00_DOC/generer_figures.py        # les 12 figures de doc
+python 00_DOC/generer_figures.py        # les 13 figures de doc
 cfd-dispersion exemple /tmp/ex && bash /tmp/ex/RUN_EXEMPLE.sh
 ```
 

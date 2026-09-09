@@ -35,7 +35,7 @@ import numpy as np
 
 from .alea import graine_temporaire
 from .convention import Convention, ConventionArg, convention
-from .loi import LoiDispersion
+from .loi import LoiComposante
 from .lois import LoiCoefficient
 
 __all__ = [
@@ -274,8 +274,8 @@ def bande_depuis_loi(
     nominal: object,
     *,
     loi: LoiCoefficient | None = None,
-    biais: LoiDispersion | None = None,
-    fe: LoiDispersion | None = None,
+    biais: LoiComposante | None = None,
+    fe: LoiComposante | None = None,
     convention_: ConventionArg = None,
     n: int = N_DEFAUT,
     intervalle: Intervalle = "percentile",

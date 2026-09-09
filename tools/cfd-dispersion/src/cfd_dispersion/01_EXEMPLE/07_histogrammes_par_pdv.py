@@ -111,6 +111,10 @@ def main() -> int:
     # viennent les nominaux, l'arborescence, l'inventaire rendu.
     racine = args.sortie / "HISTOGRAMMES"
     depart = time.time()
+    # `verbeux` et `rapport` sont les `verbose` / `report` de
+    # `cfd_plot.batch_plot` : le plan et la barre de progression avant, le
+    # bilan des fichiers après. `a_blanc=True` (non employé ici) énumérerait
+    # sans rien écrire. Voir 10_relations.py pour le tour complet.
     inventaire = figures_histogramme_par_pdv(
         df,
         points_de_vol=POINTS_DE_VOL_DICT,
@@ -118,20 +122,13 @@ def main() -> int:
         reference=reference,
         nettoyer=True,
         n_jobs=args.jobs,
+        verbeux=True,
     )
     duree = time.time() - depart
 
     console.print(
         f"\n[bold]Parcours[/] : {len(inventaire)} fichiers en {duree:.0f} s "
         f"({inventaire['tirages'].iloc[0]} tirages par point de vol)"
-    )
-    console.print(
-        "  "
-        + inventaire.groupby(["Mach", "Altitude_m"])
-        .size()
-        .rename("fichiers")
-        .to_string()
-        .replace("\n", "\n  ")
     )
 
     chemin = args.sortie / "INVENTAIRE_HISTOGRAMMES.csv"
@@ -175,6 +172,7 @@ def main() -> int:
         coefficients=["CN", "CX0", "CA"],
         nettoyer=True,
         n_jobs=1,
+        rapport=False,
     )
     console.print(f"  {len(inventaire_decale)} fichiers : {list(inventaire_decale['figure'])}")
     console.print(

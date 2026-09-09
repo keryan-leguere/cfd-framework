@@ -34,7 +34,7 @@ from matplotlib.figure import Figure
 
 from ..core.combinaison import loi_combinee
 from ..core.convention import ConventionArg, convention
-from ..core.loi import LoiDispersion
+from ..core.loi import LoiComposante
 from ..core.lois import COMPOSANTES, JeuDeLois, LoiCoefficient
 from ..core.validation import Verdict, valider
 from ..report.theme import COULEUR_VERDICT
@@ -169,7 +169,7 @@ def figure_comparaison(
     return figure, np.array(trois)
 
 
-def _panneau_densite(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, couleur: Any) -> None:
+def _panneau_densite(ax: Axes, echantillon: np.ndarray, loi: LoiComposante, couleur: Any) -> None:
     """Loi théorique, histogramme empirique, et lissage à noyau.
 
     Le dessin est celui de :func:`cfd_dispersion.figures.densite.tracer_densite_realisee`,
@@ -179,7 +179,7 @@ def _panneau_densite(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, coul
     tracer_densite_realisee(ax, echantillon, loi=loi, couleur=couleur)
 
 
-def _panneau_qq(ax: Axes, echantillon: np.ndarray, loi: LoiDispersion, couleur: Any) -> None:
+def _panneau_qq(ax: Axes, echantillon: np.ndarray, loi: LoiComposante, couleur: Any) -> None:
     """Diagramme quantile-quantile : l'accord des queues, à leur échelle."""
     if echantillon.size == 0:
         return

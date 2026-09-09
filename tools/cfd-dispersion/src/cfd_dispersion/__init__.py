@@ -25,6 +25,7 @@ __version__ = "1.0.0"
 from .core.loi import (
     LIBELLES_TYPE,
     TYPES_VALIDES,
+    LoiComposante,
     LoiDispersion,
     libelle_type,
 )
@@ -76,6 +77,17 @@ from .core.combinaison import (
     LoiCombinee,
     comparer_au_modele,
     loi_combinee,
+)
+
+# --- Les coefficients de sortie déduits de ceux qu'on tire -------------------
+from .core.relation import (
+    LoiDerivee,
+    Relation,
+    charger_relations,
+    composantes_derivees,
+    loi_derivee,
+    lois_avec_relations,
+    poids_derives,
 )
 
 # --- La propagation le long d'un balayage ------------------------------------
@@ -139,6 +151,7 @@ from .figures.tirage import (
 __all__ = [
     "__version__",
     # Les lois
+    "LoiComposante",
     "LoiDispersion",
     "LoiCoefficient",
     "JeuDeLois",
@@ -159,6 +172,14 @@ __all__ = [
     "COLONNE_TIRAGE",
     "COLONNE_LOIS",
     "COLONNE_NUMERO",
+    # Les relations entre coefficients d'entrée et de sortie
+    "Relation",
+    "LoiDerivee",
+    "charger_relations",
+    "loi_derivee",
+    "lois_avec_relations",
+    "composantes_derivees",
+    "poids_derives",
     # La reconstruction
     "Convention",
     "CONVENTIONS",

@@ -54,6 +54,7 @@ exécution donne les mêmes.
 
 from __future__ import annotations
 
+import os
 import pickle
 import sys
 import warnings
@@ -65,14 +66,18 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from ..core.combinaison import TOLERANCE_ACCORD, AccordModele
 from ..core.convention import Convention, ConventionArg, convention
 from ..core.lois import JeuDeLois
+from ..core.relation import Relation, RelationArg, charger_relations, composantes_derivees
+from ..core.relation import lois_avec_relations as _lois_avec_relations
 from ..core.tableau import COLONNE_LOIS, COLONNE_NUMERO, COLONNE_TIRAGE, tirage_depuis_ligne
 from ..core.tableau import lire_sortie_modele as _lire_sortie_modele
 from ..core.tirage import Tirage
+from ..report.parcours import imprimer_bilan, imprimer_note, imprimer_plan, progression
 from ._base import PROFIL_DEFAUT
 from .tirage import (
     FORMATS_DEFAUT,
@@ -87,6 +92,8 @@ __all__ = [
     "chemin_du_point_de_vol",
     "etiquette_du_point_de_vol",
     "figures_tirage_par_pdv",
+    "resoudre_coefficients",
+    "verifier_coefficients",
 ]
 
 #: Nombre de tirages tracés par point de vol, faute d'instruction contraire.
@@ -129,17 +136,57 @@ class _Travail:
     tolerance: float
     profil: str
 
+    def fichiers_prevus(self) -> list[dict[str, Any]]:
+        """L'inventaire que ce travail écrirait, sans rien tracer.
+
+        C'est ce qui rend le mode « à blanc » possible : les noms de fichiers
+        sont composés ici et par ``_executer`` de la même façon, si bien qu'une
+        énumération dit exactement ce qu'une exécution écrirait.
+        """
+        commun: dict[str, Any] = {**self.point, "tirage": self.numero}
+        sans_verdict = {"calcul": None, "modele": None, "ecart": None, "accord": None}
+        lignes: list[dict[str, Any]] = []
+
+        if self.par_coefficient:
+            for nom in self.coefficients:
+                lignes.extend(
+                    {
+                        **commun,
+                        "figure": nom,
+                        "fichier": self.dossier / f"{nom}.{extension}",
+                        **sans_verdict,
+                    }
+                    for extension in self.formats
+                )
+
+        if self.matrice:
+            total = max(1, -(-len(self.coefficients) // self.max_par_figure))
+            for numero in range(1, total + 1):
+                base = NOM_MATRICE if total == 1 else f"{NOM_MATRICE}_{numero:02d}"
+                lignes.extend(
+                    {**commun, "figure": NOM_MATRICE, "fichier": self.dossier / f"{base}.{ext}"}
+                    for ext in self.formats
+                )
+
+        return lignes
+
+    @property
+    def description(self) -> str:
+        """Ce qu'affiche la barre de progression pendant ce travail."""
+        return f"{self.etiquette} · tirage {self.numero}"
+
 
 def _executer(travail: _Travail) -> list[dict[str, Any]]:
     """Trace et écrit les figures d'un tirage ; rend leur inventaire.
 
     Fonction de module, et non fermeture : c'est ce qui la rend sérialisable,
     donc utilisable telle quelle dans un processus ouvrier.
+
+    Le backend graphique n'est pas forcé ici : cette fonction tourne aussi en
+    direct quand ``n_jobs=1``, et y basculer Matplotlib en Agg casserait le
+    tracé interactif de l'appelant. C'est le rôle de :func:`_init_ouvrier`, qui
+    ne tourne que dans les processus de travail.
     """
-    import matplotlib
-
-    matplotlib.use("Agg")
-
     inventaire: list[dict[str, Any]] = []
     commun = {**travail.point, "tirage": travail.numero}
 
@@ -207,6 +254,8 @@ def _repartir(
     travaux: Sequence[Any],
     n_jobs: int,
     executer: Callable[[Any], list[dict[str, Any]]] | None = None,
+    *,
+    verbeux: bool = False,
 ) -> list[dict[str, Any]]:
     """Exécute les travaux, en séquence ou sur plusieurs processus.
 
@@ -251,12 +300,50 @@ def _repartir(
             n_jobs = 1
 
     if n_jobs == 1:
-        return [ligne for travail in travaux for ligne in executer(travail)]
+        return _consommer(travaux, (executer(travail) for travail in travaux), verbeux, "séquence")
 
     ouvriers = None if n_jobs < 0 else n_jobs
     with ProcessPoolExecutor(max_workers=ouvriers, initializer=_init_ouvrier) as pool:
         # `map` conserve l'ordre : l'inventaire ne dépend pas de l'ordonnancement.
-        return [ligne for lot in pool.map(executer, travaux) for ligne in lot]
+        return _consommer(
+            travaux, pool.map(executer, travaux), verbeux, f"{_nombre_ouvriers(n_jobs)} processus"
+        )
+
+
+def _nombre_ouvriers(n_jobs: int) -> int:
+    """Le nombre de processus qu'emploiera le parcours, ``-1`` résolu."""
+    if n_jobs >= 1:
+        return int(n_jobs)
+    return os.cpu_count() or 1
+
+
+def _consommer(
+    travaux: Sequence[Any],
+    lots: Any,
+    verbeux: bool,
+    mode: str,
+) -> list[dict[str, Any]]:
+    """Vide l'itérateur de résultats, avec ou sans barre de progression.
+
+    La description est mise à jour **avant** d'attendre le lot suivant, et non
+    après : ce qui s'affiche est ce que le parcours est en train de faire, pas
+    ce qu'il vient de finir.
+    """
+    barre = progression(len(travaux)) if verbeux else None
+    if barre is None:
+        return [ligne for lot in lots for ligne in lot]
+
+    lignes: list[dict[str, Any]] = []
+    iterateur = iter(lots)
+    with barre:
+        tache = barre.add_task(f"parcours ({mode})", total=len(travaux))
+        for travail in travaux:
+            description = getattr(travail, "description", None)
+            if description is not None:
+                barre.update(tache, description=str(description))
+            lignes.extend(next(iterateur))
+            barre.advance(tache)
+    return lignes
 
 
 def _init_ouvrier() -> None:
@@ -357,6 +444,8 @@ def figures_tirage_par_pdv(
     lois: JeuDeLois | None = None,
     reference: pd.DataFrame | None = None,
     coefficients: Sequence[str] | None = None,
+    coefficients_en_plus: Sequence[str] | None = None,
+    relations: RelationArg = None,
     nominaux: Mapping[str, Any] | None = None,
     tolerance: float = TOLERANCE_ACCORD,
     colonne_tirage: str = COLONNE_NUMERO,
@@ -370,6 +459,9 @@ def figures_tirage_par_pdv(
     nettoyer: bool = False,
     n_jobs: int = 1,
     profil: str = PROFIL_DEFAUT,
+    verbeux: bool = False,
+    rapport: bool = True,
+    a_blanc: bool = False,
 ) -> pd.DataFrame:
     """Écrit les figures de tirage, point de vol par point de vol.
 
@@ -409,9 +501,35 @@ def figures_tirage_par_pdv(
         Même structure que *df* ; une ligne par point de vol suffit.
     coefficients:
         Les coefficients à tracer, dans l'ordre voulu. Par défaut, tous ceux du
-        jeu de lois. Un nom absent des lois est admis s'il est une colonne du
-        tableau : sa figure montre alors le nominal et la valeur du modèle, en
-        disant qu'aucune loi ne le décrit.
+        jeu de lois — plus les cibles de *relations*. Un nom absent des lois est
+        admis s'il est une colonne du tableau : sa figure montre alors le
+        nominal et la valeur du modèle, en disant qu'aucune loi ne le décrit.
+        Le donner **remplace** la liste par défaut.
+    coefficients_en_plus:
+        Les coefficients à tracer **en plus** de ceux que le défaut retient.
+        C'est la façon d'ajouter une colonne de sortie sans avoir à réécrire la
+        liste complète des coefficients dispersés ::
+
+            coefficients_en_plus=["CA", "Cn_beta"]
+
+        Les doublons sont ignorés, et l'ordre d'écriture est conservé.
+    relations:
+        Les coefficients de sortie qui se **déduisent** de ceux qu'on tire ::
+
+            relations={"CN": "-CZ", "CA": "CX1 + CX2"}
+
+        Chaque cible reçoit alors ses lois, dérivées de celles de ses sources
+        (:func:`cfd_dispersion.loi_derivee`), et ses valeurs tirées, dérivées du
+        tirage de la ligne : elle est tracée comme un coefficient dispersé
+        ordinaire, avec ses deux panneaux de composantes, sa loi combinée et
+        l'accord entre le calcul et ce que le modèle a rendu — lequel contrôle
+        du coup la relation elle-même.
+
+        Les poids du facteur d'échelle sont des **parts**, donc les lois sont
+        dérivées **point de vol par point de vol**, à partir des valeurs
+        nominales des sources : celles-ci doivent être dans *reference* (ou
+        dans *nominaux*) dès que la relation a plus d'un terme. Une relation à
+        un seul terme, ``CN = -CZ``, s'en passe.
     nominaux:
         ``{coefficient: valeur}``, pour imposer les valeurs nominales, quand
         ni *reference* ni le tableau ne les portent.
@@ -439,6 +557,22 @@ def figures_tirage_par_pdv(
         Vide l'arborescence de *racine* avant d'écrire, par
         ``cfd_plot.clean_figure_dir`` — qui refuse la racine du disque, le
         dossier personnel, un dossier de premier niveau et une racine de dépôt.
+    verbeux, rapport, a_blanc:
+        Le rendu terminal, repris de ``cfd_plot.batch_plot`` avec les mêmes
+        rôles que ses ``verbose`` / ``report`` / ``dry_run`` :
+
+        ``verbeux``
+            imprime le **plan** — coefficients, relations, boucles de points de
+            vol, nombre de fichiers attendus — puis une barre de progression
+            nommant le point de vol et le tirage en cours.
+        ``rapport``
+            imprime, après coup, le **bilan** des fichiers écrits, groupé par
+            point de vol, avec leur taille. Vrai par défaut, comme là-bas.
+        ``a_blanc``
+            énumère ce qui serait écrit et **n'écrit rien** — ni figure, ni
+            nettoyage. L'inventaire rendu a la même forme, colonnes de verdict
+            comprises, mais celles-ci sont vides : aucune figure n'a été tracée,
+            donc aucun calcul n'a été confronté au modèle.
 
     Returns
     -------
@@ -464,25 +598,34 @@ def figures_tirage_par_pdv(
         raise ValueError("points_de_vol est vide : aucun point de vol à parcourir")
 
     tableau, jeu = _preparer(df, lois, colonne_tirage)
-    noms = list(coefficients) if coefficients is not None else list(jeu)
+    liens = charger_relations(relations)
+    noms = resoudre_coefficients(jeu, coefficients, coefficients_en_plus, liens)
     # Un coefficient sans loi n'est pas une erreur s'il est une colonne du
     # tableau : il n'est simplement pas dispersé, et sa figure montrera le
-    # nominal et ce que le modèle a rendu. Sans loi *ni* colonne, en revanche,
-    # il n'y a rien à en dire — et le refus le nomme.
-    inconnus = sorted(nom for nom in noms if nom not in jeu and nom not in tableau.columns)
-    if inconnus:
-        raise ValueError(
-            f"coefficient(s) {inconnus} : ni loi ni colonne dans le tableau — rien à tracer d'eux"
-        )
+    # nominal et ce que le modèle a rendu. Sans loi *ni* colonne *ni* relation,
+    # en revanche, il n'y a rien à en dire — et le refus le nomme.
+    verifier_coefficients(noms, jeu, liens, tableau)
+    liens = {cible: lien for cible, lien in liens.items() if cible in noms}
 
-    tires = [nom for nom in noms if nom in jeu]
+    # Les sources d'une relation sont tirées même si personne ne les trace :
+    # c'est d'elles que se déduisent les composantes de la cible.
+    tires = _sans_doublons(
+        [nom for nom in noms if nom in jeu],
+        [source for lien in liens.values() for source in lien.sources],
+    )
+    # Les nominaux des sources, de même, sont nécessaires à la dérivation des
+    # lois — mais on ne trace pas ces coefficients pour autant.
+    a_chiffrer = _sans_doublons(noms, tires)
 
     specs = _specifications(points_de_vol, tableau)
     variables = [cle for cle, spec in specs.items() if len(spec["values"]) > 1]
 
     base = Path(racine)
     if nettoyer:
-        _nettoyer(base)
+        if a_blanc:
+            imprimer_note(f"à blanc : {base} n'est pas vidée")
+        else:
+            _nettoyer(base)
 
     travaux: list[_Travail] = []
     relation = convention(convention_)
@@ -497,10 +640,13 @@ def figures_tirage_par_pdv(
         etiquette = etiquette_du_point_de_vol(point, specs)
         valeurs_nominales = _nominaux_du_point(
             lignes,
-            noms,
+            a_chiffrer,
             nominaux,
             _selectionner(reference, point) if reference is not None else None,
             point=point,
+        )
+        jeu_du_point, valeurs_nominales = _deduire(
+            jeu, liens, valeurs_nominales, relation, etiquette
         )
 
         for numero, ligne in _tirages_du_point(lignes, colonne_tirage, max_tirages):
@@ -511,8 +657,10 @@ def figures_tirage_par_pdv(
                     # Seuls les coefficients qui ont des lois ont été tirés :
                     # demander les autres au tirage le ferait échouer, alors
                     # qu'ils sont simplement ailleurs.
-                    tirage=tirage_depuis_ligne(ligne, tires, convention_=relation, numero=numero),
-                    lois=jeu,
+                    tirage=_tirage_du_point(
+                        ligne, tires, liens, valeurs_nominales, relation, numero
+                    ),
+                    lois=jeu_du_point,
                     coefficients=tuple(noms),
                     nominaux=valeurs_nominales,
                     disperses_modele={
@@ -531,17 +679,257 @@ def figures_tirage_par_pdv(
                 )
             )
 
-    rencontres = len({tuple(travail.point.items()) for travail in travaux})
-    inventaire = _repartir(travaux, n_jobs)
-
-    if rencontres == 0:
+    if not travaux:
         raise ValueError(
             "aucun point de vol demandé n'a de ligne dans le tableau ; "
             f"colonnes lues : {list(specs)} — vérifier les valeurs demandées"
         )
 
+    if verbeux:
+        _plan(
+            travaux=travaux,
+            noms=noms,
+            liens=liens,
+            specs=specs,
+            base=base,
+            formats=formats,
+            profil=profil,
+            n_jobs=n_jobs,
+            nettoyer=nettoyer,
+            a_blanc=a_blanc,
+            avec_reference=reference is not None,
+        )
+
+    if a_blanc:
+        inventaire = [ligne for travail in travaux for ligne in travail.fichiers_prevus()]
+    else:
+        inventaire = _repartir(travaux, n_jobs, verbeux=verbeux)
+
     colonnes = [*specs, "tirage", "figure", "fichier", "calcul", "modele", "ecart", "accord"]
-    return pd.DataFrame(inventaire, columns=colonnes if inventaire else None)
+    resultat = pd.DataFrame(inventaire, columns=colonnes if inventaire else None)
+
+    if rapport:
+        imprimer_bilan(
+            resultat,
+            cles_pdv=list(specs),
+            colonne_groupe="tirage",
+            titre_groupe="tirage",
+            racine=base,
+            a_blanc=a_blanc,
+            specs=specs,
+        )
+    return resultat
+
+
+# ---------------------------------------------------------------------------
+# Coefficients, relations et lois dérivées
+# ---------------------------------------------------------------------------
+
+
+def resoudre_coefficients(
+    jeu: Mapping[str, Any],
+    demandes: Sequence[str] | None,
+    en_plus: Sequence[str] | None,
+    liens: Mapping[str, Relation],
+) -> list[str]:
+    """La liste des coefficients à tracer, dans l'ordre.
+
+    Trois apports, dans cet ordre :
+
+    1. **le défaut** — tous ceux du jeu de lois, puis les cibles des relations.
+       C'est ce qu'on obtient sans rien préciser, et c'est presque toujours ce
+       qu'on veut : le parcours suit ce qui est dispersé ;
+    2. ``coefficients=`` **remplace** ce défaut, pour n'en tracer qu'une partie
+       ou en changer l'ordre ;
+    3. ``coefficients_en_plus=`` **s'y ajoute**, ce qui évite de réécrire toute
+       la liste pour une colonne de sortie de plus.
+
+    Les doublons sont écartés en gardant la première occurrence.
+    """
+    defaut = [*jeu, *(cible for cible in liens if cible not in jeu)]
+    retenus = list(demandes) if demandes is not None else defaut
+    return _sans_doublons(retenus, list(en_plus or ()))
+
+
+def verifier_coefficients(
+    noms: Sequence[str],
+    jeu: Mapping[str, Any],
+    liens: Mapping[str, Relation],
+    tableau: pd.DataFrame,
+) -> None:
+    """Refuse un coefficient dont rien ne parle, en le nommant."""
+    inconnus = sorted(
+        nom for nom in noms if nom not in jeu and nom not in liens and nom not in tableau.columns
+    )
+    if inconnus:
+        raise ValueError(
+            f"coefficient(s) {inconnus} : ni loi, ni relation, ni colonne dans le tableau — "
+            "rien à tracer d'eux"
+        )
+
+
+def _sans_doublons(*listes: Sequence[str]) -> list[str]:
+    """Les noms de plusieurs listes, dans l'ordre, sans répétition."""
+    vus: dict[str, None] = {}
+    for liste in listes:
+        for nom in liste:
+            vus.setdefault(nom, None)
+    return list(vus)
+
+
+def _deduire(
+    jeu: JeuDeLois,
+    liens: Mapping[str, Relation],
+    valeurs_nominales: dict[str, Any],
+    relation: Convention,
+    etiquette: str,
+) -> tuple[JeuDeLois, dict[str, Any]]:
+    """Les lois du point de vol, augmentées de celles que les relations déduisent.
+
+    Les poids du facteur d'échelle sont des parts des valeurs nominales : les
+    lois dérivées **changent donc d'un point de vol à l'autre**, et c'est ici
+    qu'elles sont calculées, une fois par point.
+
+    La valeur nominale de la cible en découle aussi. Quand la référence la
+    porte déjà, les deux doivent tomber sur le même nombre : sinon la relation
+    n'est pas celle que le modèle applique, et toutes les lois dérivées de ce
+    point de vol seraient fausses sans que rien ne le dise.
+    """
+    if not liens:
+        return jeu, valeurs_nominales
+
+    try:
+        augmente = _lois_avec_relations(
+            jeu, liens, nominaux=valeurs_nominales, convention_=relation
+        )
+    except ValueError as erreur:
+        raise ValueError(f"point de vol {etiquette} : {erreur}") from None
+
+    nominaux = dict(valeurs_nominales)
+    for cible, lien in liens.items():
+        if any(source not in nominaux for source in lien.sources):
+            continue
+        calcule = float(np.asarray(lien.appliquer(nominaux), dtype=float).reshape(-1)[0])
+        connu = nominaux.get(cible)
+        if connu is None:
+            nominaux[cible] = calcule
+            continue
+        echelle = abs(float(connu)) or 1.0
+        if abs(float(connu) - calcule) > TOLERANCE_ACCORD * echelle:
+            raise ValueError(
+                f"point de vol {etiquette} : la relation « {lien} » donne "
+                f"{cible} = {calcule:.6g}, là où la référence porte {float(connu):.6g}. "
+                "La relation n'est pas celle qu'applique le modèle — les lois qu'on en "
+                f"déduirait pour {cible!r} seraient fausses."
+            )
+    return augmente, nominaux
+
+
+def _tirage_du_point(
+    ligne: Mapping[str, Any],
+    tires: Sequence[str],
+    liens: Mapping[str, Relation],
+    nominaux: Mapping[str, Any],
+    relation: Convention,
+    numero: int,
+) -> Tirage:
+    """Le tirage de la ligne, augmenté des composantes que les relations déduisent.
+
+    Sans cela, une cible aurait sa loi mais aucune valeur à y situer : ses deux
+    premiers panneaux montreraient une densité sans son trait vertical, et le
+    contrôle modèle / calcul n'aurait rien à recalculer.
+    """
+    tirage = tirage_depuis_ligne(ligne, list(tires), convention_=relation, numero=numero)
+    if not liens:
+        return tirage
+
+    valeurs = dict(tirage.valeurs)
+    for cible, lien in liens.items():
+        if any(source not in valeurs for source in lien.sources):
+            continue
+        valeurs[cible] = composantes_derivees(
+            lien, valeurs, nominaux=nominaux, convention_=relation
+        )
+    return Tirage(
+        valeurs=valeurs,
+        convention=tirage.convention,
+        graine=tirage.graine,
+        methode=tirage.methode,
+        numero=tirage.numero,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Le plan
+# ---------------------------------------------------------------------------
+
+
+def _plan(
+    *,
+    travaux: Sequence[_Travail],
+    noms: Sequence[str],
+    liens: Mapping[str, Relation],
+    specs: Mapping[str, Mapping[str, Any]],
+    base: Path,
+    formats: Sequence[str],
+    profil: str,
+    n_jobs: int,
+    nettoyer: bool,
+    a_blanc: bool,
+    avec_reference: bool,
+) -> None:
+    """Imprime ce que le parcours va faire, avant qu'il le fasse."""
+    fichiers = sum(len(travail.fichiers_prevus()) for travail in travaux)
+    points = {travail.etiquette: 0 for travail in travaux}
+    figures = dict.fromkeys(points, 0)
+    for travail in travaux:
+        points[travail.etiquette] += 1
+        figures[travail.etiquette] += len(travail.fichiers_prevus())
+
+    apercu = [
+        ("Coefficients", f"{', '.join(noms)}  ({len(noms)})"),
+    ]
+    if liens:
+        apercu.append(("Relations", "  ·  ".join(str(lien) for lien in liens.values())))
+    apercu.extend(
+        [
+            ("Points de vol", f"{', '.join(specs)}  ({len(points)} retenu(s))"),
+            ("Racine", str(base)),
+            ("Formats", ", ".join(formats)),
+            ("Style", profil),
+            ("Référence", "oui" if avec_reference else "non (nominaux imposés ou absents)"),
+            ("Mode", "à blanc (rien n'est écrit)" if a_blanc else "écriture"),
+            ("Parallèle", _note_parallele(n_jobs, travaux, a_blanc)),
+            ("Nettoyage", _note_nettoyage(nettoyer, a_blanc)),
+            ("Figures", f"{len(travaux)} tirage(s)  →  {fichiers} fichier(s)"),
+        ]
+    )
+    imprimer_plan(
+        titre="Plan du parcours des tirages",
+        apercu=apercu,
+        specs=specs,
+        par_point=[(etiquette, points[etiquette], figures[etiquette]) for etiquette in points],
+        entete_par_point=("point de vol", "tirages", "fichiers"),
+    )
+
+
+def _note_nettoyage(nettoyer: bool, a_blanc: bool) -> str:
+    """Ce que le parcours fera de *nettoyer* — rien, à blanc."""
+    if not nettoyer:
+        return "non"
+    return "demandé, mais sauté (à blanc)" if a_blanc else "oui"
+
+
+def _note_parallele(n_jobs: int, travaux: Sequence[Any], a_blanc: bool) -> str:
+    """Ce que le parcours fera de *n_jobs*, contrôle de sérialisabilité compris."""
+    if a_blanc:
+        return "sans objet (rien n'est tracé)"
+    if n_jobs == 1:
+        return "séquence (n_jobs=1)"
+    motif = _pourquoi_pas_en_parallele(travaux[0]) if travaux else None
+    if motif is not None:
+        return f"demandé {n_jobs}, ramené à la séquence — {motif}"
+    return f"{_nombre_ouvriers(n_jobs)} processus"
 
 
 # ---------------------------------------------------------------------------

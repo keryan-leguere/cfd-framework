@@ -27,10 +27,15 @@ class TestChargement:
         assert all(isinstance(lois[c], LoiCoefficient) for c in lois)
 
     def test_les_six_cles_sont_lues_dans_les_bonnes_composantes(self, lois: JeuDeLois) -> None:
-        biais = lois["Cm_alpha"].biais
-        fe = lois["Cm_alpha"].fe
-        assert (biais.type_loi, biais.M, biais.ET) == (5, 0.0, 0.015)
-        assert (fe.type_loi, fe.M, fe.ET) == (6, 0.0, 0.10)
+        """Relu par ``en_table``, l'opération inverse de ``charger_lois``."""
+        assert lois["Cm_alpha"].en_table() == {
+            "Biais_Type": 5,
+            "Biais_M": 0.0,
+            "Biais_ET": 0.015,
+            "FE_Type": 6,
+            "FE_M": 0.0,
+            "FE_ET": 0.10,
+        }
 
     def test_l_ordre_de_la_table_est_conserve(self, table: dict[str, dict[str, float]]) -> None:
         """Figures et tableaux suivent l'ordre écrit, pas un tri alphabétique."""

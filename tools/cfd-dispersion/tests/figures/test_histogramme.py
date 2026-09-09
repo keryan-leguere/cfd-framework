@@ -282,7 +282,7 @@ class TestParcours:
     def test_un_coefficient_inconnu_partout_est_refuse(
         self, tableau: pd.DataFrame, tmp_path: Path
     ) -> None:
-        with pytest.raises(ValueError, match="ni loi ni colonne"):
+        with pytest.raises(ValueError, match="ni loi"):
             figures_histogramme_par_pdv(
                 tableau,
                 points_de_vol={"Mach": [0.85]},
@@ -327,3 +327,128 @@ class TestParcours:
         seul = figures_histogramme_par_pdv(tableau, racine=tmp_path / "a", **commun)
         deux = figures_histogramme_par_pdv(tableau, racine=tmp_path / "b", n_jobs=2, **commun)
         assert list(seul["figure"]) == list(deux["figure"])
+
+
+@pytest.fixture(scope="module")
+def avec_cible(tableau: pd.DataFrame) -> pd.DataFrame:
+    """Le modèle rend aussi ``CT = 2·CN``, sans loi ni colonnes de composantes."""
+    return tableau.assign(CT=2.0 * tableau["CN"])
+
+
+@pytest.fixture(scope="module")
+def reference_cible(reference: pd.DataFrame) -> pd.DataFrame:
+    return reference.assign(CT=2.0 * reference["CN"])
+
+
+class TestParcoursRelations:
+    """Une cible de relation : ses composantes sont **recomposées**."""
+
+    def test_la_cible_est_tracee(
+        self, avec_cible: pd.DataFrame, reference_cible: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_histogramme_par_pdv(
+            avec_cible,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference_cible,
+            relations={"CT": "2*CN"},
+            coefficients=["CT"],
+            matrice=False,
+            rapport=False,
+        )
+        assert list(inventaire["figure"]) == ["CT"]
+        assert (tmp_path / "CT.svg").is_file()
+
+    def test_les_composantes_de_la_cible_sont_recomposees(
+        self, avec_cible: pd.DataFrame, reference_cible: pd.DataFrame
+    ) -> None:
+        """Le modèle ne rend pas ``CT_Biais`` : il est reconstruit depuis celui
+        de CN, avec le poids de la dérivation."""
+        from cfd_dispersion.core.convention import convention
+        from cfd_dispersion.core.relation import charger_relations
+        from cfd_dispersion.core.tableau import lire_sortie_modele
+        from cfd_dispersion.figures.histogramme import _echantillons
+
+        liens = charger_relations({"CT": "2*CN"})
+        # Le tableau est mis à plat comme le fait le parcours : c'est de là que
+        # viennent les colonnes `CN_Biais` / `CN_FE`.
+        plat, _ = lire_sortie_modele(avec_cible, numero=None)
+        obtenues = _echantillons(
+            plat, ["CN", "CT"], liens, {"CN": NOMINAUX["CN"]}, convention(None)
+        )
+        assert np.allclose(obtenues["CT"]["Biais"], 2.0 * obtenues["CN"]["Biais"])
+        # Le facteur d'échelle, lui, ne suit pas le facteur 2 : il est inchangé.
+        assert np.allclose(obtenues["CT"]["FE"], obtenues["CN"]["FE"])
+
+    def test_la_loi_derivee_est_celle_des_composantes_recomposees(
+        self, avec_cible: pd.DataFrame, reference_cible: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Ce que la figure oppose : un σ prescrit qui est bien le double."""
+        from cfd_dispersion.core.lois import charger_lois
+        from cfd_dispersion.core.relation import Relation, loi_derivee
+
+        jeu = charger_lois(TABLE)
+        derivee = loi_derivee(Relation.depuis_texte("CT = 2*CN"), jeu)
+        assert derivee.biais.ET_theorique == pytest.approx(2.0 * jeu["CN"].biais.ET_theorique)
+
+
+class TestRenduTerminalHistogramme:
+    def test_a_blanc_n_ecrit_rien(
+        self, tableau: pd.DataFrame, reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_histogramme_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert not inventaire.empty
+        assert not any(Path(str(chemin)).exists() for chemin in inventaire["fichier"])
+
+    def test_a_blanc_enumere_ce_qui_serait_ecrit(
+        self, tableau: pd.DataFrame, reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        commun: dict[str, Any] = {
+            "points_de_vol": {"Mach": [0.85]},
+            "racine": tmp_path,
+            "reference": reference,
+            "rapport": False,
+        }
+        prevus = figures_histogramme_par_pdv(tableau, a_blanc=True, **commun)
+        ecrits = figures_histogramme_par_pdv(tableau, **commun)
+        assert list(prevus["fichier"]) == list(ecrits["fichier"])
+
+    def test_verbeux_imprime_le_plan(
+        self,
+        tableau: pd.DataFrame,
+        reference: pd.DataFrame,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        figures_histogramme_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference,
+            verbeux=True,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert "Plan du parcours des histogrammes" in capsys.readouterr().out
+
+    def test_coefficients_en_plus(
+        self, tableau: pd.DataFrame, reference: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_histogramme_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference,
+            coefficients_en_plus=["CA"],
+            matrice=False,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert sorted(inventaire["figure"]) == ["CA", "CN", "CX0"]

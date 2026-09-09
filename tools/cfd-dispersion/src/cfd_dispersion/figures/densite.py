@@ -23,7 +23,7 @@ import numpy as np
 import openturns as ot
 from matplotlib.axes import Axes
 
-from ..core.loi import LoiDispersion
+from ..core.loi import LoiComposante
 from ._base import legende, tracer_ligne
 from .tirage import SIGMAS_DEFAUT, tracer_loi
 
@@ -40,7 +40,7 @@ def tracer_densite_realisee(
     ax: Axes,
     echantillon: Any,
     *,
-    loi: LoiDispersion | None = None,
+    loi: LoiComposante | None = None,
     couleur: Any = "C0",
     couleur_realise: Any = "C3",
     label_prescrite: str = "prescrite",

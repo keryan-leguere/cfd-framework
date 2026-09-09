@@ -36,6 +36,7 @@ distinguent pas les deux cas.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -44,6 +45,7 @@ import openturns as ot
 
 from .alea import graine_temporaire, vers_numpy
 from .convention import Convention, ConventionArg, convention
+from .loi import LoiComposante
 from .lois import LoiCoefficient
 
 __all__ = [
@@ -52,6 +54,7 @@ __all__ = [
     "TOLERANCE_ACCORD",
     "AccordModele",
     "LoiCombinee",
+    "combinaison_lineaire",
     "comparer_au_modele",
     "decomposition_affine",
     "loi_combinee",
@@ -329,15 +332,33 @@ def _combinaison_exacte(loi: LoiCoefficient, poids: tuple[float, float, float]) 
     limite.
     """
     a, b, cst = poids
+    return combinaison_lineaire(((a, loi.biais), (b, loi.fe)), cst)
+
+
+def combinaison_lineaire(
+    composantes: Sequence[tuple[float, LoiComposante]],
+    constante: float = 0.0,
+) -> Any:
+    """``Σ facteur·loi + constante``, par OpenTURNS — ou None en cas d'échec.
+
+    Les composantes dégénérées — et celles de poids nul — sont repliées dans
+    la constante plutôt que passées comme masses de Dirac : c'est exactement la
+    même loi, sans faire reposer le calcul sur le traitement d'un cas limite.
+
+    Les lois sont supposées **indépendantes**, ce qui est l'hypothèse du jeu de
+    lois lui-même tant qu'aucune corrélation n'y est déclarée. C'est à
+    l'appelant de refuser le cas corrélé, qui ne se combine pas ainsi.
+    """
+    cst = float(constante)
     lois_continues: list[Any] = []
     facteurs: list[float] = []
 
-    for facteur, composante in ((a, loi.biais), (b, loi.fe)):
+    for facteur, composante in composantes:
         if facteur == 0.0 or composante.est_degeneree:
             cst += facteur * composante.M_theorique
         else:
             lois_continues.append(composante.distribution)
-            facteurs.append(facteur)
+            facteurs.append(float(facteur))
 
     if not lois_continues:
         return ot.Dirac(cst)

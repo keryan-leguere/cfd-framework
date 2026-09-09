@@ -32,6 +32,7 @@ les fichiers ``_01``, ``_02``… d'elle-même.
 
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +50,7 @@ from ..core.combinaison import (
     loi_combinee,
 )
 from ..core.convention import ConventionArg, convention
-from ..core.loi import LoiDispersion
+from ..core.loi import LoiComposante
 from ..core.lois import COMPOSANTES, LoiCoefficient
 from ..core.tirage import Tirage
 from ..report.theme import COULEUR_VERDICT
@@ -79,6 +80,11 @@ __all__ = [
     "tracer_loi_combinee",
     "tracer_sigmas",
 ]
+
+#: Largeur de repli du texte d'une boîte de paramètres, en caractères. La boîte
+#: partage sa largeur avec la légende du panneau : au-delà, elle passe dessous.
+LARGEUR_BOITE: int = 26
+
 
 #: Nombre de points d'échantillonnage de la densité théorique.
 _N_GRILLE = 400
@@ -130,7 +136,7 @@ class FigureTirage:
 
 def tracer_loi(
     ax: Axes,
-    loi: LoiDispersion,
+    loi: LoiComposante,
     *,
     valeur: float | None = None,
     couleur: Any = "C0",
@@ -781,9 +787,18 @@ def _point_de_reference(nominal: Any, x: Any, reference: float | None) -> tuple[
     return float(valeurs[indice]), f"à x = {abscisses[indice]:.4g}"
 
 
-def _description_loi(loi: LoiDispersion) -> str:
-    """Le contenu de la boîte de paramètres d'un panneau de loi."""
+def _description_loi(loi: LoiComposante) -> str:
+    """Le contenu de la boîte de paramètres d'un panneau de loi.
+
+    Une loi **dérivée** (:class:`cfd_dispersion.core.relation.LoiDerivee`) n'a
+    pas de type de table à annoncer : ce qui la décrit est la combinaison dont
+    elle sort, et c'est donc elle qu'on écrit — repliée, la boîte partageant sa
+    largeur avec la légende.
+    """
     lignes = [loi.label, f"M = {loi.M:g}   ET = {loi.ET:g}"]
+    expression = getattr(loi, "expression", None)
+    if expression:
+        lignes[1:1] = textwrap.wrap(str(expression), width=LARGEUR_BOITE)
     if not loi.est_degeneree:
         lignes.append(f"σ = {loi.ET_theorique:.4g}")
         bas, haut = loi.support()

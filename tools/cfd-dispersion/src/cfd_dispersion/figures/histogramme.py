@@ -55,19 +55,27 @@ from matplotlib.axes import Axes
 from ..core.combinaison import loi_combinee
 from ..core.convention import Convention, ConventionArg, convention
 from ..core.lois import COMPOSANTES, JeuDeLois, LoiCoefficient
+from ..core.relation import Relation, RelationArg, charger_relations, poids_derives
 from ..core.tableau import COLONNE_NUMERO
+from ..report.parcours import imprimer_bilan, imprimer_note, imprimer_plan
 from ._base import PROFIL_DEFAUT, boite_texte, legende, nouvelle_figure, style, surtitre, titre
 from ._base import tracer_ligne as _tracer_ligne
 from .densite import tracer_densite_realisee
 from .par_pdv import (
     NOM_MATRICE,
+    _deduire,
     _nominaux_du_point,
+    _note_nettoyage,
+    _note_parallele,
     _preparer,
     _repartir,
+    _sans_doublons,
     _selectionner,
     _specifications,
     chemin_du_point_de_vol,
     etiquette_du_point_de_vol,
+    resoudre_coefficients,
+    verifier_coefficients,
 )
 from .tirage import (
     FORMATS_DEFAUT,
@@ -444,6 +452,31 @@ class _TravailHistogramme:
     max_par_figure: int
     profil: str
 
+    def fichiers_prevus(self) -> list[dict[str, Any]]:
+        """L'inventaire que ce travail écrirait, sans rien tracer."""
+        commun: dict[str, Any] = {**self.point, "tirages": self.effectif}
+        lignes: list[dict[str, Any]] = []
+        if self.par_coefficient:
+            for nom in self.coefficients:
+                lignes.extend(
+                    {**commun, "figure": nom, "fichier": self.dossier / f"{nom}.{extension}"}
+                    for extension in self.formats
+                )
+        if self.matrice:
+            total = max(1, -(-len(self.coefficients) // self.max_par_figure))
+            for numero in range(1, total + 1):
+                racine = NOM_MATRICE if total == 1 else f"{NOM_MATRICE}_{numero:02d}"
+                lignes.extend(
+                    {**commun, "figure": NOM_MATRICE, "fichier": self.dossier / f"{racine}.{ext}"}
+                    for ext in self.formats
+                )
+        return lignes
+
+    @property
+    def description(self) -> str:
+        """Ce qu'affiche la barre de progression pendant ce travail."""
+        return f"{self.etiquette} · {self.effectif} tirages"
+
 
 def _executer_histogramme(travail: _TravailHistogramme) -> list[dict[str, Any]]:
     """Trace et écrit les histogrammes d'un point de vol ; rend leur inventaire.
@@ -510,6 +543,8 @@ def figures_histogramme_par_pdv(
     lois: JeuDeLois | None = None,
     reference: pd.DataFrame | None = None,
     coefficients: Sequence[str] | None = None,
+    coefficients_en_plus: Sequence[str] | None = None,
+    relations: RelationArg = None,
     nominaux: Mapping[str, Any] | None = None,
     colonne_tirage: str = COLONNE_NUMERO,
     formats: Sequence[str] = FORMATS_DEFAUT,
@@ -521,6 +556,9 @@ def figures_histogramme_par_pdv(
     nettoyer: bool = False,
     n_jobs: int = 1,
     profil: str = PROFIL_DEFAUT,
+    verbeux: bool = False,
+    rapport: bool = True,
+    a_blanc: bool = False,
 ) -> pd.DataFrame:
     """Écrit un histogramme par (point de vol × coefficient), sur **tous** les tirages.
 
@@ -538,11 +576,20 @@ def figures_histogramme_par_pdv(
         Le dossier de sortie.
     lois, reference, nominaux, colonne_tirage, nettoyer, n_jobs:
         Comme pour le parcours des tirages.
-    coefficients:
-        Les coefficients à tracer. Par défaut ceux du jeu de lois ; un nom
+    coefficients, coefficients_en_plus, relations:
+        Comme pour le parcours des tirages, et pour les mêmes raisons. Un nom
         absent des lois est **admis** s'il est une colonne du tableau — son
         histogramme reste traçable, ce que la figure de tirage ne pouvait pas
         faire.
+
+        Une cible de *relations* va plus loin ici : ses deux composantes, que le
+        modèle ne rend pas, sont **recomposées** depuis celles de ses sources
+        avec les poids de la dérivation. Ses trois panneaux confrontent donc
+        pour de bon la loi dérivée à ce qui a été réalisé.
+    verbeux, rapport, a_blanc:
+        Le rendu terminal, comme pour le parcours des tirages : le plan et la
+        barre de progression, le bilan des fichiers, et l'énumération sans
+        écriture.
 
     Returns
     -------
@@ -562,22 +609,25 @@ def figures_histogramme_par_pdv(
         raise ValueError("points_de_vol est vide : aucun point de vol à parcourir")
 
     tableau, jeu = _preparer(df, lois, colonne_tirage)
-    noms = list(coefficients) if coefficients is not None else list(jeu)
-    inconnus = [nom for nom in noms if nom not in jeu and nom not in tableau.columns]
-    if inconnus:
-        raise ValueError(
-            f"coefficient(s) {sorted(inconnus)} : ni loi ni colonne dans le tableau — "
-            "rien à tracer d'eux"
-        )
+    liens = charger_relations(relations)
+    noms = resoudre_coefficients(jeu, coefficients, coefficients_en_plus, liens)
+    verifier_coefficients(noms, jeu, liens, tableau)
+    liens = {cible: lien for cible, lien in liens.items() if cible in noms}
+    a_chiffrer = _sans_doublons(
+        noms, [source for lien in liens.values() for source in lien.sources]
+    )
 
     specs = _specifications(points_de_vol, tableau)
     variables = [cle for cle, spec in specs.items() if len(spec["values"]) > 1]
 
     base = Path(racine)
     if nettoyer:
-        from .par_pdv import _nettoyer
+        if a_blanc:
+            imprimer_note(f"à blanc : {base} n'est pas vidée")
+        else:
+            from .par_pdv import _nettoyer
 
-        _nettoyer(base)
+            _nettoyer(base)
 
     relation = convention(convention_)
     travaux: list[_TravailHistogramme] = []
@@ -590,22 +640,28 @@ def figures_histogramme_par_pdv(
 
         _verifier_une_ligne_par_tirage(lignes, colonne_tirage, point, specs)
 
+        etiquette = etiquette_du_point_de_vol(point, specs)
+        valeurs_nominales = _nominaux_du_point(
+            lignes,
+            a_chiffrer,
+            nominaux,
+            _selectionner(reference, point) if reference is not None else None,
+            point=point,
+        )
+        jeu_du_point, valeurs_nominales = _deduire(
+            jeu, liens, valeurs_nominales, relation, etiquette
+        )
+
         travaux.append(
             _TravailHistogramme(
                 point=point,
-                lois=jeu,
+                lois=jeu_du_point,
                 coefficients=tuple(noms),
-                obtenues=_echantillons(lignes, noms),
-                nominaux=_nominaux_du_point(
-                    lignes,
-                    noms,
-                    nominaux,
-                    _selectionner(reference, point) if reference is not None else None,
-                    point=point,
-                ),
+                obtenues=_echantillons(lignes, a_chiffrer, liens, valeurs_nominales, relation),
+                nominaux=valeurs_nominales,
                 effectif=len(lignes),
                 dossier=chemin_du_point_de_vol(base, point, specs, variables),
-                etiquette=etiquette_du_point_de_vol(point, specs),
+                etiquette=etiquette,
                 formats=tuple(formats),
                 par_coefficient=par_coefficient,
                 matrice=matrice,
@@ -622,9 +678,83 @@ def figures_histogramme_par_pdv(
             f"colonnes lues : {list(specs)} — vérifier les valeurs demandées"
         )
 
-    inventaire = _repartir(travaux, n_jobs, _executer_histogramme)
+    if verbeux:
+        _plan_histogrammes(
+            travaux=travaux,
+            noms=noms,
+            liens=liens,
+            specs=specs,
+            base=base,
+            formats=formats,
+            profil=profil,
+            n_jobs=n_jobs,
+            nettoyer=nettoyer,
+            a_blanc=a_blanc,
+            avec_reference=reference is not None,
+        )
+
+    if a_blanc:
+        inventaire = [ligne for travail in travaux for ligne in travail.fichiers_prevus()]
+    else:
+        inventaire = _repartir(travaux, n_jobs, _executer_histogramme, verbeux=verbeux)
+
     colonnes = [*specs, "tirages", "figure", "fichier"]
-    return pd.DataFrame(inventaire, columns=colonnes if inventaire else None)
+    resultat = pd.DataFrame(inventaire, columns=colonnes if inventaire else None)
+
+    if rapport:
+        imprimer_bilan(
+            resultat,
+            cles_pdv=list(specs),
+            colonne_groupe=None,
+            racine=base,
+            a_blanc=a_blanc,
+            specs=specs,
+        )
+    return resultat
+
+
+def _plan_histogrammes(
+    *,
+    travaux: Sequence[_TravailHistogramme],
+    noms: Sequence[str],
+    liens: Mapping[str, Relation],
+    specs: Mapping[str, Mapping[str, Any]],
+    base: Path,
+    formats: Sequence[str],
+    profil: str,
+    n_jobs: int,
+    nettoyer: bool,
+    a_blanc: bool,
+    avec_reference: bool,
+) -> None:
+    """Imprime ce que le parcours des histogrammes va faire."""
+    fichiers = sum(len(travail.fichiers_prevus()) for travail in travaux)
+    apercu = [("Coefficients", f"{', '.join(noms)}  ({len(noms)})")]
+    if liens:
+        apercu.append(("Relations", "  ·  ".join(str(lien) for lien in liens.values())))
+    apercu.extend(
+        [
+            ("Points de vol", f"{', '.join(specs)}  ({len(travaux)} retenu(s))"),
+            ("Racine", str(base)),
+            ("Formats", ", ".join(formats)),
+            ("Style", profil),
+            ("Référence", "oui" if avec_reference else "non (nominaux imposés ou absents)"),
+            ("Mode", "à blanc (rien n'est écrit)" if a_blanc else "écriture"),
+            ("Parallèle", _note_parallele(n_jobs, travaux, a_blanc)),
+            ("Nettoyage", _note_nettoyage(nettoyer, a_blanc)),
+            ("Figures", f"{len(travaux)} point(s) de vol  →  {fichiers} fichier(s)"),
+        ]
+    )
+    imprimer_plan(
+        titre="Plan du parcours des histogrammes",
+        apercu=apercu,
+        specs=specs,
+        par_point=[
+            (travail.etiquette, travail.effectif, len(travail.fichiers_prevus()))
+            for travail in travaux
+        ],
+        entete_par_point=("point de vol", "tirages", "fichiers"),
+    )
 
 
 def _produit(specs: Mapping[str, Mapping[str, Any]]) -> Any:
@@ -634,13 +764,24 @@ def _produit(specs: Mapping[str, Mapping[str, Any]]) -> Any:
     return product(*(specs[cle]["values"] for cle in specs))
 
 
-def _echantillons(lignes: pd.DataFrame, coefficients: Sequence[str]) -> dict[str, dict[str, Any]]:
+def _echantillons(
+    lignes: pd.DataFrame,
+    coefficients: Sequence[str],
+    liens: Mapping[str, Relation] | None = None,
+    nominaux: Mapping[str, Any] | None = None,
+    relation: Convention | None = None,
+) -> dict[str, dict[str, Any]]:
     """Ce qui a été obtenu, coefficient par coefficient.
 
     Trois tableaux par coefficient — le biais, le facteur d'échelle et le
     coefficient lui-même — et les clés simplement absentes quand la colonne
     n'existe pas. C'est ce qui permet aux figures de traiter séparément « pas
     de loi » et « pas de sortie ».
+
+    Les cibles de *liens* n'ont pas de colonnes de composantes : le modèle rend
+    ``CA``, pas ``CA_Biais``. Elles sont donc **recomposées** depuis celles de
+    leurs sources, avec les poids de la dérivation — ce qui donne à leurs deux
+    premiers panneaux un histogramme à opposer à la loi dérivée.
     """
     obtenues: dict[str, dict[str, Any]] = {}
     for nom in coefficients:
@@ -652,6 +793,24 @@ def _echantillons(lignes: pd.DataFrame, coefficients: Sequence[str]) -> dict[str
         if nom in lignes.columns:
             echantillons["valeurs"] = lignes[nom].to_numpy(dtype=float)
         obtenues[nom] = echantillons
+
+    for cible, lien in (liens or {}).items():
+        if any(
+            composante not in obtenues.get(source, {})
+            for source in lien.sources
+            for composante in COMPOSANTES
+        ):
+            continue
+        poids_biais, poids_fe, decalage = poids_derives(
+            lien, nominaux=nominaux, convention_=relation
+        )
+        obtenues.setdefault(cible, {})
+        obtenues[cible][COMPOSANTES[0]] = sum(
+            poids_biais[source] * obtenues[source][COMPOSANTES[0]] for source in lien.sources
+        )
+        obtenues[cible][COMPOSANTES[1]] = decalage + sum(
+            poids_fe[source] * obtenues[source][COMPOSANTES[1]] for source in lien.sources
+        )
     return obtenues
 
 

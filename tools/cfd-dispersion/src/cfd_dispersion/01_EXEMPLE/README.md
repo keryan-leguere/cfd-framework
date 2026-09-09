@@ -1,11 +1,11 @@
 # Exemple cfd-dispersion — prêt à tourner
 
 Tout est là : une table de lois, un modèle jouet, un exemple de tableau de
-sortie, et neuf scripts qui
+sortie, et dix scripts qui
 parcourent l'ensemble des fonctions du paquet.
 
 ```bash
-bash RUN_EXEMPLE.sh          # les neuf, dans l'ordre — sorties dans SORTIE/
+bash RUN_EXEMPLE.sh          # les dix, dans l'ordre — sorties dans SORTIE/
 ```
 
 Ou, pour en copier un ailleurs et le triturer :
@@ -38,6 +38,8 @@ python 02_monte_carlo.py --sortie /tmp/mc -n 2000 --tout-tracer
 | `07_histogrammes_par_pdv.py` | le même parcours, mais **tous les tirages d'un coup** : une figure d'histogrammes par (PDV × coefficient) |
 | `08_polaire_depuis_tableau.py` | une **polaire dispersée** posée sur votre figure, à partir du tableau à plat |
 | `09_batch_plot_dispersion.py` | le **lot entier de `batch_plot`** dispersé par un hook : le nominal dans la config, le dispersé dans `on_before_save` |
+| `sortie_modele_relations.py` | **un modèle dont les sorties ne sont pas ce qu'il disperse** : lois sur `CZ`, `CX1`, `CX2` ; colonnes `CN`, `CA` |
+| `10_relations.py` | les **lois dérivées** : `CN = -CZ`, `CA = CX1 + CX2` — et le rendu terminal des parcours (`verbeux`, `rapport`, `a_blanc`) |
 
 ---
 
@@ -284,6 +286,59 @@ Trois points de vol × trois coefficients = neuf figures par lot, et le script e
 * dans la sortie terminal, le refus d'un tableau dispersé **amputé** d'un point
   de vol — l'alternative étant un lot entier de figures nues, qui se lisent
   comme un modèle sans dispersion.
+
+---
+
+### `10_relations.py` — les lois d'un coefficient qu'on ne disperse pas
+
+La table de lois porte sur ce que le modèle **consomme**, le tableau de sortie
+sur ce qu'il **produit**, et les deux ne parlent pas toujours des mêmes
+coefficients. Ici (`sortie_modele_relations.py`) :
+
+```
+lois       CZ                  CX1, CX2            Cm_alpha
+sorties    CN = -CZ            CA = CX1 + CX2      Cm_alpha
+```
+
+Sans rien de plus, `CN` et `CA` sont des colonnes sans loi : leur histogramme se
+trace, mais rien ne dit ce qu'il aurait dû être. Une ligne suffit à le combler :
+
+```python
+figures_tirage_par_pdv(df, ..., relations={"CN": "-CZ", "CA": "CX1 + CX2"})
+```
+
+Le paquet en **dérive les deux lois** de chaque cible, puis les traite comme si
+elles avaient été déclarées : deux panneaux de composantes, la loi combinée, et
+le contrôle modèle / calcul — lequel porte du coup sur la **relation elle-même**.
+
+Les deux relations ne se dérivent pas de la même façon, et c'est ce que le
+script montre :
+
+* **`CN = -CZ`** — un terme, pas de constante. Le biais suit le facteur, le
+  facteur d'échelle est inchangé, et la loi **reste dans sa famille** : une
+  gaussienne ±3σ reste une gaussienne ±3σ, avec le même `ET`. Aucune valeur
+  nominale n'entre en jeu ;
+* **`CA = CX1 + CX2`** — deux termes. Le facteur d'échelle de `CA` est une
+  moyenne **pondérée** de ceux de `CX1` et `CX2`, au prorata de ce que chacun
+  pèse : les nominaux sont nécessaires, et la loi **change d'un point de vol à
+  l'autre** (61 % / 39 % en transsonique, où la traînée d'onde gonfle `CX2`).
+  Elle n'appartient plus à aucune des six familles — regarder le panneau
+  `CA — Biais` de `HISTO/M_0.92/…/CA.svg` : la somme d'une uniforme et d'une
+  gaussienne tronquée, un plateau à épaules.
+
+Le script montre aussi :
+
+* **`coefficients_en_plus=`** — la réponse à « le défaut me va, comment j'en
+  ajoute un ? ». `coefficients=` *remplace* la liste par défaut ;
+  `coefficients_en_plus=` s'y *ajoute*. Ici `CY`, que le modèle rend sans le
+  disperser ;
+* **le rendu terminal des parcours** — `verbeux=True` imprime le plan puis une
+  barre de progression, `rapport=True` (le défaut) le bilan des fichiers,
+  `a_blanc=True` énumère sans rien écrire. Ce sont les `verbose` / `report` /
+  `dry_run` de `batch_plot`, aux mêmes places ;
+* **les trois refus** : une combinaison sans les nominaux de ses sources, une
+  relation qui n'est pas celle du modèle (confrontée à la référence, point de
+  vol par point de vol), et une relation non linéaire.
 
 ---
 

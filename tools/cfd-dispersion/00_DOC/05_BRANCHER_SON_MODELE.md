@@ -315,6 +315,57 @@ ValueError: colonne(s) absente(s) du tableau : ['CN_FE'] ;
             il porte ['CN', 'CN_Biais', 'Mach', 'Altitude_m', 'tirage']
 ```
 
+### Quand les sorties ne sont pas les coefficients dispersés
+
+Le cas précédent est un simple renommage. Celui-ci est plus fréquent, et plus
+profond : les lois portent sur les grandeurs du **repère de soufflerie** ou sur
+des **contributions**, et les sorties sur autre chose.
+
+```
+lois       CZ                  CX1, CX2
+sorties    CN = -CZ            CA = CX1 + CX2
+```
+
+Là non plus, ne renommez rien : **donnez la relation**.
+
+```python
+figures_tirage_par_pdv(df, ..., relations={"CN": "-CZ", "CA": "CX1 + CX2"})
+```
+
+`CN` et `CA` reçoivent alors leurs deux lois, dérivées de celles de leurs
+sources, et leurs valeurs tirées, dérivées du tirage de la ligne. Ils sont
+tracés comme des coefficients déclarés — et l'accord modèle / calcul porte du
+coup sur la **relation elle-même** : le biais et le facteur d'échelle viennent
+de la dérivation, la valeur vient du modèle, et les deux ne tombent sur le même
+nombre que si le modèle applique bien la relation qu'on lui prête.
+
+Ce qui compte pour brancher **votre** modèle :
+
+* la syntaxe est linéaire, et rien de plus — sommes, différences, facteurs
+  numériques, constante. `CX1 * CX2` est refusé, parce qu'une loi dérivée n'y
+  aurait plus de sens ;
+* une relation à **un seul terme** (`CN = -CZ`) se dérive sans rien connaître
+  des valeurs nominales ;
+* une relation à **plusieurs termes** (`CA = CX1 + CX2`) partage le facteur
+  d'échelle au **prorata** de ce que chaque contribution pèse. Elle a donc
+  besoin des nominaux de ses sources, et **votre modèle doit publier ses
+  grandeurs intermédiaires** — au moins dans le tableau de référence, celui du
+  tirage neutre. `01_EXEMPLE/sortie_modele_relations.py` montre exactement
+  cela ;
+* si les nominaux ne dépendent pas du point de vol, `nominaux={"CX1": 0.022,
+  "CX2": 0.009}` suffit.
+
+![Loi dérivée](FIGURES/12_loi_derivee.png)
+
+Les deux moitiés de la figure disent le fond de l'affaire. Le **biais** d'une
+somme est une somme de biais : il disperse **plus** que chacune de ses sources,
+et sa loi — une uniforme plus une gaussienne tronquée — n'est aucune des six
+familles. Le **facteur d'échelle**, lui, est une moyenne pondérée : il disperse
+**moins** que chacune de ses sources. Écrire à la main une loi « raisonnable »
+pour `CA` se tromperait donc de sens dans un cas sur deux.
+
+`01_EXEMPLE/10_relations.py` fait le tour du sujet, refus compris.
+
 ---
 
 ## 5.5 Un exemple de sortie, écrit en dur
@@ -798,3 +849,6 @@ bande.
 | les figures `batch_plot` | les quatre dictionnaires de §5.9 |
 | les figures de tirage par point de vol | `figures_tirage_par_pdv(df, points_de_vol={…}, racine=…)` — §5.6 |
 | les histogrammes par point de vol | `figures_histogramme_par_pdv(df, points_de_vol={…}, racine=…)` — §5.6 |
+| une sortie déduite de ce qu'on tire | `relations={"CN": "-CZ", "CA": "CX1 + CX2"}` — §5.4 |
+| un coefficient tracé **en plus** du défaut | `coefficients_en_plus=["CY"]` — `coefficients=` remplace, celui-ci ajoute |
+| le rendu terminal d'un parcours | `verbeux=` / `rapport=` / `a_blanc=`, les `verbose` / `report` / `dry_run` de `batch_plot` |

@@ -412,7 +412,7 @@ class TestLoisEtSortiesDecalees:
 
     def test_un_coefficient_inconnu_partout_est_refuse(self, decale: pd.DataFrame) -> None:
         """Ni loi ni colonne : il n'y a rien à en dire, et le refus le nomme."""
-        with pytest.raises(ValueError, match="ni loi ni colonne"):
+        with pytest.raises(ValueError, match="ni loi"):
             figures_tirage_par_pdv(
                 decale,
                 points_de_vol={"Mach": [0.85]},
@@ -519,7 +519,7 @@ class TestRefus:
             figures_tirage_par_pdv(tableau, points_de_vol={"Mach": [0.95]}, racine="/tmp/x")
 
     def test_un_coefficient_inconnu_est_refuse(self, tableau: pd.DataFrame) -> None:
-        with pytest.raises(ValueError, match="ni loi ni colonne"):
+        with pytest.raises(ValueError, match="ni loi"):
             figures_tirage_par_pdv(
                 tableau,
                 points_de_vol={"Mach": [0.85]},
@@ -702,3 +702,339 @@ class TestNettoyage:
             **LEGER,
         )
         assert not vieille.exists()
+
+
+# ---------------------------------------------------------------------------
+# La liste des coefficients
+# ---------------------------------------------------------------------------
+
+
+class TestCoefficientsEnPlus:
+    """``coefficients=`` remplace la liste par défaut ; ``en_plus`` s'y ajoute."""
+
+    def test_par_defaut_ce_sont_les_lois(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert sorted(set(inventaire["figure"])) == ["CA", "CN"]
+
+    def test_coefficients_remplace(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            coefficients=["CN"],
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert sorted(set(inventaire["figure"])) == ["CN"]
+
+    def test_en_plus_s_ajoute_au_defaut(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
+        """Le cas d'usage : une colonne de sortie de plus, sans réécrire la liste."""
+        avec_colonne = tableau.assign(CY=0.004)
+        inventaire = figures_tirage_par_pdv(
+            avec_colonne,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            coefficients_en_plus=["CY"],
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert sorted(set(inventaire["figure"])) == ["CA", "CN", "CY"]
+
+    def test_en_plus_s_ajoute_aussi_a_une_liste_donnee(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            coefficients=["CN"],
+            coefficients_en_plus=["CA"],
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert list(inventaire["figure"]) == ["CN", "CA"]
+
+    def test_un_doublon_ne_double_pas_la_figure(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            coefficients_en_plus=["CN"],
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert list(inventaire["figure"]) == ["CN", "CA"]
+
+
+# ---------------------------------------------------------------------------
+# Les relations
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def tableau_relations(lois_deux: JeuDeLois) -> pd.DataFrame:
+    """Un modèle qui rend ``CT = CN + CA``, sans loi ni colonne de composantes."""
+    return _avec_cible(_tableau_module(lois_deux))
+
+
+@pytest.fixture(scope="module")
+def reference_relations(lois_deux: JeuDeLois) -> pd.DataFrame:
+    return _avec_cible(_reference_module(lois_deux))
+
+
+def _tableau_module(lois_deux: JeuDeLois) -> pd.DataFrame:
+    lot = tirer_lot(lois_deux, 2, graine=42)
+    return pd.DataFrame(
+        [
+            {
+                "Mach": mach,
+                **{coeff: float(v) for coeff, v in tirage.appliquer(nominaux).items()},
+                "DICT_LAW_DISPERSION": TABLE,
+                "DICT_TIRAGE": tirage.vers_dict(),
+                "tirage": tirage.numero,
+            }
+            for mach, nominaux in NOMINAUX.items()
+            for tirage in lot
+        ]
+    )
+
+
+def _reference_module(lois_deux: JeuDeLois) -> pd.DataFrame:
+    neutre = tirage_neutre(lois_deux)
+    return pd.DataFrame(
+        [
+            {
+                "Mach": mach,
+                **{coeff: float(v) for coeff, v in neutre.appliquer(nominaux).items()},
+                "DICT_LAW_DISPERSION": TABLE,
+                "DICT_TIRAGE": neutre.vers_dict(),
+                "tirage": 0,
+            }
+            for mach, nominaux in NOMINAUX.items()
+        ]
+    )
+
+
+def _avec_cible(table: pd.DataFrame) -> pd.DataFrame:
+    return table.assign(CT=table["CN"] + table["CA"])
+
+
+class TestRelations:
+    def test_la_cible_rejoint_la_liste_par_defaut(
+        self, tableau_relations: pd.DataFrame, reference_relations: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau_relations,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference_relations,
+            relations={"CT": "CN + CA"},
+            matrice=False,
+            max_tirages=1,
+            a_blanc=True,
+            rapport=False,
+        )
+        assert sorted(set(inventaire["figure"])) == ["CA", "CN", "CT"]
+
+    def test_la_cible_est_tracee_et_confrontee_au_modele(
+        self, tableau_relations: pd.DataFrame, reference_relations: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Le contrôle porte alors sur la RELATION : les composantes viennent
+        de la dérivation, la valeur vient du modèle."""
+        inventaire = figures_tirage_par_pdv(
+            tableau_relations,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference_relations,
+            relations={"CT": "CN + CA"},
+            coefficients=["CT"],
+            matrice=False,
+            max_tirages=1,
+            rapport=False,
+        )
+        ligne = inventaire.iloc[0]
+        assert ligne["figure"] == "CT"
+        assert bool(ligne["accord"]) is True
+        assert Path(str(ligne["fichier"])).exists()
+
+    def test_une_relation_fausse_est_refusee(
+        self, tableau_relations: pd.DataFrame, reference_relations: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """La référence porte CT ; une relation qui en donne une autre valeur
+        rendrait toutes les lois dérivées fausses sans que rien ne le dise."""
+        with pytest.raises(ValueError, match="n'est pas celle qu'applique le modèle"):
+            figures_tirage_par_pdv(
+                tableau_relations,
+                points_de_vol={"Mach": [0.85]},
+                racine=tmp_path,
+                reference=reference_relations,
+                relations={"CT": "CN - CA"},
+                coefficients=["CT"],
+                matrice=False,
+                max_tirages=1,
+                rapport=False,
+            )
+
+    def test_le_point_de_vol_est_nomme_dans_le_refus(
+        self, tableau_relations: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Sans référence, les nominaux des sources manquent — et on le dit."""
+        with pytest.raises(ValueError, match=r"Mach = 0\.85"):
+            figures_tirage_par_pdv(
+                tableau_relations,
+                points_de_vol={"Mach": [0.85]},
+                racine=tmp_path,
+                relations={"CT": "CN + CA"},
+                coefficients=["CT"],
+                matrice=False,
+                max_tirages=1,
+                rapport=False,
+            )
+
+    def test_une_cible_absente_du_tableau_reste_tracable(
+        self, tableau_relations: pd.DataFrame, reference_relations: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """Une cible que le modèle ne rend pas garde ses deux premiers panneaux."""
+        inventaire = figures_tirage_par_pdv(
+            tableau_relations,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference_relations,
+            relations={"CU": "2*CN"},
+            coefficients=["CU"],
+            matrice=False,
+            max_tirages=1,
+            rapport=False,
+        )
+        assert list(inventaire["figure"]) == ["CU"]
+        assert pd.isna(inventaire.iloc[0]["accord"])
+
+
+# ---------------------------------------------------------------------------
+# Le rendu terminal
+# ---------------------------------------------------------------------------
+
+
+class TestRenduTerminal:
+    """Les trois arguments repris de ``batch_plot`` : verbose/report/dry_run."""
+
+    def test_a_blanc_n_ecrit_rien(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
+        inventaire = figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            a_blanc=True,
+            rapport=False,
+            **LEGER,
+        )
+        assert not inventaire.empty
+        assert not any(Path(str(chemin)).exists() for chemin in inventaire["fichier"])
+
+    def test_a_blanc_enumere_ce_qui_serait_ecrit(
+        self, tableau: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """L'énumération et l'exécution doivent composer les mêmes noms."""
+        commun: dict[str, Any] = {
+            "points_de_vol": {"Mach": [0.85]},
+            "racine": tmp_path,
+            "max_tirages": 1,
+            "rapport": False,
+        }
+        prevus = figures_tirage_par_pdv(tableau, a_blanc=True, **commun)
+        ecrits = figures_tirage_par_pdv(tableau, **commun)
+        assert list(prevus["fichier"]) == list(ecrits["fichier"])
+
+    def test_a_blanc_ne_nettoie_pas(self, tableau: pd.DataFrame, tmp_path: Path) -> None:
+        vieille = tmp_path / "MACH_0.85" / "vieille.svg"
+        vieille.parent.mkdir(parents=True)
+        vieille.write_text("<svg/>")
+        figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            nettoyer=True,
+            a_blanc=True,
+            rapport=False,
+            **LEGER,
+        )
+        assert vieille.exists()
+
+    def test_verbeux_imprime_le_plan(
+        self, tableau: pd.DataFrame, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            verbeux=True,
+            a_blanc=True,
+            rapport=False,
+            **LEGER,
+        )
+        sortie = capsys.readouterr().out
+        assert "Plan du parcours" in sortie
+        assert "Coefficients" in sortie
+
+    def test_le_plan_nomme_les_relations(
+        self,
+        tableau_relations: pd.DataFrame,
+        reference_relations: pd.DataFrame,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        figures_tirage_par_pdv(
+            tableau_relations,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            reference=reference_relations,
+            relations={"CT": "CN + CA"},
+            verbeux=True,
+            a_blanc=True,
+            rapport=False,
+            **LEGER,
+        )
+        assert "CT = CN + CA" in capsys.readouterr().out
+
+    def test_le_rapport_liste_les_fichiers(
+        self, tableau: pd.DataFrame, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            rapport=True,
+            **LEGER,
+        )
+        sortie = capsys.readouterr().out
+        assert "matrice" in sortie
+        assert "ko" in sortie
+
+    def test_le_rapport_se_tait_quand_on_le_lui_demande(
+        self, tableau: pd.DataFrame, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        figures_tirage_par_pdv(
+            tableau,
+            points_de_vol={"Mach": [0.85]},
+            racine=tmp_path,
+            rapport=False,
+            **LEGER,
+        )
+        assert capsys.readouterr().out == ""

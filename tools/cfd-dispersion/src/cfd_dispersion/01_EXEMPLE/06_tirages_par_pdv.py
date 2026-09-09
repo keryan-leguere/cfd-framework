@@ -264,6 +264,12 @@ def main() -> int:
         max_tirages=args.max_tirages,
         nettoyer=True,
         n_jobs=args.jobs,
+        # `verbeux` / `rapport` / `a_blanc` sont les `verbose` / `report` /
+        # `dry_run` de `cfd_plot.batch_plot`. Le plan et la barre de
+        # progression valent la peine ; le bilan, lui, ferait ici 240 lignes et
+        # noierait le reste du script — d'où `rapport=False`.
+        verbeux=True,
+        rapport=False,
     )
     duree = time.time() - depart
 
@@ -391,6 +397,7 @@ def main() -> int:
         max_tirages=1,
         nettoyer=True,
         n_jobs=1,
+        rapport=False,
     )
 
     # `fillna("—")` remplace les cases vides par un tiret, pour la lecture.
@@ -412,6 +419,7 @@ def main() -> int:
             points_de_vol={"Mach": [0.85]},
             racine=args.sortie / "ASYMETRIQUE",
             coefficients=["CL"],
+            rapport=False,
         )
     except ValueError as erreur:
         console.print(f"  demander CL, qu'on ne connaît pas : [red]{erreur}[/]")

@@ -41,7 +41,7 @@ from typing import Any, Union
 
 import openturns as ot
 
-from .loi import LoiDispersion
+from .loi import LoiComposante, LoiDispersion
 
 __all__ = [
     "CLES_ATTENDUES",
@@ -73,10 +73,10 @@ class LoiCoefficient:
     """Les deux lois d'un coefficient : son biais et son facteur d'échelle."""
 
     nom: str
-    biais: LoiDispersion
-    fe: LoiDispersion
+    biais: LoiComposante
+    fe: LoiComposante
 
-    def composante(self, nom: str) -> LoiDispersion:
+    def composante(self, nom: str) -> LoiComposante:
         """Retourne la loi d'une composante, par son nom (``"Biais"``/``"FE"``)."""
         if nom == "Biais":
             return self.biais
@@ -84,10 +84,39 @@ class LoiCoefficient:
             return self.fe
         raise ValueError(f"composante inconnue : {nom!r} ; attendu l'une de {list(COMPOSANTES)}")
 
-    def __iter__(self) -> Iterator[tuple[str, LoiDispersion]]:
+    def __iter__(self) -> Iterator[tuple[str, LoiComposante]]:
         """Itère ``("Biais", loi)`` puis ``("FE", loi)``."""
         yield "Biais", self.biais
         yield "FE", self.fe
+
+    def en_table(self) -> dict[str, Any]:
+        """Les six clés de la table de lois, telles qu'elles s'y écrivent.
+
+        L'opération inverse de :func:`charger_lois`, pour une ligne. Elle sert
+        à faire voyager les lois — dans un ``DICT_LAW_DISPERSION`` porté par un
+        tableau de sortie, dans un YAML, dans un CSV.
+
+        Raises
+        ------
+        TypeError
+            Si l'une des composantes est **dérivée** (voir
+            :class:`cfd_dispersion.core.relation.LoiDerivee`) : une combinaison
+            de lois n'appartient à aucune des six familles, donc aucun triplet
+            ``(type, M, ET)`` ne la décrit. C'est la relation qu'il faut faire
+            voyager, pas la loi qu'elle produit.
+        """
+        table: dict[str, Any] = {}
+        for prefixe, loi in self:
+            if not isinstance(loi, LoiDispersion):
+                raise TypeError(
+                    f"{self.nom}_{prefixe} est une loi {loi.label} : elle n'a pas de type de "
+                    "table, et ne se réécrit donc pas en (Type, M, ET). Faire voyager la "
+                    "relation qui la produit."
+                )
+            table[f"{prefixe}_Type"] = loi.type_loi
+            table[f"{prefixe}_M"] = loi.M
+            table[f"{prefixe}_ET"] = loi.ET
+        return table
 
     @property
     def resume(self) -> str:
@@ -146,7 +175,7 @@ class JeuDeLois(Mapping[str, LoiCoefficient]):
         """Les noms de colonnes d'un lot tiré : ``("<coeff>_Biais", "<coeff>_FE", …)``."""
         return tuple(f"{coeff}_{composante}" for coeff in self._lois for composante in COMPOSANTES)
 
-    def composantes(self) -> tuple[tuple[str, str, LoiDispersion], ...]:
+    def composantes(self) -> tuple[tuple[str, str, LoiComposante], ...]:
         """Aplatit le jeu en ``(coefficient, composante, loi)``, dans l'ordre."""
         return tuple(
             (coeff, nom, loi) for coeff, loi_coeff in self._lois.items() for nom, loi in loi_coeff

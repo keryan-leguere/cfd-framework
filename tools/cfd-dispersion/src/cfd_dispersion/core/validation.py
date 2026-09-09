@@ -69,7 +69,7 @@ import numpy as np
 import openturns as ot
 import pandas as pd
 
-from .loi import LoiDispersion
+from .loi import LoiComposante
 from .lois import COMPOSANTES, JeuDeLois
 from .tableau import COLONNE_NUMERO
 
@@ -206,7 +206,7 @@ REDONDANCE_MAX = 0.20
 
 def valider(
     echantillon: object,
-    loi: LoiDispersion,
+    loi: LoiComposante,
     *,
     coefficient: str = "",
     composante: str = "",
@@ -362,7 +362,7 @@ def verifier_redondance(
     )
 
 
-def _kolmogorov(valeurs: np.ndarray, loi: LoiDispersion) -> tuple[float, float]:
+def _kolmogorov(valeurs: np.ndarray, loi: LoiComposante) -> tuple[float, float]:
     """Statistique et p-valeur de Kolmogorov–Smirnov contre la loi exacte."""
     echantillon = ot.Sample(valeurs.reshape(-1, 1))
     resultat = ot.FittingTest.Kolmogorov(echantillon, loi.distribution)

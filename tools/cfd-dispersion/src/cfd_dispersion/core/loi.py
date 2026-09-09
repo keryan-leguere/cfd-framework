@@ -48,7 +48,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Union
+from typing import Protocol, Union, runtime_checkable
 
 import numpy as np
 import openturns as ot
@@ -58,6 +58,7 @@ from .alea import graine_temporaire, vers_numpy
 __all__ = [
     "LIBELLES_TYPE",
     "TYPES_VALIDES",
+    "LoiComposante",
     "LoiDispersion",
     "libelle_type",
 ]
@@ -128,6 +129,79 @@ def _construire(type_loi: int, M: float, ET: float) -> ot.Distribution:
 
     k = _TRONCATURE[type_loi]
     return ot.TruncatedNormal(M, sigma, M - k * sigma, M + k * sigma)
+
+
+@runtime_checkable
+class LoiComposante(Protocol):
+    """Ce qu'une composante de dispersion doit savoir faire.
+
+    :class:`LoiDispersion` — une des six familles de la table — en est la
+    réalisation courante, et :class:`cfd_dispersion.core.relation.LoiDerivee`
+    l'autre : la loi d'un coefficient *déduit* de ceux qu'on tire n'appartient
+    en général à aucune famille (la somme de deux gaussiennes tronquées n'en
+    est pas une), mais elle répond aux mêmes questions.
+
+    Les figures, la validation et le rapport terminal sont écrits contre ce
+    protocole, et non contre l'une des deux classes : c'est ce qui leur permet
+    de traiter une loi dérivée exactement comme une loi déclarée.
+
+    ``M`` et ``ET`` gardent leur sens de la table — un centre et une
+    **demi-étendue**, ``σ = ET/2`` pour les familles gaussiennes — même là où
+    ils sont relus de la distribution plutôt que déclarés. ``type_loi``, lui,
+    n'en fait **pas** partie : une loi dérivée n'appartient à aucune famille,
+    et c'est ce qui l'empêche d'être réécrite dans une table de lois (voir
+    :meth:`cfd_dispersion.core.lois.LoiCoefficient.en_table`).
+    """
+
+    @property
+    def M(self) -> float:
+        """Centre de la loi."""
+
+    @property
+    def ET(self) -> float:
+        """Demi-étendue. Ce n'est **pas** un écart-type."""
+
+    @property
+    def distribution(self) -> ot.Distribution:
+        """La distribution OpenTURNS sous-jacente."""
+
+    @property
+    def label(self) -> str:
+        """Libellé lisible, pour une légende ou une boîte de paramètres."""
+
+    @property
+    def est_degeneree(self) -> bool:
+        """Vrai si la loi est une masse de Dirac."""
+
+    @property
+    def est_bornee(self) -> bool:
+        """Vrai si le support est borné."""
+
+    @property
+    def M_theorique(self) -> float:
+        """Moyenne exacte."""
+
+    @property
+    def ET_theorique(self) -> float:
+        """Écart-type exact — un vrai σ, celui-là."""
+
+    def support(self) -> tuple[float, float]:
+        """Bornes mathématiques du support."""
+
+    def plage_utile(self, *, k: float = 4.0, marge: float = 0.05) -> tuple[float, float]:
+        """Bornes finies utilisables pour tracer la loi."""
+
+    def pdf(self, x: object) -> np.ndarray:
+        """Densité de probabilité, forme ``(n,)``."""
+
+    def cdf(self, x: object) -> np.ndarray:
+        """Fonction de répartition, forme ``(n,)``."""
+
+    def quantile(self, p: object) -> np.ndarray:
+        """Quantiles, forme ``(n,)``."""
+
+    def tirer(self, n: int, *, graine: int | None = ..., methode: str = ...) -> np.ndarray:
+        """*n* réalisations, forme ``(n,)``."""
 
 
 @dataclass(frozen=True)

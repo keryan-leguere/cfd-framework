@@ -23,6 +23,9 @@ FICHIERS = (
     "04_bande_et_correlation.py",
     "05_modele_croise.py",
     "09_batch_plot_dispersion.py",
+    "10_relations.py",
+    "sortie_modele.py",
+    "sortie_modele_relations.py",
     "RUN_EXEMPLE.sh",
 )
 
@@ -182,7 +185,7 @@ class TestExecution:
         # CA n'a pas de loi, mais nommé il est tracé : nominal et valeur modèle.
         assert (asymetrique / "CA.svg").is_file()
         # Un coefficient inconnu partout, lui, est refusé.
-        assert "ni loi ni colonne" in resultat.stdout
+        assert "ni loi" in resultat.stdout
 
     def test_07_histogrammes_par_pdv(self, tmp_path: Path) -> None:
         """Une figure par (point de vol × coefficient), sur tous les tirages."""
@@ -231,6 +234,32 @@ class TestExecution:
         # Le tableau dispersé amputé d'un point de vol doit être refusé.
         assert "aucun tirage dans le tableau dispersé" in resultat.stdout
 
+    def test_10_relations(self, tmp_path: Path) -> None:
+        """Les lois d'un coefficient que le modèle rend sans le disperser."""
+        resultat = self._lancer(
+            "10_relations.py", tmp_path, "-n", "30", "--max-tirages", "1", "--jobs", "1"
+        )
+        assert resultat.returncode == 0, resultat.stderr
+
+        # Les deux relations sont annoncées, et les deux cibles tracées.
+        assert "CN = -CZ" in resultat.stdout
+        assert "CA = CX1 + CX2" in resultat.stdout
+        for cible in ("CN", "CA"):
+            assert (
+                tmp_path / "RELATIONS" / "HISTO" / "M_0.92" / "Z_10000" / f"{cible}.svg"
+            ).is_file()
+
+        # Le contrôle modèle / calcul porte sur la relation : il doit passer.
+        inventaire = pd.read_csv(tmp_path / "INVENTAIRE_RELATIONS.csv")
+        verdicts = inventaire["accord"].dropna()
+        assert len(verdicts) > 0
+        assert bool(verdicts.all())
+
+        # Et les trois refus sont bien montrés.
+        assert "valeurs nominales" in resultat.stdout
+        assert "n'est pas celle qu'applique le modèle" in resultat.stdout
+        assert "linéaire en ses sources" in resultat.stdout
+
     def test_la_sortie_de_modele_ecrite_en_dur(self, tmp_path: Path) -> None:
         """L'exemple de tableau : 4 PDV × n tirages, le même lot partout."""
         resultat = self._lancer("sortie_modele.py", tmp_path, "-n", "10")
@@ -248,6 +277,21 @@ class TestExecution:
         assert len(reference) == 4
         assert list(reference.columns) == list(table.columns)
         assert reference.loc[reference["Mach"] == 0.85, "CN"].tolist() == [0.850, 0.868]
+
+    def test_la_sortie_de_modele_a_relations(self, tmp_path: Path) -> None:
+        """Le modèle dont les sorties se déduisent de ce qu'il disperse."""
+        resultat = self._lancer("sortie_modele_relations.py", tmp_path, "-n", "10")
+        assert resultat.returncode == 0, resultat.stderr
+
+        table = pd.read_csv(tmp_path / "SORTIE_MODELE_RELATIONS.csv")
+        assert len(table) == 3 * 10
+        # Les lois portent CZ / CX1 / CX2 ; les sorties portent CN / CA.
+        assert {"CZ", "CX1", "CX2", "CN", "CA", "CY"} <= set(table.columns)
+        assert "CN" not in eval(table["DICT_LAW_DISPERSION"].iloc[0])
+
+        # Le modèle applique bien les relations qu'on lui prête.
+        assert table["CN"].tolist() == pytest.approx((-table["CZ"]).tolist())
+        assert table["CA"].tolist() == pytest.approx((table["CX1"] + table["CX2"]).tolist())
 
     def test_04_bande_et_correlation(self, tmp_path: Path) -> None:
         resultat = self._lancer("04_bande_et_correlation.py", tmp_path, "-n", "400")

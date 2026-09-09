@@ -79,16 +79,7 @@ def _lois_du_point(lois: JeuDeLois, mach: float, fausser: bool) -> JeuDeLois:
         return lois
 
     coefficient, composante = COMPOSANTE_FAUTIVE
-    table: dict[str, dict[str, Any]] = {}
-    for nom, loi in lois.items():
-        table[nom] = {
-            "Biais_Type": loi.biais.type_loi,
-            "Biais_M": loi.biais.M,
-            "Biais_ET": loi.biais.ET,
-            "FE_Type": loi.fe.type_loi,
-            "FE_M": loi.fe.M,
-            "FE_ET": loi.fe.ET,
-        }
+    table: dict[str, dict[str, Any]] = {nom: loi.en_table() for nom, loi in lois.items()}
     table[coefficient][f"{composante}_ET"] *= 2.0
     return charger_lois(table)
 
@@ -392,14 +383,4 @@ def _lignes_d_un_appel(
 
 def _table_des_lois(lois: JeuDeLois) -> dict[str, dict[str, Any]]:
     """Le ``DICT_LAW_DISPERSION`` tel qu'il voyage dans le tableau."""
-    return {
-        nom: {
-            "Biais_Type": loi.biais.type_loi,
-            "Biais_M": loi.biais.M,
-            "Biais_ET": loi.biais.ET,
-            "FE_Type": loi.fe.type_loi,
-            "FE_M": loi.fe.M,
-            "FE_ET": loi.fe.ET,
-        }
-        for nom, loi in lois.items()
-    }
+    return {nom: loi.en_table() for nom, loi in lois.items()}

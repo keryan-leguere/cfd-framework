@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exécute les neuf exemples de cfd-dispersion, dans l'ordre.
+# Exécute les dix exemples de cfd-dispersion, dans l'ordre.
 #
 #     bash RUN_EXEMPLE.sh              # tout
 #     bash RUN_EXEMPLE.sh -n 200       # plus vite, moins de tirages
@@ -59,6 +59,11 @@ echo
 echo "== 9. Le lot de batch_plot, dispersé par un hook ================"
 # Nécessite cfd-plot ; écrit quatre lots de neuf figures.
 "$PY" 09_batch_plot_dispersion.py "$@"
+
+echo
+echo "== 10. Relations : les lois d'un coefficient qu'on ne disperse pas ="
+# Lois sur CZ, CX1, CX2 ; sorties CN = -CZ et CA = CX1 + CX2.
+"$PY" 10_relations.py "$@"
 
 echo
 echo "Terminé. Résultats dans $ICI/SORTIE/"

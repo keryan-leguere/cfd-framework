@@ -507,6 +507,82 @@ def figure_batch_plot() -> None:
     print(f"[ok] {cible}")
 
 
+# ---------------------------------------------------------------------------
+# 12 — la loi dérivée d'une somme
+# ---------------------------------------------------------------------------
+
+
+def figure_loi_derivee() -> None:
+    """``CA = CX1 + CX2`` : deux lois déclarées, et celle qui en sort.
+
+    L'illustration de :mod:`cfd_dispersion.core.relation`. Le point à voir est
+    que la troisième courbe n'est **aucune** des six familles : la somme d'une
+    uniforme et d'une gaussienne tronquée est un plateau à épaules arrondies,
+    et c'est pourtant elle qui décrit le coefficient que le modèle publie.
+    """
+    from cfd_dispersion import charger_lois
+    from cfd_dispersion.core.relation import Relation, loi_derivee
+
+    table = {
+        "CX1": {
+            "Biais_Type": 3,
+            "Biais_M": 0.0,
+            "Biais_ET": 0.0008,
+            "FE_Type": 6,
+            "FE_M": 1.0,
+            "FE_ET": 0.10,
+        },
+        "CX2": {
+            "Biais_Type": 5,
+            "Biais_M": 0.0,
+            "Biais_ET": 0.0012,
+            "FE_Type": 5,
+            "FE_M": 1.0,
+            "FE_ET": 0.16,
+        },
+    }
+    lois = charger_lois(table)
+    nominaux = {"CX1": 0.0228, "CX2": 0.0146}
+    derivee = loi_derivee(Relation.depuis_texte("CA = CX1 + CX2"), lois, nominaux=nominaux)
+
+    with style():
+        figure, grille = nouvelle_figure(1, 2, figsize=(11.0, 4.0))
+        biais, facteur = np.ravel(grille)
+
+        for ax, composante, titre_ax in (
+            (biais, "Biais", "Biais — une somme"),
+            (facteur, "FE", "Facteur d'échelle — une moyenne pondérée"),
+        ):
+            for indice, nom in enumerate(("CX1", "CX2")):
+                tracer_loi(
+                    ax,
+                    lois[nom].composante(composante),
+                    couleur=f"C{indice}",
+                    label=f"{nom} (déclarée)",
+                    sigmas=None,
+                )
+            # Les repères σ ne sont posés que pour la loi dérivée : trois jeux
+            # de lignes rendraient le panneau illisible, et c'est elle qu'on
+            # vient lire.
+            tracer_loi(
+                ax,
+                derivee.composante(composante),
+                couleur="C3",
+                label="CA (dérivée)",
+            )
+            ax.set_title(titre_ax, fontsize=10)
+            ax.set_xlabel(composante)
+            ax.legend(fontsize=8)
+
+        part = nominaux["CX1"] / (nominaux["CX1"] + nominaux["CX2"])
+        figure.suptitle(
+            f"CA = CX1 + CX2 — le biais s'additionne, le facteur se partage "
+            f"({100 * part:.0f} % / {100 * (1 - part):.0f} %)",
+            fontsize=11,
+        )
+    _ecrire(figure, "12_loi_derivee.png")
+
+
 def main() -> int:
     figure_types_de_lois()
     figure_convention_et()
@@ -519,6 +595,7 @@ def main() -> int:
     figure_correle_ou_independant()
     figure_correlation()
     figure_batch_plot()
+    figure_loi_derivee()
     return 0
 
 
