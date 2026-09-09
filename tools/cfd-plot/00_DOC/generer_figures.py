@@ -936,18 +936,22 @@ def fig_carto_rapport() -> None:
         "CN": {
             **y_axis["CN"],
             "CARTO": {
-                # jet is what a wind-tunnel report still looks like; "turbo" is
-                # the perceptually corrected drop-in if you want one.
-                "cmap": "jet",
+                # Colourful like the wind-tunnel plates everyone expects, but
+                # light at the centre and never dark at the ends: jet bottoms
+                # out at L* 13, where a black iso-line and its label vanish.
+                "cmap": "Spectral_r",
                 "levels": 25,        # smooth fill
                 "line_levels": 9,    # far fewer labelled lines: that is what reads
                 "line_width": 0.7,
                 "clabel_fmt": "%.2f",
                 "clabel_fontsize": 8,
                 "panel_size": (4.6, 4.0),
+                # Study metadata belongs in the heading when it is common to
+                # every panel; {CDG} per panel is figure 36.
+                "suptitle": "{qoi_symbol} over {x} × {y} — CDG 25 %, m = 12 500 kg",
                 "delta": {
                     "mode": "relative",
-                    "cmap": "RdBu_r",
+                    "cmap": "coolwarm",  # neutral at zero, mid-tone at both ends
                     "levels": 13,    # odd: one boundary lands exactly on zero
                     "bound": 6.0,    # +/- 6 %, pinned so every sheet compares
                     "line_levels": 7,
@@ -964,6 +968,55 @@ def fig_carto_rapport() -> None:
     )
     shutil.copy(sorted(written)[0], FIGURES / "35_batch_carto_rapport.png")
     print("  35_batch_carto_rapport.png")
+
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fig_carto_zones() -> None:
+    """The two ways a cell can be blank, told apart on the figure.
+
+    The CFD does not trim past the transonic corner; the model was never run
+    above M 1.2. Both come out white on a plain map, and they are not the same
+    fact — hence one hatch and one message each.
+    """
+    import shutil
+
+    cfg, y_axis, sweep, fp = _carto_config()
+    tmp = FIGURES / "_tmp_carto_zones"
+
+    cfd = cfg["CFD"]["df"].copy()
+    cfd["Equilibre"] = np.where(
+        (cfd["Mach"] >= 1.10) & (cfd["alpha"] >= 7.0), "NON", "OUI"
+    )
+    model = cfg["MODEL"]["df"]
+    model = model[model["Mach"] <= 1.15]
+
+    zones_cfg = {
+        "CFD": {**cfg["CFD"], "df": cfd, "CDG": 25.0},
+        "MODEL": {**cfg["MODEL"], "df": model, "CDG": 27.5},
+    }
+    y_axis_zones = {
+        "CN": {
+            **y_axis["CN"],
+            "CARTO": {
+                "cmap": "Spectral_r",
+                "levels": 21,
+                "line_levels": 7,
+                "clabel_fmt": "%.2f",
+                "clabel_fontsize": 8,
+                "panel_size": (5.0, 4.0),
+                "panel_title": "{label} — CDG {CDG} %",
+                "missing": {"message": "non calculé"},
+            },
+        },
+    }
+    written = batch_carto(
+        configuration_dict=zones_cfg, y_axis_dict=y_axis_zones, sweep_dict=sweep,
+        flight_point_dict=fp, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+    )
+    shutil.copy(sorted(written)[0], FIGURES / "36_batch_carto_zones.png")
+    print("  36_batch_carto_zones.png")
 
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1120,6 +1173,7 @@ def main() -> None:
     fig_domains()
     fig_carto()
     fig_carto_rapport()
+    fig_carto_zones()
     fig_panel_labels()
     fig_palettes()
     fig_pdf_report()

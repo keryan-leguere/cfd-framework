@@ -56,6 +56,26 @@ quantity: its colormap, its levels) and then on a ``configuration_dict`` entry
 ``"CARTO"`` is metadata like ``df`` or ``label``: it never reaches
 ``plot_line``, so the same ``configuration_dict`` drives ``batch_plot`` and
 ``batch_carto`` unchanged.
+
+What is not there
+-----------------
+A blank patch on a map is a question, and two very different facts produce
+one. The cells the study never ran are outlined and hatched (``missing``); the
+cells a table declares un-trimmable — an ``Equilibre`` column reading ``NON`` —
+are dropped from the field and hatched under their own message
+(``equilibre``, picked up on its own if the column is there). Neither is
+interpolated over, and an un-trimmable cell leaves the colour scale and the
+delta with it: a coefficient at a flight point that does not trim is not a
+small value, it is not a value.
+
+Titles
+------
+``panel_title``, ``suptitle`` and ``subtitle`` take a template or a callable.
+A panel's template can name **any key of its ``configuration_dict`` entry**,
+which is where the mass and the centre of gravity already live::
+
+    carto = {"panel_title": "{label} — CDG {CDG} %, m={masse} kg",
+             "suptitle": "{qoi_symbol} — {x} × {y}"}
 """
 
 from __future__ import annotations
@@ -94,6 +114,7 @@ from .cleanup import clean_figure_dir
 from .field2d import plot_contour, plot_contourf
 from .mpl_template import (
     add_shared_colorbar,
+    mathtext_safe,
     print_file_report,
     save_figure,
     set_suptitle,
@@ -106,6 +127,8 @@ __all__ = [
     "CARTO_KEY",
     "CartoSpec",
     "DeltaSpec",
+    "EquilibreSpec",
+    "RegionSpec",
     "batch_carto",
 ]
 
@@ -122,6 +145,135 @@ _CARTO_PANEL_SIZE_FACTOR = (0.95, 1.05)
 # Matplotlib does *not* use). Accepted, mapped, documented — a silent no-op
 # would be the worst of the three options.
 _CARTO_ALIASES = {"level": "levels", "line_level": "line_levels"}
+
+
+#: A title: a ``str.format`` template over the figure's fields, or a callable
+#: taking that mapping. See :class:`CartoSpec`.
+TitleArg = Union[str, Callable[[Mapping[str, Any]], str], None]
+
+
+def _check_title(value: TitleArg, where: str) -> None:
+    if value is None or isinstance(value, str) or callable(value):
+        return
+    raise TypeError(
+        f"{where} must be a format string, a callable or None, "
+        f"got {type(value).__name__}."
+    )
+
+
+def _check_resample(value: int | tuple[int, int] | None) -> None:
+    if value is None:
+        return
+    counts = (value,) if isinstance(value, int) and not isinstance(value, bool) else value
+    if not isinstance(counts, (tuple, list)) or len(counts) not in (1, 2):
+        raise TypeError(
+            f"DeltaSpec.resample must be an int or (nx, ny), got {value!r}."
+        )
+    for count in counts:
+        if not isinstance(count, int) or isinstance(count, bool) or count < 2:
+            raise ValueError(
+                f"DeltaSpec.resample counts must be ints >= 2, got {value!r}."
+            )
+
+
+@dataclass(frozen=True)
+class RegionSpec:
+    """A zone drawn *instead of* the field: hatching, outline, one message.
+
+    Two of these live on a :class:`CartoSpec`. ``missing`` covers the cells the
+    study never ran; ``equilibre`` (an :class:`EquilibreSpec`) covers the ones a
+    column in the table declares invalid. Both look the same on purpose — a
+    blank patch on a map is a question, and the hatching plus the outline
+    answers it before the reader starts inventing a reason.
+
+    Parameters
+    ----------
+    hatch :
+        Matplotlib hatch pattern. Repeat a character to densify it (``"///"``).
+    color :
+        Hatching *and* outline. The outline is what actually delimits the zone;
+        the hatching only says "not a hole in the drawing".
+    facecolor :
+        Wash under the hatching, or ``None`` to leave the background showing.
+    linewidth :
+        Outline width, in points.
+    message :
+        Written inside the zone, in a small white box. ``None`` draws none.
+    fontsize :
+        ``None`` follows the style, one notch below body text.
+    min_area :
+        Fraction of the panel's cells below which the zone gets no message —
+        text wider than the zone it names reads as text about its neighbour.
+        The hatching and the legend entry still appear.
+    legend :
+        Add a proxy patch to a small legend on the panel, so a zone too small
+        for its message is still named somewhere.
+    """
+
+    hatch: str = "//"
+    color: str = "0.35"
+    facecolor: str | None = "white"
+    linewidth: float = 0.8
+    message: str | None = None
+    fontsize: float | None = None
+    min_area: float = 0.02
+    legend: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.hatch:
+            raise ValueError("RegionSpec.hatch must be a Matplotlib hatch pattern.")
+        if not 0.0 <= self.min_area <= 1.0:
+            raise ValueError(
+                f"RegionSpec.min_area is a fraction of the panel, got {self.min_area}."
+            )
+
+
+@dataclass(frozen=True)
+class EquilibreSpec(RegionSpec):
+    """The zone a table declares un-trimmable, read from a column of its own.
+
+    Picked up **automatically**: if the configuration's table carries the
+    column, every cell whose value is one of *ko_values* is hatched and its
+    quantity is dropped — ``NaN`` before anything else looks at the field, so
+    those cells leave the colour scale, the shared levels and the delta with
+    it. A coefficient at a flight point that does not trim is not a small
+    value, it is not a value.
+
+    Parameters
+    ----------
+    column :
+        Column to read. Absent from a table, the feature stays off for it.
+    ok_values, ko_values :
+        Compared case-insensitively on the stripped text, so ``"oui "`` and
+        ``True`` and ``1`` all read as ``"OUI"``. An empty cell means "not
+        assessed" and is drawn normally; anything else raises, naming the
+        value — a house spelling silently hatched is worse than a refusal.
+    """
+
+    message: str | None = "non équilibrable"
+    column: str = "Equilibre"
+    ok_values: tuple[str, ...] = ("OUI", "YES", "O", "Y", "TRUE", "1")
+    ko_values: tuple[str, ...] = ("NON", "NO", "N", "FALSE", "0")
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.column:
+            raise ValueError("EquilibreSpec.column must name a column.")
+        overlap = {value.strip().upper() for value in self.ok_values} & {
+            value.strip().upper() for value in self.ko_values
+        }
+        if overlap:
+            raise ValueError(
+                f"EquilibreSpec: {sorted(overlap)} is in both ok_values and ko_values."
+            )
+
+
+#: Discreet by default: the cells nobody ran get an outline and a thin hatch,
+#: not a slab of colour competing with the field next to it.
+_DEFAULT_MISSING = RegionSpec(
+    hatch="\\\\", color="0.55", facecolor=None, linewidth=0.7, message=None
+)
+_DEFAULT_EQUILIBRE = EquilibreSpec()
 
 
 @dataclass(frozen=True)
@@ -165,6 +317,20 @@ class DeltaSpec:
     extend :
         ``None`` (default) means "both" when *bound* clips the data and
         "neither" otherwise.
+    grid :
+        ``"common"`` (default) interpolates both configurations onto one fine
+        grid over the sweep range they share, then subtracts. ``"exact"``
+        subtracts cell by cell and refuses two tables that were not run on the
+        same grid.
+    resample :
+        Size of that common grid: one int for both axes, or ``(nx, ny)``.
+        ``None`` (default) takes four times the finer of the two, bounded to
+        81..321 points per axis — fine enough that the iso-lines read as
+        curves, cheap enough to draw a study's worth of sheets.
+    title :
+        Panel title: a template (``"{other} vs {reference}"``) or a callable
+        taking the field mapping. ``None`` names the subtraction in the order
+        it reads. See :class:`CartoSpec`.
     """
 
     mode: str = "absolute"
@@ -181,8 +347,17 @@ class DeltaSpec:
     colorbar: bool = True
     label: str | None = None
     extend: str | None = None
+    grid: str = "common"
+    resample: int | tuple[int, int] | None = None
+    title: TitleArg = None
 
     def __post_init__(self) -> None:
+        if self.grid not in ("common", "exact"):
+            raise ValueError(
+                f"DeltaSpec.grid must be 'common' or 'exact', got {self.grid!r}."
+            )
+        _check_resample(self.resample)
+        _check_title(self.title, "DeltaSpec.title")
         if self.mode not in ("absolute", "relative"):
             raise ValueError(
                 f"DeltaSpec.mode must be 'absolute' or 'relative', got {self.mode!r}."
@@ -264,6 +439,35 @@ class CartoSpec:
         :class:`DeltaSpec`. A property of the *figure*, so it is read from
         ``carto=`` or a ``y_axis_dict`` entry, never from a source's own
         ``CARTO``.
+    equilibre :
+        How the cells a table declares un-trimmable are drawn — see
+        :class:`EquilibreSpec`. ``True`` (default) uses it if the column is
+        there; ``False`` ignores the column altogether.
+    missing :
+        How the cells the study never ran are drawn — see :class:`RegionSpec`.
+        ``True`` (default) outlines and hatches them, ``False`` leaves them
+        blank as they were.
+    panel_title, suptitle, subtitle :
+        Override the composed titles. Either a ``str.format`` template or a
+        callable taking the mapping of available fields:
+
+        ==================  ===================================================
+        ``source``          configuration key (panel only)
+        ``label``           its ``label`` (panel only)
+        every other key     of that ``configuration_dict`` entry — ``{masse}``,
+                            ``{CDG}`` — bar ``df``, ``style`` and ``CARTO``
+        ``qoi``             quantity key, ``qoi_symbol``, ``qoi_label``,
+                            ``qoi_unit``
+        ``x``, ``y``        sweep symbols, with ``x_key`` and ``y_key``
+        ``flight_point``    the formatted flight point, ``case`` the pinned
+                            sweeps, ``context`` both
+        the values          of the flight point and the pinned sweeps, by key
+        ==================  ===================================================
+
+        A field the mapping does not have is left as written, braces and all,
+        so a LaTeX subscript survives a template and a typo shows up on the
+        figure instead of taking the run down. ``verbose=True`` prints the
+        first resolved heading, which is where to catch one.
     """
 
     cmap: str = "viridis"
@@ -282,8 +486,41 @@ class CartoSpec:
     aspect: str | float | None = None
     panel_size: tuple[float, float] | None = None
     delta: DeltaSpec | None = None
+    equilibre: EquilibreSpec | Mapping[str, Any] | bool | None = True
+    missing: RegionSpec | Mapping[str, Any] | bool | None = True
+    panel_title: TitleArg = None
+    suptitle: TitleArg = None
+    subtitle: TitleArg = None
 
     def __post_init__(self) -> None:
+        # Normalise here as well as in _override_spec: a CartoSpec built by
+        # hand with a dict in one of these is otherwise a spec that only fails
+        # once a figure is being drawn.
+        object.__setattr__(
+            self, "delta", _resolve_delta_arg(self.delta, where="CartoSpec.delta")
+        )
+        object.__setattr__(
+            self,
+            "equilibre",
+            _resolve_region_arg(
+                self.equilibre,
+                cls=EquilibreSpec,
+                default=_DEFAULT_EQUILIBRE,
+                where="CartoSpec.equilibre",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "missing",
+            _resolve_region_arg(
+                self.missing,
+                cls=RegionSpec,
+                default=_DEFAULT_MISSING,
+                where="CartoSpec.missing",
+            ),
+        )
+        for name in ("panel_title", "suptitle", "subtitle"):
+            _check_title(getattr(self, name), f"CartoSpec.{name}")
         for name, value in (("levels", self.levels), ("line_levels", self.line_levels)):
             if isinstance(value, int) and not isinstance(value, bool):
                 if value < 2:
@@ -313,8 +550,20 @@ class CartoSpec:
         """What every panel of one figure must agree on to share a colorbar."""
         return (self.cmap, _levels_key(self.levels))
 
+    @property
+    def resolved_equilibre(self) -> EquilibreSpec | None:
+        """The spec after normalisation — ``__post_init__`` guarantees it."""
+        value = self.equilibre
+        return value if isinstance(value, EquilibreSpec) else None
+
+    @property
+    def resolved_missing(self) -> RegionSpec | None:
+        value = self.missing
+        return value if isinstance(value, RegionSpec) else None
+
 
 CartoArg = Union[CartoSpec, Mapping[str, Any], None]
+RegionArg = Union[RegionSpec, Mapping[str, Any], bool, None]
 DeltaArg = Union[DeltaSpec, Mapping[str, Any], str, bool, None]
 
 
@@ -360,6 +609,34 @@ def _resolve_delta_arg(delta: DeltaArg, *, where: str) -> DeltaSpec | None:
     )
 
 
+def _resolve_region_arg(
+    value: Any, *, cls: type, default: RegionSpec, where: str
+) -> RegionSpec | None:
+    """``True`` / ``False`` / a dict / a spec, all to a spec (or nothing)."""
+    if value is None or value is False:
+        return None
+    if value is True:
+        return default
+    if isinstance(value, cls):
+        assert isinstance(value, RegionSpec)
+        return value
+    if isinstance(value, Mapping):
+        known = tuple(field.name for field in fields(cls))
+        unknown = [key for key in value if key not in known]
+        if unknown:
+            raise ValueError(
+                f"unknown {cls.__name__} key(s) {unknown} in {where}; "
+                f"expected one of {list(known)}."
+            )
+        # Merged onto the default rather than onto a bare spec, so overriding
+        # one key keeps the tuned look of the rest.
+        return replace(default, **dict(value))
+    raise TypeError(
+        f"{where} must be a bool, a dict or a {cls.__name__}, "
+        f"got {type(value).__name__}."
+    )
+
+
 def _override_spec(base: CartoSpec, overrides: Mapping[str, Any], *, where: str) -> CartoSpec:
     """Apply one ``CARTO`` sub-dict on top of *base*."""
     known = _spec_field_names()
@@ -372,6 +649,13 @@ def _override_spec(base: CartoSpec, overrides: Mapping[str, Any], *, where: str)
             )
         if name == "delta":
             resolved[name] = _resolve_delta_arg(value, where=where)
+            continue
+        if name in ("equilibre", "missing"):
+            spec_cls = EquilibreSpec if name == "equilibre" else RegionSpec
+            fallback = _DEFAULT_EQUILIBRE if name == "equilibre" else _DEFAULT_MISSING
+            resolved[name] = _resolve_region_arg(
+                value, cls=spec_cls, default=fallback, where=f"{where} {CARTO_KEY}[{name!r}]"
+            )
             continue
         resolved[name] = tuple(value) if name in ("levels", "line_levels") and isinstance(
             value, (list, np.ndarray)
@@ -420,6 +704,110 @@ def _spec_for(base: CartoSpec, entry: Mapping[str, Any], *, where: str) -> Carto
 
 
 # ---------------------------------------------------------------------------
+# Titles
+# ---------------------------------------------------------------------------
+
+#: Never offered to a title template: the table itself, and the two sub-dicts
+#: that are settings rather than facts about the configuration.
+_TITLE_SKIP_KEYS = frozenset({"df", "style", CARTO_KEY})
+
+
+class _TitleFields(dict[str, Any]):
+    """A mapping that leaves an unknown field alone instead of raising.
+
+    Two reasons, both learned from real templates: ``$\alpha_{max}$`` is a
+    perfectly good thing to put in a heading and ``str.format`` would read
+    ``{max}`` as a field, and a typo in ``{masse}`` should cost one wrong
+    heading, not two hundred figures that never got written.
+    """
+
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def _resolve_title(
+    template: TitleArg, fields: Mapping[str, Any], default: str, *, where: str = "title"
+) -> str:
+    if template is None:
+        return default
+    if callable(template):
+        return str(template(dict(fields)))
+    if isinstance(template, str):
+        return template.format_map(_TitleFields(fields))
+    raise TypeError(
+        f"{where} must be a format string, a callable or None, "
+        f"got {type(template).__name__}."
+    )
+
+
+def _figure_fields(
+    *,
+    qoi_key: str,
+    qoi_spec: Mapping[str, Any],
+    x_key: str,
+    x_spec: Mapping[str, Any],
+    y_key: str,
+    y_spec: Mapping[str, Any],
+    flight_point: Mapping[str, float],
+    fixed_sweeps: Mapping[str, float],
+    flight_point_label: str,
+    case_label: str,
+    context: str,
+) -> dict[str, Any]:
+    """What a title template of this figure can name."""
+    return {
+        "qoi": qoi_key,
+        "qoi_symbol": format_axis_title_label(dict(qoi_spec), qoi_key),
+        "qoi_label": format_axis_label(dict(qoi_spec), qoi_key),
+        "qoi_unit": qoi_spec.get("unit", ""),
+        "x": format_axis_title_label(dict(x_spec), x_key),
+        "y": format_axis_title_label(dict(y_spec), y_key),
+        "x_key": x_key,
+        "y_key": y_key,
+        "flight_point": flight_point_label,
+        "case": case_label,
+        "context": context,
+        **dict(flight_point),
+        **dict(fixed_sweeps),
+    }
+
+
+def _panel_fields(
+    fields: Mapping[str, Any], source: str, config: Mapping[str, Any]
+) -> dict[str, Any]:
+    """The figure's fields plus this configuration's own keys.
+
+    Which is what makes ``"{label} — CDG {CDG} %"`` work with nothing else set
+    up: ``masse``, ``CDG`` and the rest already live in the configuration entry,
+    where ``batch_plot`` leaves them alone.
+    """
+    own = {key: value for key, value in config.items() if key not in _TITLE_SKIP_KEYS}
+    return {
+        **dict(fields),
+        **own,
+        "source": source,
+        "label": str(config.get("label", source)),
+    }
+
+
+def _strip_titles(spec: CartoSpec) -> CartoSpec:
+    """The same spec with its templates spent, so a job carries no callable."""
+    delta = spec.delta
+    if isinstance(delta, DeltaSpec) and delta.title is not None:
+        delta = replace(delta, title=None)
+    if (
+        spec.panel_title is None
+        and spec.suptitle is None
+        and spec.subtitle is None
+        and delta is spec.delta
+    ):
+        return spec
+    return replace(
+        spec, panel_title=None, suptitle=None, subtitle=None, delta=delta
+    )
+
+
+# ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
 
@@ -434,11 +822,27 @@ class _CartoPanel:
     y: np.ndarray
     z: np.ndarray
     spec: CartoSpec
+    #: The configuration's own ``label``, before any ``panel_title`` template.
+    #: What the delta panel names itself with — a subtraction of two long
+    #: titles is a heading nobody can read.
+    short_label: str = ""
+    equilibre_mask: np.ndarray | None = None
 
     @property
-    def finite_range(self) -> tuple[float, float]:
+    def finite_range(self) -> tuple[float, float] | None:
+        """Its extent, or ``None`` when nothing on it is a number."""
         finite = self.z[np.isfinite(self.z)]
+        if finite.size == 0:
+            return None
         return float(finite.min()), float(finite.max())
+
+    @property
+    def missing_mask(self) -> np.ndarray:
+        """Cells with no value that are not accounted for by another zone."""
+        hole = ~np.isfinite(self.z)
+        if self.equilibre_mask is not None:
+            hole &= ~self.equilibre_mask
+        return hole
 
 
 @dataclass(frozen=True)
@@ -485,11 +889,12 @@ def _delta_labels(
 ) -> tuple[str, str]:
     """Panel title and colorbar label, in the order the subtraction reads."""
     symbol = format_axis_title_label(dict(qoi_spec), qoi_key)
+    left, right = other.short_label, reference.short_label
     if spec.mode == "relative":
-        title = f"({other.label} − {reference.label}) / {reference.label}"
+        title = f"({left} − {right}) / {right}"
         cbar = spec.label or f"Δ{symbol} / {symbol} (%)"
         return title, cbar
-    title = f"{other.label} − {reference.label}"
+    title = f"{left} − {right}"
     unit = qoi_spec.get("unit")
     cbar = spec.label or (f"Δ{symbol} ({unit})" if unit else f"Δ{symbol}")
     return title, cbar
@@ -500,6 +905,7 @@ def _build_delta_panel(
     panels: Sequence[_CartoPanel],
     qoi_spec: Mapping[str, Any],
     qoi_key: str,
+    fields: Mapping[str, Any] | None = None,
 ) -> _DeltaPanel | None:
     """The third panel, when exactly two configurations are on this figure.
 
@@ -509,28 +915,132 @@ def _build_delta_panel(
     if len(panels) != 2:
         return None
     reference, other = panels
-    if not (
-        np.array_equal(reference.x, other.x) and np.array_equal(reference.y, other.y)
-    ):
-        raise ValueError(
-            f"cannot difference {other.source!r} against {reference.source!r} for "
-            f"{qoi_key!r}: they were run on different grids "
-            f"({reference.z.shape} vs {other.z.shape} over "
-            f"x={reference.x.size}/{other.x.size}, y={reference.y.size}/{other.y.size} "
-            "points). Cell by cell is the only honest subtraction — resample the "
-            "tables onto one grid first, or drop the delta panel."
+
+    if spec.grid == "exact":
+        if not (
+            np.array_equal(reference.x, other.x) and np.array_equal(reference.y, other.y)
+        ):
+            raise ValueError(
+                f"cannot difference {other.source!r} against {reference.source!r} for "
+                f"{qoi_key!r} with grid='exact': they were run on different grids "
+                f"({reference.z.shape} vs {other.z.shape} over "
+                f"x={reference.x.size}/{other.x.size}, "
+                f"y={reference.y.size}/{other.y.size} points). Leave grid='common' "
+                "to interpolate both onto one grid first, or drop the delta panel."
+            )
+        x_axis, y_axis = reference.x, reference.y
+        z_reference, z_other = reference.z, other.z
+    else:
+        x_axis, y_axis, z_reference, z_other = _common_field(
+            reference, other, spec, qoi_key
         )
+
     title, cbar_label = _delta_labels(spec, reference, other, qoi_spec, qoi_key)
+    title = _resolve_title(
+        spec.title,
+        {
+            **dict(fields or {}),
+            "reference": reference.short_label,
+            "other": other.short_label,
+        },
+        title,
+        where="delta title",
+    )
     return _DeltaPanel(
         label=title,
         reference=reference.source,
         other=other.source,
-        x=reference.x,
-        y=reference.y,
-        z=_delta_field(reference.z, other.z, spec.mode),
-        spec=spec,
+        x=x_axis,
+        y=y_axis,
+        z=_delta_field(z_reference, z_other, spec.mode),
+        spec=replace(spec, title=None),
         cbar_label=cbar_label,
     )
+
+
+def _resample_counts(spec: DeltaSpec) -> tuple[int | None, int | None]:
+    if spec.resample is None:
+        return None, None
+    if isinstance(spec.resample, int):
+        return spec.resample, spec.resample
+    return spec.resample[0], spec.resample[1]
+
+
+def _common_axis(
+    first: np.ndarray,
+    second: np.ndarray,
+    count: int | None,
+    *,
+    name: str,
+    sources: tuple[str, str],
+) -> np.ndarray:
+    """One axis of the fine grid the two configurations share.
+
+    The **intersection** of their ranges, never the union: past the last point
+    a table actually holds there is no value to interpolate, and extending the
+    difference there would be inventing one.
+    """
+    for axis, source in zip_strict((first, second), sources):
+        if axis.size < 2:
+            raise ValueError(
+                f"cannot interpolate configuration {source!r} along {name}: it holds "
+                f"{axis.size} value(s) there, and a difference on a common grid needs "
+                "at least two. Pin that sweep as a flight point, or use "
+                "delta={'grid': 'exact'}."
+            )
+    low = max(float(first[0]), float(second[0]))
+    high = min(float(first[-1]), float(second[-1]))
+    if not high > low:
+        raise ValueError(
+            f"configurations {sources[0]!r} and {sources[1]!r} do not overlap along "
+            f"{name}: [{first[0]:g}, {first[-1]:g}] against "
+            f"[{second[0]:g}, {second[-1]:g}]. There is no domain to difference them on."
+        )
+    if count is None:
+        # Fine enough that the iso-lines read as curves rather than as the
+        # staircase of the coarser table, bounded so a study of sheets stays
+        # cheap to draw.
+        count = int(np.clip(4 * max(first.size, second.size), 81, 321))
+    return np.linspace(low, high, count)
+
+
+def _common_field(
+    reference: _CartoPanel, other: _CartoPanel, spec: DeltaSpec, qoi_key: str
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Both maps interpolated onto one fine grid, ready to subtract."""
+    nx, ny = _resample_counts(spec)
+    sources = (reference.source, other.source)
+    x_axis = _common_axis(reference.x, other.x, nx, name=f"the {qoi_key} x sweep", sources=sources)
+    y_axis = _common_axis(reference.y, other.y, ny, name=f"the {qoi_key} y sweep", sources=sources)
+    return (
+        x_axis,
+        y_axis,
+        _resample_bilinear(reference.x, reference.y, reference.z, x_axis, y_axis),
+        _resample_bilinear(other.x, other.y, other.z, x_axis, y_axis),
+    )
+
+
+def _resample_bilinear(
+    x: np.ndarray, y: np.ndarray, z: np.ndarray, x_new: np.ndarray, y_new: np.ndarray
+) -> np.ndarray:
+    """Bilinear interpolation of a regular grid, in NumPy alone.
+
+    Separable — along x, then along y — which is what bilinear *is* on a
+    rectangular grid, and it keeps SciPy optional for the package.
+
+    ``NaN`` spreads: a fine cell whose surrounding coarse values include a hole
+    comes out a hole too. That is the honest answer — the alternative is a
+    difference computed against a value nobody ran — and it is why a masked
+    cell widens by one coarse cell on the delta panel.
+    """
+    along_x = np.empty((y.size, x_new.size), dtype=float)
+    for row in range(y.size):
+        along_x[row] = np.interp(x_new, x, z[row])
+
+    out = np.empty((y_new.size, x_new.size), dtype=float)
+    for col in range(x_new.size):
+        out[:, col] = np.interp(y_new, y, along_x[:, col])
+    return out
 
 
 @dataclass(frozen=True)
@@ -582,8 +1092,13 @@ def _shared_levels(job: _CartoPlotJob) -> np.ndarray | None:
         return np.asarray(spec.levels, dtype=float)
 
     ranges = [panel.finite_range for panel in job.panels]
-    low = min(bounds[0] for bounds in ranges)
-    high = max(bounds[1] for bounds in ranges)
+    known = [bounds for bounds in ranges if bounds is not None]
+    if not known:
+        # Every panel entirely masked or unrun: there is still a figure to
+        # write — the hatching is the result — and contourf still wants levels.
+        return np.linspace(0.0, 1.0, int(spec.levels))
+    low = min(bounds[0] for bounds in known)
+    high = max(bounds[1] for bounds in known)
     if not np.isfinite(low) or not np.isfinite(high) or high <= low:
         # A quantity constant over the whole map is a real result (a model that
         # ignores one of the two sweeps), not an error. Give it a band to sit
@@ -662,6 +1177,211 @@ def _line_levels(spec: CartoSpec, fill_levels: np.ndarray | int) -> Any:
             return np.linspace(fill_levels[0], fill_levels[-1], spec.line_levels)
         return spec.line_levels
     return np.asarray(spec.line_levels, dtype=float)
+
+
+def _mask_anchor(
+    x: np.ndarray, y: np.ndarray, mask: np.ndarray
+) -> tuple[float, float] | None:
+    """A point *inside* the zone to hang its message on.
+
+    The row holding the most flagged cells, then the middle of its longest
+    unbroken run. A centroid would be quicker and would land outside any zone
+    that is not convex — a ring of un-trimmable flight points around a solved
+    core is exactly the shape this has to survive.
+    """
+    counts = mask.sum(axis=1)
+    row = int(np.argmax(counts))
+    if counts[row] == 0:
+        return None
+
+    best_start, best_len, start = 0, 0, None
+    line = mask[row]
+    for index in range(line.size + 1):
+        inside = index < line.size and bool(line[index])
+        if inside and start is None:
+            start = index
+        elif not inside and start is not None:
+            if index - start > best_len:
+                best_start, best_len = start, index - start
+            start = None
+    if best_len == 0:
+        return None
+    span = x[best_start : best_start + best_len]
+    return float(0.5 * (span[0] + span[-1])), float(y[row])
+
+
+def _region_quads(mask: np.ndarray) -> np.ndarray:
+    """The grid cells the field does not cover, from a mask on its nodes.
+
+    ``contourf`` fills a cell only when all four of its corners are numbers, so
+    one flagged node blanks the four cells around it. Hatching the *nodes*
+    instead — a contour at 0.5 — would cover half of each, leaving a white
+    ring between the field and its own hatching. The cell is the unit here.
+    """
+    quads: np.ndarray = mask[:-1, :-1] | mask[1:, :-1] | mask[:-1, 1:] | mask[1:, 1:]
+    return quads
+
+
+def _region_path(x: np.ndarray, y: np.ndarray, quads: np.ndarray) -> Any:
+    """One compound path over every flagged cell, so the hatch is continuous."""
+    from matplotlib.path import Path
+
+    rows, cols = np.nonzero(quads)
+    x_low, x_high = x[cols], x[cols + 1]
+    y_low, y_high = y[rows], y[rows + 1]
+
+    verts = np.empty((rows.size * 5, 2), dtype=float)
+    verts[0::5] = np.column_stack((x_low, y_low))
+    verts[1::5] = np.column_stack((x_high, y_low))
+    verts[2::5] = np.column_stack((x_high, y_high))
+    verts[3::5] = np.column_stack((x_low, y_high))
+    verts[4::5] = verts[0::5]
+    codes = np.tile(
+        [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY],
+        rows.size,
+    )
+    return Path(verts, codes)
+
+
+def _region_boundary(
+    x: np.ndarray, y: np.ndarray, quads: np.ndarray
+) -> list[np.ndarray]:
+    """Only the outer edges of the flagged cells — never the seams between them."""
+    padded = np.pad(quads, 1, constant_values=False)
+    sides = {
+        "bottom": quads & ~padded[:-2, 1:-1],
+        "top": quads & ~padded[2:, 1:-1],
+        "left": quads & ~padded[1:-1, :-2],
+        "right": quads & ~padded[1:-1, 2:],
+    }
+    segments: list[np.ndarray] = []
+    for side, flags in sides.items():
+        rows, cols = np.nonzero(flags)
+        if rows.size == 0:
+            continue
+        x_low, x_high = x[cols], x[cols + 1]
+        y_low, y_high = y[rows], y[rows + 1]
+        if side == "bottom":
+            starts, ends = (x_low, y_low), (x_high, y_low)
+        elif side == "top":
+            starts, ends = (x_low, y_high), (x_high, y_high)
+        elif side == "left":
+            starts, ends = (x_low, y_low), (x_low, y_high)
+        else:
+            starts, ends = (x_high, y_low), (x_high, y_high)
+        segments.extend(
+            np.array([[sx, sy], [ex, ey]])
+            for sx, sy, ex, ey in zip_strict(starts[0], starts[1], ends[0], ends[1])
+        )
+    return segments
+
+
+def _shade_region(
+    ax: Any,
+    x: np.ndarray,
+    y: np.ndarray,
+    mask: np.ndarray,
+    spec: RegionSpec,
+    *,
+    legend_label: str,
+    handles: list[Any],
+) -> None:
+    """Outline, hatch and name the cells the field does not cover."""
+    if mask.size == 0 or not mask.any() or x.size < 2 or y.size < 2:
+        return
+    quads = _region_quads(mask)
+    if not quads.any():
+        return
+
+    from matplotlib.collections import LineCollection
+    from matplotlib.patches import Patch, PathPatch
+
+    path = _region_path(x, y, quads)
+    if spec.facecolor is not None:
+        ax.add_patch(
+            PathPatch(path, facecolor=spec.facecolor, linewidth=0.0, zorder=3.0)
+        )
+    # linewidth=0 on the hatched patch: the hatch still draws in the edge
+    # colour, and nothing strokes the seams between neighbouring cells.
+    ax.add_patch(
+        PathPatch(
+            path,
+            facecolor="none",
+            edgecolor=spec.color,
+            hatch=spec.hatch,
+            linewidth=0.0,
+            zorder=3.1,
+        )
+    )
+    ax.add_collection(
+        LineCollection(
+            _region_boundary(x, y, quads),
+            colors=spec.color,
+            linewidths=spec.linewidth,
+            zorder=3.2,
+        )
+    )
+
+    if spec.legend:
+        handles.append(
+            Patch(
+                facecolor=spec.facecolor or "none",
+                edgecolor=spec.color,
+                hatch=spec.hatch,
+                linewidth=spec.linewidth,
+                label=mathtext_safe(legend_label),
+            )
+        )
+
+    if not spec.message or float(quads.mean()) < spec.min_area:
+        return
+    anchor = _mask_anchor(_midpoints(x), _midpoints(y), quads)
+    if anchor is None:
+        return
+    fontsize = spec.fontsize
+    if fontsize is None:
+        fontsize = float(plt.rcParams["font.size"]) * 0.9
+    ax.text(
+        anchor[0], anchor[1], mathtext_safe(spec.message),
+        ha="center", va="center", fontsize=fontsize, color=spec.color, zorder=3.3,
+        bbox={
+            "boxstyle": "round,pad=0.28",
+            "facecolor": "white",
+            "edgecolor": spec.color,
+            "linewidth": 0.6,
+            "alpha": 0.92,
+        },
+    )
+
+
+def _midpoints(axis: np.ndarray) -> np.ndarray:
+    return np.asarray(0.5 * (axis[:-1] + axis[1:]), dtype=float)
+
+
+def _shade_panel_regions(ax: Any, panel: _CartoPanel) -> None:
+    """Both zones of one field panel, in the order they must be read."""
+    handles: list[Any] = []
+    equilibre = panel.spec.resolved_equilibre
+    if equilibre is not None and panel.equilibre_mask is not None:
+        _shade_region(
+            ax, panel.x, panel.y, panel.equilibre_mask, equilibre,
+            legend_label=equilibre.message or "not balanced",
+            handles=handles,
+        )
+    missing = panel.spec.resolved_missing
+    if missing is not None:
+        _shade_region(
+            ax, panel.x, panel.y, panel.missing_mask, missing,
+            legend_label=missing.message or "not computed",
+            handles=handles,
+        )
+    if handles:
+        ax.legend(
+            handles=handles,
+            loc="lower right",
+            fontsize=float(plt.rcParams["font.size"]) * 0.8,
+            framealpha=0.9,
+        )
 
 
 def _check_panels_agree(job: _CartoPlotJob) -> None:
@@ -751,12 +1471,21 @@ def _render_one_carto_job(
                 aspect=panel_spec.aspect,
             )
 
+        _shade_panel_regions(ax, panel)
+
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        set_title(ax, panel.label)
+        set_title(ax, mathtext_safe(panel.label))
 
     if job.delta is not None:
-        _render_delta_panel(axes_flat[n_fields], job.delta, x_label, y_label, spec.aspect)
+        _render_delta_panel(
+            axes_flat[n_fields],
+            job.delta,
+            x_label,
+            y_label,
+            spec.aspect,
+            missing=spec.resolved_missing,
+        )
 
     for ax in axes_flat[n_panels:]:
         ax.set_visible(False)
@@ -771,9 +1500,11 @@ def _render_one_carto_job(
             fig, last_fill, match_axes=False, label=qoi_label, ax=field_axes
         )
 
-    panel_titlesize = plt.rcParams["axes.titlesize"]
+    panel_titlesize = float(plt.rcParams["axes.titlesize"])
     heading = f"{job.suptitle}\n{job.subtitle}" if job.subtitle else job.suptitle
-    set_suptitle(fig, heading, fontsize=panel_titlesize * 1.25, fontweight="bold")
+    set_suptitle(
+        fig, mathtext_safe(heading), fontsize=panel_titlesize * 1.25, fontweight="bold"
+    )
 
     if on_before_save is not None:
         sources: list[str | None] = [panel.source for panel in job.panels]
@@ -817,6 +1548,8 @@ def _render_delta_panel(
     x_label: str,
     y_label: str,
     aspect: str | float | None,
+    *,
+    missing: RegionSpec | None = None,
 ) -> None:
     """Draw the difference panel: symmetric diverging fill, iso-lines, own bar."""
     spec = panel.spec
@@ -829,7 +1562,7 @@ def _render_delta_panel(
         levels=levels,
         cmap=spec.cmap,
         colorbar=spec.colorbar,
-        cbar_label=panel.cbar_label,
+        cbar_label=mathtext_safe(panel.cbar_label),
         extend=spec.resolved_extend,
         aspect=aspect,
     )
@@ -845,9 +1578,17 @@ def _render_delta_panel(
             clabel_fontsize=spec.clabel_fontsize,
             aspect=aspect,
         )
+    if missing is not None:
+        # The holes here are wider than the sources' own: interpolation onto
+        # the common grid cannot span a cell nobody ran.
+        _shade_region(
+            ax, panel.x, panel.y, ~np.isfinite(panel.z), missing,
+            legend_label=missing.message or "not computed",
+            handles=[],
+        )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    set_title(ax, panel.label)
+    set_title(ax, mathtext_safe(panel.label))
 
 
 # ---------------------------------------------------------------------------
@@ -891,10 +1632,111 @@ def _resolve_pairs(
     return resolved
 
 
+def _pad_axis(
+    axis: np.ndarray, low: float, high: float
+) -> tuple[np.ndarray, int, int]:
+    """*axis* stretched to ``[low, high]``, and how many slots were added."""
+    before = 1 if axis[0] > low else 0
+    after = 1 if axis[-1] < high else 0
+    if not (before or after):
+        return axis, 0, 0
+    parts = [np.array([low])] * before + [axis] + [np.array([high])] * after
+    return np.concatenate(parts), before, after
+
+
+def _align_panel_extents(panels: Sequence[_CartoPanel]) -> list[_CartoPanel]:
+    """Give every panel of one figure the same axes, hatching what it lacks.
+
+    A configuration run over a narrower sweep than its neighbour otherwise
+    comes out as a *smaller* panel, and two maps of the same quantity that do
+    not share their axes are the one thing a side-by-side sheet exists to rule
+    out — the reader compares positions before values. Padding the short panel
+    with empty rows puts the axes back in step and hands the gap to the same
+    treatment as any other hole: outlined, hatched, named.
+
+    Only when the missing zones are on. ``missing=False`` asked for the blanks
+    to stay blank, and that includes this one.
+    """
+    if len(panels) < 2 or any(panel.spec.resolved_missing is None for panel in panels):
+        return list(panels)
+
+    x_low = min(float(panel.x[0]) for panel in panels)
+    x_high = max(float(panel.x[-1]) for panel in panels)
+    y_low = min(float(panel.y[0]) for panel in panels)
+    y_high = max(float(panel.y[-1]) for panel in panels)
+
+    padded: list[_CartoPanel] = []
+    for panel in panels:
+        x_axis, left, right = _pad_axis(panel.x, x_low, x_high)
+        y_axis, below, above = _pad_axis(panel.y, y_low, y_high)
+        if not (left or right or below or above):
+            padded.append(panel)
+            continue
+        pad = ((below, above), (left, right))
+        field = np.pad(panel.z, pad, constant_values=np.nan)
+        mask = panel.equilibre_mask
+        padded.append(
+            replace(
+                panel,
+                x=x_axis,
+                y=y_axis,
+                z=field,
+                equilibre_mask=(
+                    None if mask is None else np.pad(mask, pad, constant_values=False)
+                ),
+            )
+        )
+    return padded
+
+
+def _equilibre_mask(
+    raw: np.ndarray, spec: EquilibreSpec, source: str
+) -> np.ndarray:
+    """Which gridded cells the table declares un-trimmable.
+
+    An unexpected value raises rather than being taken for one side or the
+    other: the whole point of the column is that the reader trusts the
+    hatching, and ``"n"`` quietly read as "not assessed" would break that.
+    """
+    ok = {value.strip().upper() for value in spec.ok_values}
+    ko = {value.strip().upper() for value in spec.ko_values}
+    mask = np.zeros(raw.shape, dtype=bool)
+    unknown: list[Any] = []
+
+    for index, value in np.ndenumerate(np.asarray(raw, dtype=object)):
+        if value is None:
+            continue
+        if isinstance(value, float) and np.isnan(value):
+            continue
+        if isinstance(value, (int, float, np.integer, np.floating)) and float(
+            value
+        ).is_integer():
+            token = str(int(value))
+        else:
+            token = str(value).strip().upper()
+        if token == "":
+            continue
+        if token in ko:
+            mask[index] = True
+        elif token not in ok:
+            unknown.append(value)
+
+    if unknown:
+        seen = sorted({str(value) for value in unknown})
+        raise ValueError(
+            f"column {spec.column!r} of configuration {source!r} holds "
+            f"{seen} — expected one of {sorted(ok)} (drawn) or {sorted(ko)} "
+            f"(hatched), or an empty cell (not assessed). Extend "
+            f"EquilibreSpec.ok_values / ko_values if that is your spelling."
+        )
+    return mask
+
+
 def _grid_panel(
     source: str,
     config: Mapping[str, Any],
     *,
+    label: str,
     flight_point: dict[str, float],
     fixed_sweeps: dict[str, float],
     flight_point_keys: Sequence[str],
@@ -914,9 +1756,13 @@ def _grid_panel(
     if missing:
         raise KeyError(f"Columns {missing} not found in configuration {source!r}.")
 
+    equilibre = spec.resolved_equilibre
+    wants_equilibre = equilibre is not None and equilibre.column in frame.columns
+    columns = [qoi_col, equilibre.column] if wants_equilibre and equilibre else [qoi_col]
+
     try:
-        x_values, y_values, field = dataframe_to_grid(
-            frame, x=x_col, y=y_col, values=qoi_col
+        x_values, y_values, gridded = dataframe_to_grid(
+            frame, x=x_col, y=y_col, values=columns
         )
     except ValueError as error:
         # The usual cause is a dimension nobody pinned: two rows share
@@ -929,17 +1775,30 @@ def _grid_panel(
             "flight_point_dict, or the map has several values per cell."
         ) from error
 
-    field = np.asarray(field, dtype=float)
-    if not np.any(np.isfinite(field)):
+    field = np.asarray(gridded[qoi_col], dtype=float)
+
+    mask: np.ndarray | None = None
+    if wants_equilibre and equilibre is not None:
+        mask = _equilibre_mask(gridded[equilibre.column], equilibre, source)
+        if mask.any():
+            # Dropped before anything measures the field, so an un-trimmable
+            # cell leaves the colour scale and the delta with it.
+            field = np.where(mask, np.nan, field)
+        else:
+            mask = None
+
+    if not np.any(np.isfinite(field)) and mask is None:
         return None
 
     return _CartoPanel(
         source=source,
-        label=str(config.get("label", source)),
+        label=label,
+        short_label=str(config.get("label", source)),
         x=np.asarray(x_values, dtype=float),
         y=np.asarray(y_values, dtype=float),
         z=field,
         spec=spec,
+        equilibre_mask=mask,
     )
 
 
@@ -981,36 +1840,82 @@ def _enumerate_carto_jobs(
                         base_spec, qoi_spec, where=f"y_axis_dict[{qoi_key!r}]"
                     )
 
+                    flight_point_label = format_flight_point_title_suffix(
+                        flight_point, flight_point_keys, completed_flight_points
+                    )
+                    case_label = (
+                        format_flight_point_title_suffix(
+                            fixed_sweeps, list(fixed_sweeps.keys()), completed_sweeps
+                        )
+                        if fixed_sweeps
+                        else ""
+                    )
+                    default_subtitle = ", ".join(
+                        part for part in (flight_point_label, case_label) if part
+                    )
+                    default_suptitle = (
+                        f"{format_axis_title_label(qoi_spec, qoi_key)} over "
+                        f"{format_axis_title_label(x_spec, x_key)} × "
+                        f"{format_axis_title_label(y_spec, y_key)}"
+                    )
+                    fields = _figure_fields(
+                        qoi_key=qoi_key,
+                        qoi_spec=qoi_spec,
+                        x_key=x_key,
+                        x_spec=x_spec,
+                        y_key=y_key,
+                        y_spec=y_spec,
+                        flight_point=flight_point,
+                        fixed_sweeps=fixed_sweeps,
+                        flight_point_label=flight_point_label,
+                        case_label=case_label,
+                        context=default_subtitle,
+                    )
+
                     panels: list[_CartoPanel] = []
                     for source, config in configuration_dict.items():
                         if include_panel is not None and not include_panel(
                             source, flight_point, (x_key, y_key), qoi_key, fixed_sweeps
                         ):
                             continue
+                        panel_spec = _panel_spec(
+                            figure_spec, config, where=f"configuration_dict[{source!r}]"
+                        )
                         panel = _grid_panel(
                             source,
                             config,
+                            label=_resolve_title(
+                                panel_spec.panel_title,
+                                _panel_fields(fields, source, config),
+                                str(config.get("label", source)),
+                                where=f"configuration_dict[{source!r}] panel_title",
+                            ),
                             flight_point=flight_point,
                             fixed_sweeps=fixed_sweeps,
                             flight_point_keys=flight_point_keys,
                             x_col=x_col,
                             y_col=y_col,
                             qoi_col=qoi_col,
-                            spec=_panel_spec(
-                                figure_spec,
-                                config,
-                                where=f"configuration_dict[{source!r}]",
-                            ),
+                            # Stripped: the titles are resolved here, in the
+                            # parent, so a callable never has to cross into a
+                            # worker — a lambda would drop the run to one core.
+                            spec=_strip_titles(panel_spec),
                         )
                         if panel is not None:
                             panels.append(panel)
                     if not panels:
                         continue
                     delta_panel = (
-                        _build_delta_panel(figure_spec.delta, panels, qoi_spec, qoi_key)
+                        _build_delta_panel(
+                            figure_spec.delta, panels, qoi_spec, qoi_key, fields
+                        )
                         if figure_spec.delta is not None
                         else None
                     )
+                    # After the delta: it is built on what each source actually
+                    # holds, and padding first would hand it two grids of NaN
+                    # margins to intersect.
+                    panels = _align_panel_extents(panels)
 
                     output_path = build_output_path(
                         output_base,
@@ -1023,22 +1928,6 @@ def _enumerate_carto_jobs(
                         qoi_save,
                         completed_flight_points,
                         completed_sweeps,
-                    )
-                    flight_point_label = format_flight_point_title_suffix(
-                        flight_point, flight_point_keys, completed_flight_points
-                    )
-                    case_label = (
-                        format_flight_point_title_suffix(
-                            fixed_sweeps, list(fixed_sweeps.keys()), completed_sweeps
-                        )
-                        if fixed_sweeps
-                        else ""
-                    )
-                    subtitle = ", ".join(part for part in (flight_point_label, case_label) if part)
-                    suptitle = (
-                        f"{format_axis_title_label(qoi_spec, qoi_key)} over "
-                        f"{format_axis_title_label(x_spec, x_key)} × "
-                        f"{format_axis_title_label(y_spec, y_key)}"
                     )
                     jobs.append(
                         _CartoPlotJob(
@@ -1053,12 +1942,22 @@ def _enumerate_carto_jobs(
                             qoi_spec=qoi_spec,
                             polar_prefix=prefix,
                             output_path=output_path,
-                            suptitle=suptitle,
-                            subtitle=subtitle,
+                            suptitle=_resolve_title(
+                                figure_spec.suptitle,
+                                fields,
+                                default_suptitle,
+                                where=f"y_axis_dict[{qoi_key!r}] suptitle",
+                            ),
+                            subtitle=_resolve_title(
+                                figure_spec.subtitle,
+                                fields,
+                                default_subtitle,
+                                where=f"y_axis_dict[{qoi_key!r}] subtitle",
+                            ),
                             flight_point_label=flight_point_label,
                             case_label=case_label,
                             panels=tuple(panels),
-                            spec=figure_spec,
+                            spec=_strip_titles(figure_spec),
                             delta=delta_panel,
                         )
                     )
@@ -1124,7 +2023,10 @@ def batch_carto(
         ``"relative"`` for a percentage of the reference, or a
         :class:`DeltaSpec` / dict to tune its own diverging scale. Only with
         exactly two configurations; a flight point where one of them did not
-        run simply comes out without the panel.
+        run simply comes out without the panel. Both are interpolated onto one
+        fine grid over the sweep range they share before being subtracted, so
+        two tables run on different steps still compare —
+        ``delta={"grid": "exact"}`` restores the cell-by-cell subtraction.
     include_panel :
         ``f(source, flight_point, (x_key, y_key), qoi_key, fixed_sweeps) -> bool``
         — the cartography analogue of ``batch_plot``'s ``include_curve``.
@@ -1139,10 +2041,15 @@ def batch_carto(
     Notes
     -----
     Each source's rows are pivoted onto a grid, so a ``(x, y)`` cell that the
-    study never ran comes out ``NaN`` and is left blank rather than
-    interpolated. Two rows landing in the same cell is an error naming the
+    study never ran comes out ``NaN``, is left blank rather than interpolated,
+    and is outlined and hatched so the blank reads as an absence rather than as
+    a drawing fault. Two rows landing in the same cell is an error naming the
     configuration: some column varies that is in neither ``sweep_dict`` nor
     ``flight_point_dict``, so it never became a directory.
+
+    A table carrying an ``Equilibre`` column is read without being asked: every
+    cell it marks ``NON`` is hatched under a "non équilibrable" message and
+    dropped from the field — see :class:`EquilibreSpec`.
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
@@ -1269,6 +2176,28 @@ def _delta_note(spec: CartoSpec, configuration_dict: Mapping[str, Any]) -> str:
     return f"{spec.delta.mode} ({subtraction})"
 
 
+def _zone_note(spec: CartoSpec) -> str:
+    """What the plan will do with the blanks."""
+    parts = []
+    equilibre = spec.resolved_equilibre
+    parts.append(
+        f"column {equilibre.column!r} where a table has it"
+        if equilibre
+        else "equilibre off"
+    )
+    parts.append("holes outlined" if spec.resolved_missing else "holes left blank")
+    return ", ".join(parts)
+
+
+def _first_heading(jobs: Sequence[_CartoPlotJob]) -> str:
+    if not jobs:
+        return "none"
+    job = jobs[0]
+    panels = " | ".join(panel.label for panel in job.panels)
+    heading = job.suptitle if not job.subtitle else f"{job.suptitle} / {job.subtitle}"
+    return f"{heading}   [{panels}]"
+
+
 def _print_carto_plan(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -1303,6 +2232,10 @@ def _print_carto_plan(
         f"Colour scale : {'shared across panels' if spec.shared_scale else 'per panel'}"
         f", cmap={spec.cmap}, levels={spec.levels}  (defaults)",
         "Delta panel  : " + _delta_note(spec, configuration_dict),
+        "Zones        : " + _zone_note(spec),
+        # The resolved heading, because a template typo is invisible until a
+        # figure is open and the run is over.
+        f"First heading: {_first_heading(jobs)}",
         f"Parallel     : {'sequential (n_jobs=1)' if n_jobs == 1 else f'{n_jobs} workers'}",
         f"Clean        : {_batch._clean_note(clean)}",
         f"Figures      : {len(jobs)}  ({panels} panels)  →  "

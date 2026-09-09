@@ -305,8 +305,22 @@ not part of the Bash framework's runtime:
   With exactly two configurations, `delta=True` / `"relative"` (`DeltaSpec`) adds a third panel,
   `conf2 - conf1` (the first entry is the reference): diverging colormap, scale symmetric about
   zero with an odd level count so a boundary lands on zero, its own colorbar (the field's spans
-  the field panels only), `bound=` to pin the range across a study. Different grids raise rather
-  than being resampled, and a zero reference in relative mode is a hole, not an infinity.
+  the field panels only), `bound=` to pin the range across a study. Both sources are
+  interpolated onto one fine grid over the sweep range they *share* — the intersection, never
+  the union — before subtracting, so different steps still compare (`grid="exact"` restores the
+  cell-by-cell subtraction and its refusal); interpolation and subtraction commute, so the
+  smoothing invents nothing, but a hole widens by one coarse cell. A zero reference in relative
+  mode is a hole, not an infinity.
+  A blank cell says *which* blank it is (`RegionSpec`, `EquilibreSpec`): an `Equilibre` column
+  reading `NON` is picked up without being asked, hatched under a "non équilibrable" message and
+  dropped from the field — so it leaves the colour scale and the delta too — while cells the
+  study never ran are outlined and hatched with a message of your own. Whole cells, not the
+  half-cells a contour at 0.5 would give, since `contourf` blanks a cell on one missing corner.
+  Turning the zones on also pads short panels to the figure's extent, so two maps of one
+  quantity always share their axes. `panel_title` / `suptitle` / `subtitle` (and `DeltaSpec.title`)
+  take a template or a callable; a panel's template can name any key of its `configuration_dict`
+  entry (`{masse}`, `{CDG}`), an unknown field is left verbatim so LaTeX braces survive, and the
+  resolution happens in the parent so a lambda costs no worker.
   `cfd_plot.domains` (`plot_domains`) shades and names the regions a curve crosses from a
   per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
   the samples that disagree, a hole in the column left blank rather than shaded through, and
@@ -314,7 +328,11 @@ not part of the Bash framework's runtime:
   neighbouring regime is absent.
   A configuration entry may also carry the caller's own keys (`masse`, `maillage`): only
   keywords Matplotlib recognises (asked of `ArtistInspector(Line2D)`) reach `plot_line`, with
-  `style` as the never-filtered escape hatch. Layout calls go through `cfd_plot._compat`
+  `style` as the never-filtered escape hatch. Matplotlib parses a whole string as **mathtext**
+  as soon as it holds one `$`, so a heading mixing `×`/`−`/`Δ` with a `$C_N$` asks the *math*
+  font for those glyphs and dies on a stack that lacks them (the Spyder/IDE case, where
+  `batch_plot` still works): `mathtext_safe` renders a probe once per font stack and falls back
+  to ASCII, `CFD_PLOT_ASCII_TEXT` forces either way. Layout calls go through `cfd_plot._compat`
   (`figure_set_layout_pad` / `figure_disable_layout`), which also speaks the pre-3.6 Matplotlib
   API — a cluster often *provides* a Matplotlib older than the declared floor.
   SciPy is optional (`.[interp]`) and now only serves `interpolate_field2d`.
@@ -426,6 +444,66 @@ not part of the Bash framework's runtime:
       `01_EXEMPLE/sortie_modele.py` is a **hard-coded example of the model output table** (4 flight
       points × 100 draws = 400 rows, one lot replayed at every flight point) that later examples
       build on.
+    - **Both walkers take `batch_plot`'s three CLI arguments**, transliterated: `verbeux`
+      (`verbose` — the plan panel, the flight-point loop tables, then a Rich progress bar naming
+      the flight point and draw in flight), `rapport` (`report`, default **True** — the files
+      written, grouped by flight point, with sizes) and `a_blanc` (`dry_run` — enumerate and write
+      nothing, cleaning included). The rendering lives in `report/parcours.py`, and the dry run
+      composes filenames through the same `_Travail.fichiers_prevus()` the real run uses, so
+      `a_blanc=True` provably says what a real run would write (asserted).
+    - **`relations={"CN": "-CZ", "CA": "CX1 + CX2"}` gives a law to an output the model does not
+      disperse** (`core/relation.py`). The law table covers what the model *consumes*, the output
+      table what it *produces*; when the gap is linear, each target gets **both** its laws, derived
+      from its sources', plus its drawn components, derived from the row's draw — so it is plotted
+      like a declared coefficient, and the model-vs-calcul check then covers the **relation
+      itself**. The split differs between the two components: at a fixed nominal a convention is
+      `α·Biais + β·FE + cst` (measured, via `decomposition_affine`), so the bias weights are the
+      `aᵢ` and the scale-factor weights are **shares**, `aᵢ·cᵢ/c_cible` — hence laws derived **per
+      flight point**, from the sources' nominals read out of `reference=`. One term and no constant
+      (`CN = -CZ`) is the exception: shares are 1, no nominal is needed, and the law **stays in its
+      family** (a `LoiDispersion` with the same type and `ET`); several terms leave the six
+      families for a `LoiDerivee` over `ot.LinearCombinationDistribution`. The constant offset is
+      chosen so a **neutral draw stays neutral**, and the whole derivation is replayed against the
+      relation on fictitious draws before use. Three refusals: a multi-term relation without its
+      sources' nominals; a relation that disagrees with the reference's own target column (every
+      derived law of that flight point would be wrong, silently); a non-affine convention or a
+      correlated law set. `LoiComposante` (a Protocol in `core/loi.py`) is what lets figures,
+      validation and the terminal report treat both kinds alike; `LoiCoefficient.en_table()` is the
+      inverse of `charger_lois` and **refuses** a derived law, since no `(type, M, ET)` describes a
+      combination. In the histogram walker the target's components — which the model never returns
+      — are **recomposed** from its sources' with the same weights. `coefficients=` replaces the
+      default list (laws + relation targets), `coefficients_en_plus=` adds to it.
+      `01_EXEMPLE/sortie_modele_relations.py` + `10_relations.py` are the runnable version.
+    - **Both walkers take `batch_plot`'s three CLI arguments**, transliterated: `verbeux`
+      (`verbose` — the plan panel, the flight-point loop tables, then a Rich progress bar naming
+      the flight point and draw in flight), `rapport` (`report`, default **True** — the files
+      written, grouped by flight point, with sizes) and `a_blanc` (`dry_run` — enumerate and write
+      nothing, cleaning included). The rendering lives in `report/parcours.py`, and the dry run
+      composes filenames through the same `_Travail.fichiers_prevus()` the real run uses, so a
+      `a_blanc=True` provably says what a real run would write (asserted).
+    - **`relations={"CN": "-CZ", "CA": "CX1 + CX2"}` gives a law to an output the model does not
+      disperse** (`core/relation.py`). The law table covers what the model *consumes*, the output
+      table what it *produces*; when the gap is linear, each target gets **both** its laws, derived
+      from its sources', plus its drawn components, derived from the row's draw — so it is plotted
+      like a declared coefficient, and the model-vs-calcul check then covers the **relation
+      itself**. The split is not the same for the two components: at a fixed nominal a convention
+      is `α·Biais + β·FE + cst` (measured, via `decomposition_affine`), so the bias weights are the
+      `aᵢ` and the scale-factor weights are **shares**, `aᵢ·cᵢ/c_cible` — hence laws derived **per
+      flight point**, from the sources' nominals read out of `reference=`. One term and no constant
+      (`CN = -CZ`) is the exception: shares are 1, no nominal is needed, and the law **stays in its
+      family** (a `LoiDispersion` with the same type and `ET`); several terms leave the six
+      families for a `LoiDerivee` over `ot.LinearCombinationDistribution`. The constant offset is
+      chosen so a **neutral draw stays neutral**, and the whole derivation is then replayed against
+      the relation on fictitious draws before use. Three refusals: a multi-term relation without
+      its sources' nominals; a relation that disagrees with the reference's own target column (every
+      derived law of that flight point would be wrong, silently); a non-affine convention or a
+      correlated law set. `LoiComposante` (a Protocol in `core/loi.py`) is what lets figures,
+      validation and the terminal report treat both kinds alike; `LoiCoefficient.en_table()` is the
+      inverse of `charger_lois` and **refuses** a derived law, since no `(type, M, ET)` describes a
+      combination. In the histogram walker the target's components — which the model never returns
+      — are **recomposed** from its sources' with the same weights. `coefficients=` replaces the
+      default list (laws + relation targets), `coefficients_en_plus=` adds to it.
+      `01_EXEMPLE/sortie_modele_relations.py` + `10_relations.py` are the runnable version.
     - **The nominal comes from a second table, and the model gets checked.** `reference=` on the
       walker is the same model run once with a neutral draw (`tirage_neutre` — `FE = 1` for
       `biais + FE·c`, `FE = 0` for the percentage form, *resolved* from the relation rather than

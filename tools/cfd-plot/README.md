@@ -1665,6 +1665,10 @@ metadata like `df` or `label` — it never reaches `plot_line`, so **the same
 | `extend` | `"neither"` | Colorbar arrows: `"both"`, `"min"`, `"max"` |
 | `aspect` | `None` | Axes aspect. **Not** `"equal"` — a map over (Mach, alpha) has two unrelated units, and forcing it square would squash the map to a sliver |
 | `delta` | `None` | The third panel — see below. A property of the *figure*, so it goes on `carto=` or a `y_axis_dict` entry; on a source's `CARTO` it raises |
+| `equilibre` | `True` | The un-trimmable zone, read from an `Equilibre` column if the table has one — see below. `False` ignores the column |
+| `missing` | `True` | The unrun zone: outline + hatch. `False` leaves the blanks blank, as before |
+| `panel_title` | `None` | Template or callable for a panel's heading — see below |
+| `suptitle`, `subtitle` | `None` | Same, for the two heading lines of the figure |
 
 `"level"` is accepted as an alias for `"levels"` (and `"line_level"` for `"line_levels"`); any
 other unknown key raises, naming it. A typo that silently draws the default is worse than a
@@ -1706,17 +1710,153 @@ auto bound rescales on every sheet, which makes a small difference look like a l
 | `clabel`, `clabel_fmt`, `clabel_fontsize` | `True`, signed, `None` | `"%+.3g"` or `"%+.1f%%"` by mode |
 | `colorbar`, `label` | `True`, `None` | Its own bar; the label defaults to `Δ$C_N$ (-)` or `Δ$C_N$ / $C_N$ (%)` |
 | `extend` | `None` | `"both"` when `bound` clips, `"neither"` otherwise |
+| `grid` | `"common"` | `"exact"` subtracts cell by cell and refuses two different grids |
+| `resample` | `None` | Size of the common grid: an int, or `(nx, ny)`. `None` takes 4× the finer of the two, bounded to 81…321 per axis |
+| `title` | `None` | Template or callable for the panel's heading — `{other}`, `{reference}` and the figure's fields |
 
-Two rules the panel enforces rather than papering over:
+**Both configurations are interpolated onto one fine grid before being subtracted.** The grid
+spans the sweep range they *share* — the intersection, never the union: past the last point a
+table holds there is nothing to interpolate, and extending the difference there would be
+inventing it. Two tables run on different steps therefore still compare, and the iso-lines of
+the difference read as curves rather than as the staircase of the coarser of the two.
 
-- **The two sources must be on the same grid.** Cell by cell is the only honest subtraction, so
-  a `MODEL` run on half the alphas raises instead of being resampled behind your back.
+Interpolating and subtracting commute — bilinear interpolation is linear — so the smoothing
+cannot invent a difference that the tables do not hold. What it *cannot* bridge is a hole: a
+cell of the fine grid whose surrounding values include one is a hole too, which is why a
+missing or un-trimmable cell comes out one coarse cell wider on the delta panel than on the
+field ones. `delta={"grid": "exact"}` restores the cell-by-cell subtraction and its refusal.
+
+Two rules the panel still enforces rather than papering over:
+
+- **The domains must overlap.** Two configurations with no sweep range in common raise, naming
+  both ranges, instead of producing an empty panel.
 - **In relative mode, a zero reference is a hole, not an infinity.** `CN = 0` at `α = 0` is the
-  common case; the column comes out blank (visible in the figure below) rather than as an
-  `inf` that would rescale the whole map. Use `mode="absolute"` there.
+  common case; that column comes out blank rather than as an `inf` that would rescale the whole
+  map. Use `mode="absolute"` there.
 
 A flight point where only one of the two ran simply comes out without the panel — the figure is
 still valid.
+
+### Blanks that say which blank they are
+
+![zones on a cartography](00_DOC/FIGURES/36_batch_carto_zones.png)
+
+A white patch on a map is a question, and two very different facts produce one. On the figure
+above the CFD does not **trim** past the transonic corner, and the model was never **run**
+above M 1.15. Both would come out white and identical; they are outlined, hatched and named
+instead.
+
+**The un-trimmable zone reads itself.** If a configuration's table carries an `Equilibre`
+column, `batch_carto` uses it without being asked: every cell reading `NON` is hatched under a
+*non équilibrable* message, and its value is dropped — `NaN` before anything measures the
+field, so those cells leave the colour scale, the shared levels and the delta with them. A
+coefficient at a flight point that does not trim is not a small value, it is not a value.
+
+```python
+# nothing to declare — the column is enough
+df_cfd["Equilibre"] = np.where(trims, "OUI", "NON")
+
+# unless you want to tune it
+batch_carto(..., carto={"equilibre": {"message": "hors domaine de vol", "hatch": "///"}})
+batch_carto(..., carto={"equilibre": False})        # ignore the column
+```
+
+`OUI`/`NON` are matched on the stripped upper-cased text, so `"oui "`, `True` and `1` all pass;
+`YES`/`NO`/`O`/`N`/`TRUE`/`FALSE`/`0` are understood too, and an empty cell means "not
+assessed" and is drawn normally. **Anything else raises, naming the value** — a house spelling
+silently hatched, or silently drawn, is worse than a stop:
+
+```
+ValueError: column 'Equilibre' of configuration 'CFD' holds ['peut-être'] — expected one of
+['1', 'O', 'OUI', 'TRUE', 'Y', 'YES'] (drawn) or ['0', 'FALSE', 'N', 'NO', 'NON'] (hatched),
+or an empty cell (not assessed). Extend EquilibreSpec.ok_values / ko_values if that is your
+spelling.
+```
+
+**The unrun zone is the same treatment for a different fact.** Cells the study never ran stay
+blank — no interpolation, no smoothing — but they are now outlined and hatched so the blank
+reads as an absence rather than as a drawing fault. It is off by one key, and it takes a
+message of your own:
+
+```python
+batch_carto(..., carto={"missing": {"message": "non calculé"}})
+batch_carto(..., carto={"missing": False})          # blanks stay blank
+```
+
+Turning the zones on also **puts the panels' axes back in step**: a configuration run over a
+narrower sweep than its neighbour is padded to the figure's full extent and the gap is hatched,
+instead of coming out as a *smaller* panel. Two maps of the same quantity that do not share
+their axes are the one thing a side-by-side sheet exists to rule out — the reader compares
+positions before values. `missing=False` asked for the blanks to stay blank, and that includes
+this one.
+
+| Key | Default (`missing`) | Default (`equilibre`) | What it does |
+|:---|:---|:---|:---|
+| `hatch` | `"\\\\"` | `"//"` | Matplotlib hatch pattern; repeat a character to densify |
+| `color` | `"0.55"` | `"0.35"` | Hatching *and* outline |
+| `facecolor` | `None` | `"white"` | Wash under the hatching |
+| `linewidth` | `0.7` | `0.8` | Outline width |
+| `message` | `None` | `"non équilibrable"` | Written inside the zone, in a small white box |
+| `fontsize` | `None` | `None` | Follows the style, one notch below body text |
+| `min_area` | `0.02` | `0.02` | Fraction of the panel below which the zone gets no message — text wider than the zone it names reads as text about its neighbour |
+| `legend` | `False` | `False` | A proxy patch on the panel, so a zone too small for its message is still named |
+| `column` | — | `"Equilibre"` | Column to read |
+| `ok_values`, `ko_values` | — | see above | Accepted spellings |
+
+The hatching covers whole **cells**, not the half-cells a contour at 0.5 would give: `contourf`
+blanks a cell as soon as one of its four corners is missing, so anything narrower would leave a
+white ring between the field and its own hatching.
+
+### Headings you write yourself
+
+`panel_title`, `suptitle` and `subtitle` take a `str.format` template or a callable. A panel's
+template can name **any key of its `configuration_dict` entry**, which is where the mass and the
+centre of gravity already live — `batch_plot` leaves those keys alone, so nothing has to be set
+up for this:
+
+```python
+configuration_dict = {
+    "CFD":   {"label": "CFD",               "df": df_cfd,   "masse": 12500, "CDG": 25.0},
+    "MODEL": {"label": "Engineering model", "df": df_model, "masse": 12500, "CDG": 27.5},
+}
+
+batch_carto(
+    ...,
+    carto={
+        "panel_title": "{label} — CDG {CDG} %, m={masse} kg",
+        "suptitle": "{qoi_symbol} over {x} × {y} — {flight_point}",
+        "subtitle": "",                       # drop the second line entirely
+        "delta": {"title": "{other} against {reference}"},
+    },
+)
+
+# or a callable, for anything a template cannot say
+def titre(fields):
+    return f"{fields['label']} ({fields['Mach']:.2f})"
+```
+
+| Field | |
+|:---|:---|
+| `source`, `label` | the configuration key and its label (panel titles only) |
+| every other key | of that `configuration_dict` entry — `{masse}`, `{CDG}` — bar `df`, `style` and `CARTO` |
+| `qoi`, `qoi_symbol`, `qoi_label`, `qoi_unit` | the quantity |
+| `x`, `y`, `x_key`, `y_key` | the two sweeps, symbol and key |
+| `flight_point`, `case`, `context` | the formatted flight point, the pinned sweeps, both |
+| the values themselves | of the flight point and the pinned sweeps, by key — `{Mach}`, `{Altitude_m}` |
+| `reference`, `other` | the two source labels (`delta` title only) |
+
+A field the mapping does not have is **left as written, braces and all**. That is deliberate
+twice over: `$\alpha_{max}$` is a perfectly good thing to put in a heading and `str.format`
+would read `{max}` as a field, and a typo in `{masse}` should cost one wrong heading rather than
+two hundred figures that never got written. `verbose=True` prints the first resolved heading,
+which is where to catch one before the run:
+
+```
+First heading: $C_N$ over $\alpha$ × $M$ / Z=8000 m   [CFD — CDG 25.0 %, m=12500 kg | …]
+```
+
+A callable is resolved in the parent process, before the jobs are handed out, so a `lambda`
+here does **not** drop the run to one core the way an unpicklable `on_before_save` would.
 
 ### A report-grade cartography
 
@@ -1737,16 +1877,17 @@ y_axis_dict = {
         "col_name": "CN", "literal_name": "Normal force coefficient",
         "symbol": r"$C_N$", "unit": "-", "y_save_name": "CN",
         "CARTO": {
-            "cmap": "jet",              # the wind-tunnel-report look
+            "cmap": "Spectral_r",       # colourful, light at the centre, never dark
             "levels": 25,               # a smooth fill…
             "line_levels": 9,           # …but only 9 labelled iso-lines: that is what reads
             "line_width": 0.7,
             "clabel_fmt": "%.2f",
             "clabel_fontsize": 8,
             "panel_size": (4.6, 4.0),   # squarer than the default curve panel
+            "suptitle": "{qoi_symbol} over {x} × {y} — CDG 25 %, m = 12 500 kg",
             "delta": {
                 "mode": "relative",     # % of the CFD reference
-                "cmap": "RdBu_r",
+                "cmap": "coolwarm",     # neutral at zero, mid-tone at both ends
                 "levels": 13,           # odd: one boundary lands exactly on zero
                 "bound": 6.0,           # ±6 %, pinned so every sheet compares
                 "line_levels": 7,
@@ -1781,10 +1922,16 @@ batch_carto(
 )
 ```
 
-Two notes on that figure. The **blank column at α = 0** on the delta panel is the rule above:
-`CN = 0` there, so a percentage is undefined and the cell stays empty. And `jet` is what a
-wind-tunnel report still looks like — `"turbo"` is the perceptually corrected drop-in if you
-want the same punch without the false banding.
+**On the colormaps**, which is where that figure was won. Black iso-lines and their labels are
+the readable part of a map, and they disappear on a dark fill: measured on 256 samples,
+`jet` bottoms out at **L\* 13** (its navy) and `RdBu_r` at 20, which is why the first version of
+this figure had an unreadable left third. `Spectral_r` (L\* 33) is as colourful and stays light
+through the middle; `coolwarm` (L\* 38) is neutral at zero and mid-tone at both ends, which is
+exactly what a delta wants. If you need the wind-tunnel-plate look, `rainbow` never drops below
+L\* 40 — and `jet` is still one word away if the report demands it.
+
+The **blank column at α = 0** on the delta panel is the rule above: `CN = 0` there, so a
+percentage is undefined and the cell stays empty rather than becoming an `inf`.
 
 The `CARTO` block sits on the `y_axis_dict` entry rather than on `carto=`, so a second quantity
 next to `CN` keeps its own colormap, its own levels and its own delta bound. Everything not
@@ -1796,7 +1943,8 @@ Each source's rows are pivoted onto a grid — no interpolation, no smoothing. T
 worth knowing:
 
 - **A cell the study never ran stays blank.** It comes out `NaN` and `contourf` leaves a hole,
-  rather than inventing a value across it. A ragged sweep therefore reads as ragged.
+  rather than inventing a value across it — outlined and hatched, so the blank reads as an
+  absence. A ragged sweep therefore reads as ragged.
 - **Two rows in one cell is an error**, naming the configuration and the flight point. Some
   column varies that is in neither `sweep_dict` nor `flight_point_dict`, so it never became a
   directory and the map has several values per cell.
@@ -1846,7 +1994,7 @@ fixed_sweeps)` is the analogue of `include_curve`.
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |
-| **Cartographies** | `batch_carto`, `CartoSpec`, `DeltaSpec`, `CARTO_KEY` |
+| **Cartographies** | `batch_carto`, `CartoSpec`, `DeltaSpec`, `RegionSpec`, `EquilibreSpec`, `CARTO_KEY` |
 | **Domain regions** | `plot_domains`, `domain_segments`, `Domain`, `DomainSpan` |
 | **PDF reports** | `pdf_report`, `contact_sheet`, `ReportSection`, `PdfReportSpec`, `PAGE_SIZES`; `batch_plot(..., pdf_report=...)` |
 
@@ -1949,6 +2097,7 @@ this codebase.
 | `ValueError: Invalid RGBA argument: 'inherit'` | pre-1.1.0 `make_legend` under a style where `legend.edgecolor = "inherit"` (e.g. Matplotlib's `classic`) | fixed — upgrade |
 | Title overlaps the subtitle | `set_subtitle` called before `set_title` | call `set_title` first |
 | `AttributeError: 'Figure' object has no attribute 'get_layout_engine'` from `batch_compare_flight_points` or a folded sheet | Matplotlib older than 3.6 — typically one *provided* by the machine (module, container, site install) rather than the one `pyproject.toml` asked for | fixed — upgrade cfd-plot (the layout calls go through `cfd_plot._compat`, which speaks both APIs); `python -c "import matplotlib; print(matplotlib.__version__)"` tells you what you are actually running |
+| Anything raised inside `matplotlib/_mathtext.py` (`font.load_char`, a missing glyph) from `batch_carto` and not from `batch_plot` | Matplotlib hands a string to its **mathtext** engine as soon as it holds one `$` — the parts outside the maths included. A cartography heading composes `×`, `−` and `Δ` next to a `$C_N$`, so those glyphs are asked of the *math* font, and a font stack that cannot serve them takes the figure down. Your own `symbol` strings are unaffected, which is why the same script draws curves fine | fixed — upgrade cfd-plot: it renders a probe once per font stack and falls back to `x`, `-` and `Delta` when that fails, with one warning naming the fontset. `CFD_PLOT_ASCII_TEXT=1` forces the ASCII form, `=0` forbids it |
 | `FigureCanvasAgg is non-interactive`, no window in Spyder / Jupyter / IPython | pre-1.1.0 `batch.py` called `matplotlib.use("Agg")` at import, so `import cfd_plot` forced a headless backend on the whole session | fixed — upgrade, then **restart the kernel** (the old backend is sticky in a running one) |
 | `RuntimeError: the figure was resized mid-capture` | `set_size_inches` (or a helper that resizes) called inside the capture loop | size the figure before the first `capture()` |
 | `ValueError: nothing was captured` | the loop never reached `capture()` — an empty iterable, or every frame hit a `continue` | check the loop actually yields frames |

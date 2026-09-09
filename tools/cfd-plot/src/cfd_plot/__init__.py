@@ -16,6 +16,7 @@ from .mpl_template import (
     fill_between_curves,
     make_figure_legend,
     make_legend,
+    mathtext_safe,
     new_figure,
     plot_bar,
     plot_line,
@@ -83,6 +84,8 @@ from .carto import (
     CARTO_KEY,
     CartoSpec,
     DeltaSpec,
+    EquilibreSpec,
+    RegionSpec,
     batch_carto,
 )
 
@@ -196,6 +199,8 @@ __all__ = [
     "CARTO_KEY",
     "CartoSpec",
     "DeltaSpec",
+    "EquilibreSpec",
+    "RegionSpec",
     "batch_carto",
     # Domain regions
     "Domain",
@@ -247,6 +252,7 @@ __all__ = [
     "set_axis_sci",
     "set_subtitle",
     "set_suptitle",
+    "mathtext_safe",
     "set_title",
     "sync_axes_limits",
     # Export

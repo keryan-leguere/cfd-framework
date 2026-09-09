@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from cfd_plot import CartoSpec, DeltaSpec, batch_carto
+from cfd_plot import CartoSpec, DeltaSpec, EquilibreSpec, RegionSpec, batch_carto
 from cfd_plot.batch import (
     _extract_plot_style_kwargs,
     _prepare_flight_point_dict,
@@ -21,8 +21,12 @@ from cfd_plot.batch import (
 )
 from cfd_plot.carto import (
     _CartoPlotJob,
+    _common_axis,
     _delta_levels,
     _enumerate_carto_jobs,
+    _equilibre_mask,
+    _mask_anchor,
+    _resample_bilinear,
     _resolve_delta_arg,
     _resolve_pairs,
     _shared_levels,
@@ -54,6 +58,12 @@ def _rows(scale: float) -> list[dict]:
         for alpha in _ALPHAS
         for altitude in _ALTITUDES
     ]
+
+
+def _with_equilibre(frame: pd.DataFrame, ko) -> pd.DataFrame:
+    """Same table plus an Equilibre column, ``ko(row) -> bool`` marking NON."""
+    values = ["NON" if ko(row) else "OUI" for _, row in frame.iterrows()]
+    return frame.assign(Equilibre=values)
 
 
 @pytest.fixture()
@@ -663,7 +673,8 @@ class TestDeltaPanel:
         self, configuration_dict, tmp_path
     ):
         """conf1 is the reference by convention: the sign reads as conf2's excess."""
-        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))[0]
+        spec = CartoSpec(delta=DeltaSpec(grid="exact"))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
         reference, other = job.panels
         assert job.delta is not None
         assert job.delta.reference == "CFD"
@@ -722,12 +733,15 @@ class TestDeltaPanel:
         job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
         assert job.delta.cbar_label == "Écart modèle"
 
-    def test_different_grids_cannot_be_subtracted(self, configuration_dict, tmp_path):
-        """Cell by cell is the only honest subtraction."""
+    def test_different_grids_are_refused_only_when_asked_for_exact(
+        self, configuration_dict, tmp_path
+    ):
+        """grid='exact' still subtracts cell by cell, or not at all."""
         frame = configuration_dict["MODEL"]["df"]
         configuration_dict["MODEL"]["df"] = frame[frame["alpha"] < 6.0]
+        spec = CartoSpec(delta=DeltaSpec(grid="exact"))
         with pytest.raises(ValueError, match="run on different grids"):
-            _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=DeltaSpec()))
+            _jobs(configuration_dict, tmp_path, base_spec=spec)
 
     def test_a_flight_point_with_one_source_simply_has_no_delta(
         self, configuration_dict, tmp_path
@@ -904,3 +918,432 @@ class TestDeltaRendering:
         out = capsys.readouterr().out
         assert "Delta panel" in out
         assert "MODEL - CFD" in out
+
+
+class TestEquilibre:
+    """A table that says which flight points do not trim, and what that draws."""
+
+    def test_the_column_is_picked_up_without_being_asked_for(
+        self, configuration_dict, tmp_path
+    ):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        panel = _jobs(configuration_dict, tmp_path)[0].panels[0]
+        assert panel.equilibre_mask is not None
+        assert panel.equilibre_mask.any()
+
+    def test_a_table_without_the_column_is_unaffected(self, configuration_dict, tmp_path):
+        panel = _jobs(configuration_dict, tmp_path)[0].panels[0]
+        assert panel.equilibre_mask is None
+
+    def test_equilibre_false_ignores_the_column(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        spec = CartoSpec(equilibre=False)
+        panel = _jobs(configuration_dict, tmp_path, base_spec=spec)[0].panels[0]
+        assert panel.equilibre_mask is None
+        assert np.isfinite(panel.z).all()
+
+    def test_the_mask_marks_exactly_the_flagged_cells(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        panel = _jobs(configuration_dict, tmp_path)[0].panels[0]
+        flagged = panel.x >= 4.0  # alpha is on x
+        assert (panel.equilibre_mask == flagged[None, :]).all()
+
+    def test_a_flagged_cell_is_not_a_value(self, configuration_dict, tmp_path):
+        """A coefficient at a point that does not trim is not a small number."""
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        panel = _jobs(configuration_dict, tmp_path)[0].panels[0]
+        assert np.isnan(panel.z[:, panel.x >= 4.0]).all()
+        assert np.isfinite(panel.z[:, panel.x < 4.0]).all()
+
+    def test_a_flagged_cell_leaves_the_colour_scale(self, configuration_dict, tmp_path):
+        """Its value cannot stretch the levels the reader is handed."""
+        plain = _jobs(configuration_dict, tmp_path)[0]
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        flagged = _jobs(configuration_dict, tmp_path)[0]
+        assert _shared_levels(flagged)[-1] < _shared_levels(plain)[-1]
+
+    def test_a_flagged_cell_leaves_the_delta(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        spec = CartoSpec(delta=DeltaSpec())
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert np.isnan(job.delta.z[:, job.delta.x > 4.0]).all()
+
+    def test_an_empty_cell_is_not_assessed(self):
+        raw = np.array([["OUI", ""], [None, "NON"]], dtype=object)
+        mask = _equilibre_mask(raw, EquilibreSpec(), "CFD")
+        assert mask.tolist() == [[False, False], [False, True]]
+
+    def test_spelling_is_forgiving_on_case_and_spaces(self):
+        raw = np.array([[" oui ", "Non"], [True, 0]], dtype=object)
+        mask = _equilibre_mask(raw, EquilibreSpec(), "CFD")
+        assert mask.tolist() == [[False, True], [False, True]]
+
+    def test_a_float_one_reads_as_a_one(self):
+        raw = np.array([[1.0, 0.0]], dtype=object)
+        assert _equilibre_mask(raw, EquilibreSpec(), "CFD").tolist() == [[False, True]]
+
+    def test_an_unknown_value_raises_naming_it(self):
+        raw = np.array([["OUI", "peut-être"]], dtype=object)
+        with pytest.raises(ValueError, match="peut-être"):
+            _equilibre_mask(raw, EquilibreSpec(), "CFD")
+
+    def test_the_refusal_names_the_column_and_the_source(self):
+        raw = np.array([["maybe"]], dtype=object)
+        with pytest.raises(ValueError, match=r"'Equilibre'.*'CFD'"):
+            _equilibre_mask(raw, EquilibreSpec(), "CFD")
+
+    def test_a_house_spelling_can_be_declared(self):
+        spec = EquilibreSpec(ok_values=("EQ",), ko_values=("PAS_EQ",))
+        raw = np.array([["EQ", "PAS_EQ"]], dtype=object)
+        assert _equilibre_mask(raw, spec, "CFD").tolist() == [[False, True]]
+
+    def test_a_value_in_both_lists_is_rejected(self):
+        with pytest.raises(ValueError, match="both ok_values and ko_values"):
+            EquilibreSpec(ok_values=("OUI",), ko_values=("oui",))
+
+    def test_a_wholly_untrimmed_panel_is_still_drawn(self, configuration_dict, tmp_path):
+        """A panel that vanished would read as 'not run', which is a different fact."""
+        configuration_dict["MODEL"]["df"] = _with_equilibre(
+            configuration_dict["MODEL"]["df"], lambda row: True
+        )
+        job = _jobs(configuration_dict, tmp_path)[0]
+        assert [panel.source for panel in job.panels] == ["CFD", "MODEL"]
+        assert job.panels[1].finite_range is None
+
+    def test_the_zone_is_hatched_and_named(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        messages: list[list[str]] = []
+
+        def on_before_save(fig, ax, context):
+            messages.append([text.get_text() for text in ax.texts])
+
+        _carto(configuration_dict, tmp_path, on_before_save=on_before_save)
+        assert all("non équilibrable" in texts for texts in messages)
+
+    def test_the_message_is_configurable(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        messages: list[list[str]] = []
+
+        def on_before_save(fig, ax, context):
+            messages.append([text.get_text() for text in ax.texts])
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"equilibre": {"message": "hors domaine"}},
+            on_before_save=on_before_save,
+        )
+        assert all("hors domaine" in texts for texts in messages)
+
+    def test_one_source_can_override_the_zone(self, configuration_dict, tmp_path):
+        for config in configuration_dict.values():
+            config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
+        configuration_dict["MODEL"]["CARTO"] = {"equilibre": {"hatch": "xx"}}
+        job = _jobs(configuration_dict, tmp_path)[0]
+        assert job.panels[0].spec.resolved_equilibre.hatch == "//"
+        assert job.panels[1].spec.resolved_equilibre.hatch == "xx"
+
+    def test_an_unknown_equilibre_key_is_rejected_by_name(
+        self, configuration_dict, tmp_path
+    ):
+        with pytest.raises(ValueError, match="unknown EquilibreSpec key"):
+            _carto(configuration_dict, tmp_path, carto={"equilibre": {"colour": "red"}})
+
+
+class TestMissingRegions:
+    """The cells nobody ran: still blank, but no longer a silent blank."""
+
+    @staticmethod
+    def _ragged(configuration_dict):
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[
+            ~((frame["alpha"] >= 4.0) & (frame["Mach"] >= 1.0))
+        ]
+        return configuration_dict
+
+    def test_a_hole_is_outlined_and_hatched(self, configuration_dict, tmp_path):
+        counts: dict[str, list[int]] = {"on": [], "off": []}
+
+        def hook(key):
+            def on_before_save(fig, ax, context):
+                counts[key].append(len(ax.collections))
+
+            return on_before_save
+
+        self._ragged(configuration_dict)
+        _carto(configuration_dict, tmp_path, on_before_save=hook("on"))
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"missing": False},
+            on_before_save=hook("off"),
+        )
+        assert max(counts["on"]) > max(counts["off"])
+
+    def test_a_full_panel_gets_no_zone(self, configuration_dict, tmp_path):
+        counts: list[int] = []
+
+        def on_before_save(fig, ax, context):
+            counts.append(len(ax.collections))
+
+        _carto(configuration_dict, tmp_path, on_before_save=on_before_save)
+        with_hole: list[int] = []
+        self._ragged(configuration_dict)
+
+        def hole_hook(fig, ax, context):
+            with_hole.append(len(ax.collections))
+
+        _carto(configuration_dict, tmp_path, on_before_save=hole_hook)
+        assert max(with_hole) > max(counts)
+
+    def test_a_custom_message_is_written_in_the_hole(self, configuration_dict, tmp_path):
+        self._ragged(configuration_dict)
+        seen: list[list[str]] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append([text.get_text() for text in ax.texts])
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"missing": {"message": "non calculé"}},
+            on_before_save=on_before_save,
+        )
+        assert any("non calculé" in texts for texts in seen)
+
+    def test_a_zone_too_small_for_its_message_only_gets_the_hatching(
+        self, configuration_dict, tmp_path
+    ):
+        self._ragged(configuration_dict)
+        seen: list[list[str]] = []
+
+        def on_before_save(fig, ax, context):
+            seen.append([text.get_text() for text in ax.texts])
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"missing": {"message": "non calculé", "min_area": 0.99}},
+            on_before_save=on_before_save,
+        )
+        assert not any("non calculé" in texts for texts in seen)
+
+    def test_the_message_lands_inside_the_zone(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        y = np.array([10.0, 20.0])
+        mask = np.array([[False, True, True, False], [False, False, False, False]])
+        assert _mask_anchor(x, y, mask) == (1.5, 10.0)
+
+    def test_the_anchor_follows_the_longest_run_not_the_centroid(self):
+        """A ring of flagged cells has its centroid in the middle of the hole."""
+        x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        y = np.array([0.0, 1.0])
+        mask = np.array(
+            [[True, False, False, True, True], [False, False, False, False, False]]
+        )
+        anchor = _mask_anchor(x, y, mask)
+        assert anchor == (3.5, 0.0)  # the two-cell run, not the lone cell
+
+    def test_an_empty_mask_has_no_anchor(self):
+        x, y = np.array([0.0, 1.0]), np.array([0.0, 1.0])
+        assert _mask_anchor(x, y, np.zeros((2, 2), dtype=bool)) is None
+
+    def test_a_bad_hatch_is_rejected(self):
+        with pytest.raises(ValueError, match="hatch"):
+            RegionSpec(hatch="")
+
+    def test_min_area_is_a_fraction(self):
+        with pytest.raises(ValueError, match="fraction of the panel"):
+            RegionSpec(min_area=1.5)
+
+    def test_the_two_zones_do_not_overlap(self, configuration_dict, tmp_path):
+        """A cell is either un-trimmable or unrun, never counted as both."""
+        self._ragged(configuration_dict)
+        configuration_dict["MODEL"]["df"] = _with_equilibre(
+            configuration_dict["MODEL"]["df"], lambda row: row["alpha"] == 0.0
+        )
+        panel = _jobs(configuration_dict, tmp_path)[0].panels[1]
+        assert not (panel.equilibre_mask & panel.missing_mask).any()
+        assert panel.missing_mask.any() and panel.equilibre_mask.any()
+
+
+class TestPanelTitles:
+    """Headings the caller writes, from keys the configuration already carries."""
+
+    def test_a_template_reads_the_configuration_own_keys(
+        self, configuration_dict, tmp_path
+    ):
+        configuration_dict["CFD"]["masse"] = 12500.0
+        configuration_dict["CFD"]["CDG"] = 25.0
+        configuration_dict["MODEL"]["masse"] = 11000.0
+        configuration_dict["MODEL"]["CDG"] = 27.5
+        spec = CartoSpec(panel_title="{label} — CDG {CDG} %, m={masse} kg")
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.panels[0].label == "CFD — CDG 25.0 %, m=12500.0 kg"
+        assert job.panels[1].label == "Model — CDG 27.5 %, m=11000.0 kg"
+
+    def test_a_callable_gets_the_same_fields(self, configuration_dict, tmp_path):
+        spec = CartoSpec(panel_title=lambda f: f"{f['source']}/{f['qoi']}@{f['y_key']}")
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.panels[0].label == "CFD/CN@Mach"
+
+    def test_the_headings_are_templates_too(self, configuration_dict, tmp_path):
+        spec = CartoSpec(
+            suptitle="{qoi_symbol} map ({x_key} x {y_key})", subtitle="Z={Altitude_m}"
+        )
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.suptitle == r"$C_N$ map (alpha x Mach)"
+        assert job.subtitle == "Z=5000.0"
+
+    def test_a_latex_subscript_survives_a_template(self, configuration_dict, tmp_path):
+        spec = CartoSpec(suptitle=r"$\alpha_{max}$ study: {qoi}")
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.suptitle == r"$\alpha_{max}$ study: CN"
+
+    def test_a_typo_shows_up_instead_of_taking_the_run_down(
+        self, configuration_dict, tmp_path
+    ):
+        spec = CartoSpec(panel_title="{label} {Masse}")
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.panels[0].label == "CFD {Masse}"
+
+    def test_the_delta_panel_has_its_own_template(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(title="{other} against {reference}"))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.delta.label == "Model against CFD"
+
+    def test_one_source_can_override_its_own_title(self, configuration_dict, tmp_path):
+        configuration_dict["MODEL"]["CARTO"] = {"panel_title": "{label} (v2)"}
+        job = _jobs(configuration_dict, tmp_path)[0]
+        assert job.panels[0].label == "CFD"
+        assert job.panels[1].label == "Model (v2)"
+
+    def test_a_callable_never_reaches_a_worker(self, configuration_dict, tmp_path):
+        """batch_plot drops to one core on an unpicklable job; carto must not."""
+        spec = CartoSpec(
+            panel_title=lambda fields: str(fields["label"]),
+            suptitle=lambda fields: "study",
+            delta=DeltaSpec(title=lambda fields: "delta"),
+        )
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.suptitle == "study"
+        assert job.delta.label == "delta"
+        restored = pickle.loads(pickle.dumps(job))
+        assert restored.panels[0].label == "CFD"
+
+    def test_a_title_of_the_wrong_type_is_rejected(self):
+        with pytest.raises(TypeError, match=r"CartoSpec\.panel_title"):
+            CartoSpec(panel_title=3)
+
+    def test_the_titles_reach_the_figure(self, configuration_dict, tmp_path):
+        titles: list[str] = []
+
+        def on_before_save(fig, ax, context):
+            titles.append(ax.get_title())
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"panel_title": "{label} [{qoi}]"},
+            on_before_save=on_before_save,
+        )
+        assert set(titles) == {"CFD [CN]", "Model [CN]"}
+
+
+class TestDeltaResample:
+    """Both configurations interpolated onto one fine grid, then subtracted."""
+
+    def test_the_common_grid_is_finer_than_both_sources(
+        self, configuration_dict, tmp_path
+    ):
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        assert job.delta.z.shape == (81, 81)
+        assert job.panels[0].z.shape == (3, 4)
+
+    def test_interpolating_then_subtracting_is_the_difference_itself(
+        self, configuration_dict, tmp_path
+    ):
+        """Bilinear interpolation is linear, so the smoothing cannot invent a delta."""
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        alpha, mach = np.meshgrid(job.delta.x, job.delta.y)
+        expected = -0.1 * (0.1 * alpha + 0.5 * mach)  # MODEL is 0.9 x CFD
+        assert job.delta.z == pytest.approx(expected)
+
+    def test_an_explicit_count_is_honoured(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(resample=21))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.delta.z.shape == (21, 21)
+
+    def test_the_two_axes_can_differ(self, configuration_dict, tmp_path):
+        spec = CartoSpec(delta=DeltaSpec(resample=(31, 11)))
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.delta.z.shape == (11, 31)
+        assert job.delta.x.size == 31
+
+    def test_the_grid_is_the_intersection_never_the_union(
+        self, configuration_dict, tmp_path
+    ):
+        """Past a table's last point there is nothing to interpolate."""
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[frame["alpha"] <= 4.0]
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        assert job.delta.x.min() == 0.0
+        assert job.delta.x.max() == 4.0
+        assert np.isfinite(job.delta.z).all()
+
+    def test_disjoint_domains_are_refused(self, configuration_dict, tmp_path):
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame.assign(alpha=frame["alpha"] + 100.0)
+        with pytest.raises(ValueError, match="do not overlap"):
+            _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))
+
+    def test_a_single_point_axis_cannot_be_interpolated(self):
+        with pytest.raises(ValueError, match="at least two"):
+            _common_axis(
+                np.array([1.0]), np.array([0.0, 1.0]), None,
+                name="alpha", sources=("CFD", "MODEL"),
+            )
+
+    def test_a_hole_stays_a_hole_through_the_interpolation(self):
+        x = np.array([0.0, 1.0, 2.0])
+        y = np.array([0.0, 1.0])
+        z = np.array([[0.0, np.nan, 2.0], [0.0, 1.0, 2.0]])
+        out = _resample_bilinear(x, y, z, np.array([0.0, 0.5, 2.0]), y)
+        assert np.isnan(out[0, 1])
+        assert np.isfinite(out[1]).all()
+
+    def test_bilinear_reproduces_a_linear_field_exactly(self):
+        x = np.array([0.0, 2.0, 4.0])
+        y = np.array([0.0, 1.0])
+        z = np.array([[0.0, 2.0, 4.0], [1.0, 3.0, 5.0]])  # z = x + y
+        x_new = np.linspace(0.0, 4.0, 9)
+        y_new = np.linspace(0.0, 1.0, 5)
+        out = _resample_bilinear(x, y, z, x_new, y_new)
+        assert out == pytest.approx(x_new[None, :] + y_new[:, None])
+
+    def test_an_unknown_grid_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="grid must be 'common' or 'exact'"):
+            DeltaSpec(grid="dense")
+
+    def test_a_bad_resample_is_rejected(self):
+        with pytest.raises(ValueError, match="resample counts"):
+            DeltaSpec(resample=1)
+        with pytest.raises(TypeError, match="int or"):
+            DeltaSpec(resample="fine")
+
+    def test_the_delta_hatches_its_own_holes(self, configuration_dict, tmp_path):
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[
+            ~((frame["alpha"] >= 4.0) & (frame["Mach"] >= 1.0))
+        ]
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        assert np.isnan(job.delta.z).any()
+        assert np.isfinite(job.delta.z).any()

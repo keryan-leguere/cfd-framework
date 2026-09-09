@@ -21,6 +21,7 @@ Provides:
     dual_axis(ax, ...)            — styled twinx secondary Y-axis
     set_subtitle(ax, text, ...)   — subtitle line below the axes title
     print_file_report(files)      — pretty-print exported file summary (Rich / plain)
+    mathtext_safe(text)           — composed text that survives a foreign font stack
 
 Font setup:
     TITLE_FONT                    — font family string for titles (TeX Gyre Heros)
@@ -33,10 +34,13 @@ Profiles: "notebook", "slides", "paper"
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
+import warnings
 from collections.abc import Sequence
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -869,6 +873,97 @@ def apply_oldschool_axes(
 
     if legend and ax.get_legend_handles_labels()[1]:
         make_legend(ax, **(legend_kwargs or {}))
+
+
+# ---------------------------------------------------------------------------
+# Text that survives a foreign font stack
+# ---------------------------------------------------------------------------
+
+#: Glyphs this package composes into labels, and the ASCII they fall back to.
+#:
+#: Matplotlib hands a string to its mathtext engine as soon as it contains one
+#: ``$``, *including* the parts outside the maths. So a title like
+#: ``"$C_N$ over $\alpha$ × $M$"`` asks the mathtext font — not the text font —
+#: for a multiplication sign, and a font stack that cannot serve it takes the
+#: whole figure down. These are the only non-ASCII characters cfd_plot writes
+#: itself; a symbol the caller wrote is left alone.
+MATHTEXT_ASCII_FALLBACK = {
+    "\u00d7": "x",       # MULTIPLICATION SIGN
+    "\u2212": "-",       # MINUS SIGN
+    "\u0394": "Delta ",  # GREEK CAPITAL LETTER DELTA
+    "\u00b1": "+/-",     # PLUS-MINUS SIGN
+    "\u2248": "~",       # ALMOST EQUAL TO
+    "\u00b0": " deg",    # DEGREE SIGN
+}
+
+#: ``1`` forces the ASCII fallback on, ``0`` forces it off, unset probes.
+MATHTEXT_ASCII_ENV = "CFD_PLOT_ASCII_TEXT"
+
+_MATHTEXT_PROBE = "$x$ " + "".join(MATHTEXT_ASCII_FALLBACK)
+_MATHTEXT_WARNED: set[tuple[str, str]] = set()
+
+
+@lru_cache(maxsize=8)
+def _mathtext_ok(fontset: str, family: str) -> bool:
+    """Can this font stack render the glyphs above inside a mathtext string?
+
+    Asked of Matplotlib once per (fontset, family) rather than assumed: the
+    same call that draws a map on a workstation runs on a cluster login node,
+    in a notebook, or in an IDE that ships its own Matplotlib and its own
+    fonts. Answering by rendering a probe covers every way that can fail —
+    a missing glyph, a stripped ``mpl-data``, a font FreeType refuses — where
+    a version check or a glyph table would cover one.
+    """
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            TextPath((0, 0), _MATHTEXT_PROBE, size=10, prop=FontProperties(family=family))
+    except Exception:  # any failure at all means "do not compose these"
+        return False
+    return True
+
+
+def mathtext_ascii_fallback() -> bool:
+    """Whether composed labels are being downgraded to ASCII right now."""
+    forced = os.environ.get(MATHTEXT_ASCII_ENV)
+    if forced is not None:
+        return forced.strip() not in ("", "0", "false", "False")
+
+    fontset = str(mpl.rcParams.get("mathtext.fontset", "dejavusans"))
+    families = mpl.rcParams.get("font.family") or ["sans-serif"]
+    family = str(families[0] if isinstance(families, (list, tuple)) else families)
+    if _mathtext_ok(fontset, family):
+        return False
+
+    key = (fontset, family)
+    if key not in _MATHTEXT_WARNED:
+        _MATHTEXT_WARNED.add(key)
+        warnings.warn(
+            f"Matplotlib cannot draw {_MATHTEXT_PROBE[4:]!r} with "
+            f"mathtext.fontset={fontset!r} on font.family={family!r}; cfd_plot is "
+            f"writing its composed labels in ASCII instead (x, -, Delta). Set "
+            f"{MATHTEXT_ASCII_ENV}=0 to keep the typographic glyphs anyway.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return True
+
+
+def mathtext_safe(text: str) -> str:
+    """Downgrade *text* to ASCII when the font stack cannot draw it.
+
+    Apply to labels **this package composes**, never to a caller's own
+    ``symbol`` or ``literal_name``: those already render wherever their author
+    reads the figure, and rewriting them would be the regression.
+    """
+    if not text or not mathtext_ascii_fallback():
+        return text
+    for glyph, ascii_form in MATHTEXT_ASCII_FALLBACK.items():
+        text = text.replace(glyph, ascii_form)
+    return text
 
 
 # ---------------------------------------------------------------------------
