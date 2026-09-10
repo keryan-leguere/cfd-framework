@@ -23,7 +23,7 @@ from cfd_dispersion.batch import (
     hook_dispersion_tableau,
 )
 from cfd_dispersion.core.lois import JeuDeLois
-from cfd_dispersion.figures._base import nouvelle_figure, tracer_ligne
+from cfd_dispersion.figures._base import legende, nouvelle_figure, tracer_ligne
 from cfd_dispersion.figures.polaire import ALPHA_TIRAGES
 
 cfd_plot = pytest.importorskip("cfd_plot", reason="cfd_dispersion.batch exige cfd-plot")
@@ -85,6 +85,7 @@ class _Contexte:
         fixed_sweeps: dict[str, float] | None = None,
         y_col: str | None = None,
         fold_kind: str | None = None,
+        fold_layout: str = "subplot",
     ) -> None:
         self.y_key = y_key
         self.sweep_key = sweep_key
@@ -94,6 +95,7 @@ class _Contexte:
         self.x_spec = {"col_name": sweep_key}
         self.y_spec = {"col_name": y_col or y_key}
         self.fold_kind = fold_kind
+        self.fold_layout = fold_layout if fold_kind is not None else None
 
 
 class TestSerialisation:
@@ -412,11 +414,47 @@ class TestHookTableauAppel:
         HookDispersionTableau(_tableau_disperse(), serie="KW")(figure, ax, _Contexte("CN"))
         assert len(ax.get_lines()) == avant
 
-    def test_une_planche_repliee_n_est_pas_decoree(self) -> None:
+    def test_un_panneau_de_planche_repliee_est_decore(self) -> None:
+        """Une planche en panneaux a un axes et un point de vol par panneau :
+        elle se décore comme une figure ordinaire."""
         figure, ax = _axes_avec()
         avant = len(ax.get_lines())
         HookDispersionTableau(_tableau_disperse())(figure, ax, _Contexte("CN", fold_kind="context"))
+        assert len(ax.get_lines()) > avant
+
+    def test_une_planche_en_superposition_n_est_pas_decoree(self) -> None:
+        """``overlay`` empile toute la famille sur un seul axes, sous des
+        libellés recomposés : la série ne s'y retrouve pas."""
+        figure, ax = _axes_avec()
+        avant = len(ax.get_lines())
+        HookDispersionTableau(_tableau_disperse())(
+            figure, ax, _Contexte("CN", fold_kind="context", fold_layout="overlay")
+        )
         assert len(ax.get_lines()) == avant
+
+    def test_un_panneau_sans_legende_n_en_recoit_pas(self) -> None:
+        """``batch_plot`` ne légende que le premier panneau d'une planche :
+        lui en poser une sur les autres déferait sa mise en page."""
+        figure, ax = _axes_avec()
+        assert ax.get_legend() is None
+        HookDispersionTableau(_tableau_disperse())(figure, ax, _Contexte("CN", fold_kind="context"))
+        assert ax.get_legend() is None
+
+    def test_un_panneau_legende_voit_sa_legende_rafraichie(self) -> None:
+        """Celui qui en porte une doit y voir l'annotation de dispersion."""
+        figure, ax = _axes_avec()
+        legende(ax)
+        HookDispersionTableau(_tableau_disperse())(figure, ax, _Contexte("CN", fold_kind="context"))
+        legende_ = ax.get_legend()
+        assert legende_ is not None
+        assert any("tirages" in texte.get_text() for texte in legende_.get_texts())
+
+    def test_une_figure_ordinaire_est_legendee_quoi_qu_il_arrive(self) -> None:
+        """Hors planche, l'appelant compte sur nous pour construire la légende."""
+        figure, ax = _axes_avec()
+        assert ax.get_legend() is None
+        HookDispersionTableau(_tableau_disperse())(figure, ax, _Contexte("CN"))
+        assert ax.get_legend() is not None
 
     def test_une_abscisse_qui_ne_correspond_pas_est_refusee(self) -> None:
         """Une bande posée à côté de sa courbe se lit comme un biais."""
@@ -500,6 +538,118 @@ class TestHookTableauAvecBatchPlot:
         )
         assert len(ecrits) == 2
         assert all(chemin.exists() and chemin.stat().st_size > 0 for chemin in ecrits)
+
+    def test_une_planche_repliee_par_grandeur_est_decoree(
+        self, donnees: pd.DataFrame, tmp_path: Path
+    ) -> None:
+        """``fold="y"`` : un panneau par grandeur, tous du même point de vol."""
+        from cfd_plot.batch import FoldSpec
+
+        disperse = _tableau_disperse(n=6)
+        disperse["CA"] = 0.02 + 0.001 * disperse["alpha"] * (1.0 + 0.01 * disperse["tirage"])
+        cfd_plot.batch_plot(
+            **_dictionnaires(donnees),
+            output_base=tmp_path,
+            formats=("png",),
+            report=False,
+            on_before_save=hook_dispersion_tableau(disperse, serie="KW"),
+            fold=FoldSpec(kind="y"),
+        )
+        planches = list(tmp_path.rglob("FOLD_Y*.png"))
+        assert len(planches) == 1
+        # La planche est plus lourde que la figure simple qu'elle replie : la
+        # dispersion y est bien dessinée, deux fois plutôt qu'une.
+        simple = next(tmp_path.rglob("CN_vs_alpha.png"))
+        assert planches[0].stat().st_size > simple.stat().st_size
+
+    def test_une_planche_par_condition_est_decoree_panneau_par_panneau(
+        self, tmp_path: Path
+    ) -> None:
+        """``fold="context"`` : un panneau par point de vol, chacun ses tirages.
+
+        C'est la planche que le hook doit décorer, et c'est aussi celle qui
+        prouve que le découpage suit le panneau : les deux Mach n'ont pas la
+        même dispersion, et chacun doit recevoir la sienne.
+        """
+        from cfd_plot.batch import FoldSpec
+
+        machs = (0.8, 0.9)
+        reference = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        "alpha": ALPHA_ESSAI,
+                        "Mach": mach,
+                        "Altitude_m": 8000.0,
+                        "CN": 0.09 * ALPHA_ESSAI + mach,
+                    }
+                )
+                for mach in machs
+            ],
+            ignore_index=True,
+        )
+        dictionnaires = _dictionnaires(reference)
+        dictionnaires["y_axis_dict"] = {
+            k: v for k, v in dictionnaires["y_axis_dict"].items() if k == "CN"
+        }
+        dictionnaires["flight_point_dict"]["Mach"]["values"] = list(machs)
+
+        cfd_plot.batch_plot(
+            **dictionnaires,
+            output_base=tmp_path,
+            formats=("png",),
+            report=False,
+            on_before_save=hook_dispersion_tableau(_tableau_disperse(n=6, machs=machs), serie="KW"),
+            fold=FoldSpec(kind="context"),
+        )
+        planches = list((tmp_path / "ALPHA_POLAR" / "FOLD").glob("*.png"))
+        assert len(planches) == 1
+        simple = next(tmp_path.rglob("M_0.8/**/CN_vs_alpha.png"))
+        assert planches[0].stat().st_size > simple.stat().st_size
+
+    def test_une_planche_en_superposition_reste_nue(self, tmp_path: Path) -> None:
+        """``overlay`` : un seul axes pour toute la famille — laissé tel quel."""
+        from cfd_plot.batch import FoldSpec
+
+        machs = (0.8, 0.9)
+        reference = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        "alpha": ALPHA_ESSAI,
+                        "Mach": mach,
+                        "Altitude_m": 8000.0,
+                        "CN": 0.09 * ALPHA_ESSAI + mach,
+                    }
+                )
+                for mach in machs
+            ],
+            ignore_index=True,
+        )
+        dictionnaires = _dictionnaires(reference)
+        dictionnaires["y_axis_dict"] = {
+            k: v for k, v in dictionnaires["y_axis_dict"].items() if k == "CN"
+        }
+        dictionnaires["flight_point_dict"]["Mach"]["values"] = list(machs)
+
+        commun: dict[str, Any] = {
+            **dictionnaires,
+            "formats": ("png",),
+            "report": False,
+            "fold": FoldSpec(kind="context", layout="overlay"),
+        }
+        avec = tmp_path / "avec"
+        sans = tmp_path / "sans"
+        cfd_plot.batch_plot(
+            **commun,
+            output_base=avec,
+            on_before_save=hook_dispersion_tableau(_tableau_disperse(n=6, machs=machs), serie="KW"),
+        )
+        cfd_plot.batch_plot(**commun, output_base=sans)
+
+        planche_avec = next((avec / "ALPHA_POLAR" / "FOLD_OVERLAY").glob("*.png"))
+        planche_sans = next((sans / "ALPHA_POLAR" / "FOLD_OVERLAY").glob("*.png"))
+        assert planche_avec.read_bytes() == planche_sans.read_bytes()
 
     def test_le_hook_survit_au_rendu_parallele(self, donnees: pd.DataFrame, tmp_path: Path) -> None:
         import warnings

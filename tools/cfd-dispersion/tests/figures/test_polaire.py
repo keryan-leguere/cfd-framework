@@ -14,16 +14,29 @@ from matplotlib.axes import Axes
 from cfd_dispersion.core.lois import JeuDeLois
 from cfd_dispersion.figures._base import (
     assombrir,
-    eclaircir,
     nouvelle_figure,
     tracer_ligne,
 )
 from cfd_dispersion.figures.polaire import (
+    ALPHA_TIRAGES,
     courbes_par_tirage,
     nominal_depuis_tableau,
     superposer_depuis_tableau,
     superposer_dispersion,
 )
+
+
+def _clarte(couleur: Any) -> float:
+    """La clarté perçue d'une couleur, dans [0, 1].
+
+    Les tests de teinte portent sur un **ordre** — « plus clair que », « plus
+    sombre que » — et non sur des nombres : régler une nuance ne doit pas les
+    casser, mais inverser un rapport doit les casser.
+    """
+    import matplotlib.colors as mcolors
+
+    r, v, b = mcolors.to_rgb(couleur)
+    return 0.2126 * r + 0.7152 * v + 0.0722 * b
 
 
 @pytest.fixture(autouse=True)
@@ -554,22 +567,48 @@ class TestOptionsDAffichage:
         assert artistes["bande"] is not None
         assert artistes["bordures"] == []
 
-    def test_les_bords_sont_plus_sombres_que_le_remplissage(self, nuage: Any) -> None:
-        """Un bord de la teinte exacte du remplissage ne se verrait pas."""
+    def test_les_bords_cernent_sans_disputer(self, nuage: Any) -> None:
+        """Le contour de l'enveloppe est plus clair que la courbe qu'il entoure.
+
+        C'est un contour, pas une seconde courbe : il doit se voir sans se
+        lire comme une donnée. Mais il reste franc — un bord blanc ne cernerait
+        plus rien.
+        """
         x, nominal, courbes = nuage
         _, ax = nouvelle_figure()
         artistes = superposer_dispersion(
-            ax, x, nominal, tirages=courbes, couleur="C0", bordures=True
+            ax, x, nominal, tirages=courbes, couleur="C0", bordures=True, sigmas=()
         )
-        bord = artistes["bordures"][0].get_color()
-        assert bord == pytest.approx(assombrir("C0", 0.15), abs=1e-6)
+        bord = _clarte(artistes["bordures"][0].get_color())
+        assert bord > _clarte("C0")
+        assert bord < 1.0
+
+    def test_les_bords_sont_plus_clairs_que_les_sigmas(self, nuage: Any) -> None:
+        """Les ±kσ passent SUR le remplissage : ce sont eux qu'on lit."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(
+            ax, x, nominal, tirages=courbes, couleur="C0", bordures=True, sigmas=(1,)
+        )
+        assert _clarte(artistes["bordures"][0].get_color()) > _clarte(
+            artistes["sigmas"][0].get_color()
+        )
 
     def test_les_tirages_sont_plus_clairs_que_leur_serie(self, nuage: Any) -> None:
         """Cent courbes empilées ne doivent pas dominer les lignes qu'elles portent."""
         x, nominal, courbes = nuage
         _, ax = nouvelle_figure()
         artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C0")
-        assert artistes["tirages"][0].get_color() == pytest.approx(eclaircir("C0", 0.35), abs=1e-6)
+        faisceau = artistes["tirages"][0]
+        assert _clarte(faisceau.get_color()) > _clarte("C0")
+        assert faisceau.get_alpha() == pytest.approx(ALPHA_TIRAGES)
+
+    def test_le_remplissage_est_plus_pale_que_le_faisceau(self, nuage: Any) -> None:
+        """La dispersion est le FOND : ce qu'on lit dessus, c'est le nominal."""
+        x, nominal, courbes = nuage
+        _, ax = nouvelle_figure()
+        artistes = superposer_dispersion(ax, x, nominal, tirages=courbes, couleur="C0")
+        assert artistes["bande"].get_alpha() < ALPHA_TIRAGES
 
     def test_le_faisceau_se_coupe(self, nuage: Any) -> None:
         x, nominal, courbes = nuage

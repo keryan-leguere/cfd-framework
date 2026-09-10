@@ -52,6 +52,35 @@ Un point de vol absent du tableau dispersé lève une erreur dès la première
 figure plutôt que de laisser un lot de deux cents figures sortir muet ;
 ``absent="ignorer"`` est là pour l'étude volontairement partielle.
 
+Les planches repliées
+---------------------
+``fold=`` de ``batch_plot`` écrit des planches en bonus, et la règle du hook y
+tient en un mot : **il décore les panneaux, pas les superpositions.**
+
+============================ ==================================================
+``fold="context"``           une planche par grandeur, **un panneau par
+                             condition**. Chaque panneau a ses propres axes et
+                             son propre point de vol : le hook y est appelé une
+                             fois par panneau, avec le contexte de ce panneau,
+                             et le découpe donc comme il découpe une figure
+                             ordinaire. **Décoré.**
+``fold="y"``                 une planche par condition, un panneau par
+                             grandeur. Même chose, sur l'autre axe. **Décoré.**
+``fold="context-overlay"``   la même famille sur un **seul** axes, sous des
+                             libellés recomposés (``CFD · M 0.85``). La série
+                             ne s'y retrouve pas sous son nom, et six faisceaux
+                             empilés sur les mêmes axes ne se liraient pas.
+                             **Non décoré**, silencieusement.
+============================ ==================================================
+
+Sur une planche, ``batch_plot`` ne légende que le premier panneau quand tous
+portent les mêmes libellés. Le hook respecte ce choix : il ne **rafraîchit** la
+légende que là où il y en a déjà une — l'annotation de dispersion (« 150
+tirages · 15.9 % ») y apparaît donc sur le panneau légendé, et les autres
+restent nus. Le nombre, lui, est propre à chaque panneau ; pour le voir partout,
+laisser la boîte de paramètres (``boite_parametres=True``, le défaut) ou
+demander une légende par panneau à ``batch_plot``.
+
 Pourquoi une classe et non une fermeture
 ----------------------------------------
 ``batch_plot`` sérialise le hook pour l'envoyer à ses processus de travail, et
@@ -238,6 +267,27 @@ def _courbe_nommee(ax: Any, label: str) -> tuple[np.ndarray, np.ndarray] | None:
     return None
 
 
+def _options_du_panneau(
+    options: Mapping[str, Any],
+    ax: Any,
+    context: Any,
+) -> dict[str, Any]:
+    """Les options de tracé, ajustées à ce que cet axes est.
+
+    Une seule règle pour l'instant, et elle ne concerne que les planches
+    repliées : ``batch_plot`` ne légende que le **premier** panneau quand tous
+    portent les mêmes libellés, et poser une légende sur les autres déferait sa
+    mise en page. Le hook rafraîchit donc la légende là où il y en a une, et
+    laisse nus les panneaux qui n'en ont pas.
+
+    L'appelant garde le dernier mot : un ``legende_`` explicite passe devant.
+    """
+    ajustees = dict(options)
+    if getattr(context, "fold_kind", None) is not None and ax.get_legend() is None:
+        ajustees.setdefault("legende_", False)
+    return ajustees
+
+
 def _panneau_ignore(panneaux: tuple[str, ...] | None, context: Any) -> bool:
     """Vrai si ce panneau de comparaison n'est pas à décorer.
 
@@ -352,10 +402,16 @@ class HookDispersionTableau:
 
     Notes
     -----
-    Les **planches repliées** (``fold=`` de ``batch_plot``) ne sont pas
-    décorées : elles rassemblent plusieurs conditions sur les mêmes axes en
-    renommant leurs courbes, et autant de faisceaux superposés ne se liraient
-    pas. Les figures ordinaires et les panneaux de comparaison le sont.
+    Les **planches repliées** (``fold=`` de ``batch_plot``) sont décorées
+    **panneau par panneau** : une planche ``"context"`` porte un point de vol
+    par panneau, une planche ``"y"`` une grandeur par panneau, et chaque
+    panneau a ses propres axes — le hook y reçoit le contexte de ce panneau et
+    le découpe comme il découperait une figure ordinaire.
+
+    La seule exception est la disposition **``overlay``**, qui rassemble toute
+    la famille sur un unique axes en renommant ses courbes : la série ne s'y
+    retrouve pas sous son nom, et autant de faisceaux empilés ne se liraient
+    pas. Elle est laissée nue, sans bruit.
     """
 
     def __init__(
@@ -428,10 +484,12 @@ class HookDispersionTableau:
         """Superpose la dispersion sur *ax*, si cette figure en relève."""
         if _panneau_ignore(self.panneaux, context):
             return
-        # Une planche repliée porte plusieurs conditions sur les mêmes axes,
-        # sous des libellés recomposés : la série ne s'y retrouve pas, et
-        # plusieurs faisceaux empilés ne se liraient pas.
-        if getattr(context, "fold_kind", None) is not None:
+        # Une planche « overlay » porte toute la famille sur un SEUL axes, sous
+        # des libellés recomposés : la série ne s'y retrouve pas sous son nom,
+        # et autant de faisceaux empilés ne se liraient pas. Les planches en
+        # panneaux, elles, ont un axes et un point de vol par panneau : elles se
+        # décorent comme des figures ordinaires.
+        if getattr(context, "fold_layout", None) == "overlay":
             return
 
         colonne = self.colonne_pour(context)
@@ -484,7 +542,7 @@ class HookDispersionTableau:
             serie=serie,
             convention_=self.convention_,
             label=colonne,
-            **self.options,
+            **_options_du_panneau(self.options, ax, context),
         )
 
     def __repr__(self) -> str:

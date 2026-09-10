@@ -987,14 +987,34 @@ Trois comportements à connaître :
   contre obtenu, sur la même figure. C'est là, et nulle part ailleurs, qu'un
   modèle qui disperse plus que demandé se voit.
 
-Les **planches repliées** (`fold=`) ne sont pas décorées : elles rassemblent
-plusieurs conditions sur les mêmes axes en renommant leurs courbes, et autant de
-faisceaux superposés ne se liraient pas. Les figures ordinaires et les panneaux
-de `batch_compare_flight_points` le sont — le hook y est appelé une fois par
-panneau, avec le point de vol de ce panneau.
+**Les planches repliées** (`fold=` de `batch_plot`) suivent une règle simple :
+le hook décore **les panneaux, pas les superpositions**.
+
+```python
+batch_plot(
+    ...,
+    on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD"),
+    fold=FoldSpec(kind="context"),
+)
+```
+
+| | |
+|:--|:--|
+| `fold="context"` | une planche par grandeur, **un panneau par point de vol**. Chaque panneau a ses propres axes et son propre point de vol : le hook y est appelé une fois par panneau et découpe le tableau comme sur une figure ordinaire. **Décoré** |
+| `fold="y"` | une planche par point de vol, un panneau par grandeur. Même chose sur l'autre axe. **Décoré** |
+| `fold="context-overlay"` | toute la famille sur un **seul** axes, sous des libellés recomposés (`CFD · M 0.85`). La série ne s'y retrouve pas sous son nom, et six faisceaux empilés ne se liraient pas. **Laissé nu**, sans bruit |
+
+Les panneaux de `batch_compare_flight_points` sont décorés de la même façon,
+pour la même raison — un appel par panneau, avec le point de vol de ce panneau.
+
+Sur une planche, `batch_plot` ne légende que le **premier** panneau quand tous
+portent les mêmes libellés. Le hook respecte ce choix : il rafraîchit la légende
+là où il y en a une, et laisse nus les panneaux qui n'en ont pas. Chaque panneau
+garde en revanche sa **boîte de paramètres**, et c'est elle qui porte ses
+chiffres — l'enveloppe et le σ d'un point de vol ne sont pas ceux du voisin.
 
 `01_EXEMPLE/09_batch_plot_dispersion.py` en est la version exécutable, avec les
-quatre dictionnaires écrits au complet.
+quatre dictionnaires écrits au complet et cinq lots, dont la planche repliée.
 
 #### 10.2 Depuis les lois
 
@@ -1302,7 +1322,7 @@ cfd-dispersion/
 ## Vérification
 
 ```bash
-pytest                                  # 866 tests
+pytest                                  # 875 tests
 ruff check . && ruff format --check .
 mypy src tests                          # strict
 python 00_DOC/generer_figures.py        # les 13 figures de doc

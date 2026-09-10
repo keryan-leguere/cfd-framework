@@ -67,17 +67,24 @@ _ASSOMBRISSEMENT = 0.25
 
 #: Opacité d'une courbe du faisceau. Assez basse pour que cent courbes
 #: s'empilent sans saturer, assez haute pour qu'une courbe isolée se voie.
-ALPHA_TIRAGES: float = 0.30
+ALPHA_TIRAGES: float = 0.24
 
 #: Éclaircissement du faisceau des tirages. Elles sont la texture du fond ;
 #: sans cela, cent courbes de la teinte de la série s'empilent en un bloc plus
 #: sombre que les lignes qu'elles sont censées soutenir.
-_ECLAIRCISSEMENT_TIRAGES = 0.35
+_ECLAIRCISSEMENT_TIRAGES = 0.45
 
-#: Assombrissement des **bords** du faisceau. Léger : ce sont le contour du
-#: remplissage, ils ne doivent pas concurrencer la moyenne dispersée — mais un
-#: bord de la teinte exacte du remplissage ne se verrait pas du tout.
-_ASSOMBRISSEMENT_BORDS = 0.15
+#: Opacité du remplissage min/max, selon que le faisceau est là ou non. La
+#: dispersion est le FOND de la figure : ce qu'on lit dessus, ce sont la courbe
+#: nominale et les repères ±kσ, et un fond qui rivalise avec eux se lit comme
+#: une seconde courbe.
+_ALPHA_REMPLISSAGE_AVEC_TIRAGES = 0.09
+_ALPHA_REMPLISSAGE_SEUL = 0.14
+
+#: Éclaircissement des **bords** du faisceau. Ils cernent le remplissage sans
+#: le disputer : plus clairs que la série, assez marqués pour que l'enveloppe
+#: ait un contour franc là où le remplissage, lui, s'efface.
+_ECLAIRCISSEMENT_BORDS = 0.30
 
 #: Assombrissement des lignes ±kσ. Franc : elles passent *sur* le remplissage,
 #: et c'est le seul repère chiffré de la figure.
@@ -334,6 +341,7 @@ def superposer_dispersion(
     fractions_sigma: Sequence[float] = _FRACTIONS_SIGMA,
     boite_parametres: bool = True,
     chiffres_legende: bool = True,
+    legende_: bool = True,
     position_boite: str = "lower right",
     max_tirages: int | None = 200,
     alpha_tirages: float = ALPHA_TIRAGES,
@@ -392,6 +400,13 @@ def superposer_dispersion(
     chiffres_legende:
         Ajouter à l'annotation de légende la hauteur maximale de l'enveloppe,
         en pourcentage du nominal — le chiffre qu'on cherche d'abord.
+    legende_:
+        Refaire la légende après avoir posé la dispersion. Vrai par défaut :
+        l'annotation est écrite **sur le libellé de la série**, et une légende
+        construite avant nous — ce que fait ``batch_plot`` — ne la porterait
+        pas. À mettre à faux sur un axes que l'appelant a délibérément laissé
+        sans légende : le panneau d'une planche repliée, que ``batch_plot`` ne
+        légende qu'une fois pour toute la planche.
     plan:
         Le plan d'échantillonnage, tel qu'il doit apparaître en légende :
         ``"MC"``, ``"LHS"``, ``"Sobol"``… Un tableau de sortie ne dit pas
@@ -512,7 +527,7 @@ def superposer_dispersion(
     annotation = _annotation(bande, nuage, plan, etendue, chiffres_legende)
 
     if remplissage is not None and reference is not None:
-        teinte_bords = assombrir(teinte, _ASSOMBRISSEMENT_BORDS)
+        teinte_bords = eclaircir(teinte, _ECLAIRCISSEMENT_BORDS)
         # Rattachée à une série, la dispersion complète l'entrée de CELLE-CI :
         # une figure à trois coefficients n'a pas besoin de neuf lignes de
         # légende qui répètent trois couleurs. Autonome, le remplissage garde
@@ -532,7 +547,11 @@ def superposer_dispersion(
                 couleur=teinte,
                 # Plus pâle quand les courbes sont là : c'est le faisceau qui
                 # porte la texture, le remplissage ne fait que le cerner.
-                alpha=0.12 if (nuage is not None and montrer_tirages) else 0.18,
+                alpha=(
+                    _ALPHA_REMPLISSAGE_AVEC_TIRAGES
+                    if (nuage is not None and montrer_tirages)
+                    else _ALPHA_REMPLISSAGE_SEUL
+                ),
                 label=libelle,
                 zorder=_PLAN_REMPLISSAGE,
                 lignes=bordures,
@@ -599,7 +618,15 @@ def superposer_dispersion(
         ligne.set_label(f"{serie} ({annotation})")
         artistes["serie"] = ligne
 
-    legende(ax, fontsize=7)
+    # La légende est REFAITE, et non complétée : l'appelant a pu la construire
+    # avant nous — c'est ce que fait `batch_plot` — et l'annotation posée sur
+    # l'entrée de la série n'y serait alors pas.
+    #
+    # `legende_=False` est là pour le panneau d'une planche repliée que
+    # `batch_plot` a délibérément laissé sans légende : lui en poser une
+    # défferait sa mise en page.
+    if legende_:
+        legende(ax, fontsize=7)
 
     # --- 6. les étiquettes, en tout dernier -----------------------------
     # Elles lisent la transformation courante des axes : tout artiste posé

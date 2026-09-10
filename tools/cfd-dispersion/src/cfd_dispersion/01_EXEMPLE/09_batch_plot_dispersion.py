@@ -28,7 +28,9 @@ Ce que le script montre, dans l'ordre :
   4. les options d'affichage, sur un second lot ;
   5. la bande théorique en plus du nuage obtenu (``lois=``) ;
   6. la figure de comparaison, où le hook est appelé une fois par panneau ;
-  7. la vérification de ce qui a été écrit.
+  7. la **planche repliée** ``fold="context"`` — un panneau par point de vol,
+     décoré comme les autres ; la disposition ``overlay``, elle, reste nue ;
+  8. la vérification de ce qui a été écrit.
 
 Nécessite cfd-plot :  pip install -e tools/cfd-plot
 """
@@ -209,6 +211,7 @@ def main() -> int:
 
     try:
         from cfd_plot import batch_compare_flight_points, batch_plot
+        from cfd_plot.batch import FoldSpec
     except ImportError:
         print(
             "cfd-plot n'est pas installé ; cet exemple en a besoin.\n"
@@ -339,7 +342,45 @@ def main() -> int:
         console, "4. les points de vol côte à côte", ecrits_compare, args.sortie / "COMPARAISON"
     )
 
-    # --- 7. le point de vol manquant -------------------------------------
+    # --- 7. la planche repliée « context » --------------------------------
+    #
+    # `fold=` de `batch_plot` écrit des planches EN BONUS, qui rassemblent des
+    # figures voisines. `kind="context"` en écrit une par grandeur, avec un
+    # panneau par point de vol — la vue qui répond à « et à Mach 0.85, ça
+    # donne quoi ? » sans ouvrir trois fichiers.
+    #
+    # Le hook y est appelé UNE FOIS PAR PANNEAU, exactement comme sur une
+    # figure de comparaison : chaque panneau a ses propres axes, son propre
+    # point de vol, et reçoit donc ses propres tirages. Rien à écrire de plus
+    # que `fold=`.
+    #
+    # `layout="overlay"`, en revanche, empile toute la famille sur UN SEUL
+    # axes en renommant ses courbes. La série ne s'y retrouve pas sous son nom
+    # et six faisceaux superposés ne se liraient pas : le hook laisse ces
+    # planches-là intactes, sans bruit. C'est pour cela qu'on demande
+    # explicitement `kind="context"` et non `"context-overlay"`.
+    ecrits_replies = batch_plot(
+        **dicts,
+        output_base=args.sortie / "REPLIE",
+        style_profile="paper",
+        formats=("png",),
+        report=False,
+        on_before_save=hook_dispersion_tableau(df_disperse, serie="CFD"),
+        # `FoldSpec` plutôt que la chaîne "context" : c'est la même chose, mais
+        # elle nomme la disposition — "subplot", des panneaux — ce qui évite de
+        # la confondre avec "context-overlay".
+        fold=FoldSpec(kind="context", layout="subplot"),
+    )
+    replies = [chemin for chemin in ecrits_replies if "FOLD" in chemin.parts]
+    inventaire(console, "5. les planches repliées", replies, args.sortie / "REPLIE")
+    console.print(
+        "  un panneau par point de vol, chacun avec SES tirages et SES chiffres.\n"
+        "  `batch_plot` ne légende que le premier panneau quand tous portent les\n"
+        "  mêmes libellés : le hook respecte ce choix et n'en pose pas sur les\n"
+        "  autres — la boîte de paramètres, elle, est sur chacun."
+    )
+
+    # --- 8. le point de vol manquant -------------------------------------
     #
     # Les deux tableaux doivent couvrir les mêmes points de vol. S'ils ne le
     # font pas, le hook le dit DÈS LA PREMIÈRE FIGURE plutôt que de laisser

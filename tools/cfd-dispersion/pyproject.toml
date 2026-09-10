@@ -96,7 +96,7 @@ ignore_missing_imports = true
 # cfd-plot est un paquet frère de ce dépôt (voir report/_plotting_lib.py), pas
 # une publication PyPI : il peut légitimement manquer de l'environnement.
 [[tool.mypy.overrides]]
-module = ["cfd_plot"]
+module = ["cfd_plot", "cfd_plot.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

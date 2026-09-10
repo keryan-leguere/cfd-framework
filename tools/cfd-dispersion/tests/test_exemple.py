@@ -231,6 +231,9 @@ class TestExecution:
             assert len(figures) == 9, (lot, figures)
         # …et une planche de comparaison par coefficient.
         assert len(list((tmp_path / "COMPARAISON").rglob("*_vs_alpha.png"))) == 3
+        # …et une planche repliée par coefficient, décorée panneau par panneau.
+        replies = list((tmp_path / "REPLIE" / "ALPHA_POLAR" / "FOLD").glob("*.png"))
+        assert len(replies) == 3, replies
         # Le tableau dispersé amputé d'un point de vol doit être refusé.
         assert "aucun tirage dans le tableau dispersé" in resultat.stdout
 

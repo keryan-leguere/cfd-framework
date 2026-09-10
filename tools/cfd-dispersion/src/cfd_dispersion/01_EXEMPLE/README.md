@@ -269,7 +269,7 @@ filtre** que `batch_plot` a appliqué à la référence, regroupe en une courbe 
 tirage, et superpose.
 
 Trois points de vol × trois coefficients = neuf figures par lot, et le script en
-écrit quatre lots pour montrer les variantes. À regarder :
+écrit cinq lots pour montrer les variantes. À regarder :
 
 * `ORDINAIRE/…/CN_vs_alpha.png` — le rendu complet : faisceau, enveloppe
   min/max, ±1/2/3 σ, boîte de paramètres, et la légende qui porte l'effectif et
@@ -283,6 +283,12 @@ Trois points de vol × trois coefficients = neuf figures par lot, et le script e
 * `COMPARAISON/…` — `batch_compare_flight_points` met les trois points de vol
   côte à côte : le hook est appelé une fois par panneau, chacun reçoit ses
   propres tirages ;
+* `REPLIE/…/FOLD/CN_vs_alpha_by_M_Z.png` — la **planche repliée**
+  (`fold=FoldSpec(kind="context")`) : un panneau par point de vol, chacun avec
+  ses tirages et ses chiffres. Le hook y est appelé une fois par panneau, comme
+  sur une figure de comparaison. La disposition `overlay`, elle, empile toute la
+  famille sur un seul axes sous des libellés recomposés : le hook la laisse nue,
+  et c'est pour cela qu'on demande `kind="context"` et non `"context-overlay"` ;
 * dans la sortie terminal, le refus d'un tableau dispersé **amputé** d'un point
   de vol — l'alternative étant un lot entier de figures nues, qui se lisent
   comme un modèle sans dispersion.
