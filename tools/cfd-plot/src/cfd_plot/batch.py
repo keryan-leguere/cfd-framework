@@ -15,7 +15,7 @@ import pickle
 import re
 import warnings
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
@@ -280,8 +280,17 @@ def varying_flight_keys(
 def iter_flight_points(
     configuration_dict: dict[str, dict[str, Any]],
     keys: Iterable[str],
+    specs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> Iterator[dict[str, float]]:
-    """Yield unique flight-point combinations from all configuration data."""
+    """Yield unique flight-point combinations from all configuration data.
+
+    A spec carrying ``values`` **restricts** the loop to those values. That is
+    the whole point of writing them down: a model called finely enough to draw
+    a smooth polar holds a hundred alphas, and every one of them that is not
+    the abscissa becomes a directory. Without the restriction, declaring
+    ``alpha=[0, 10]`` changed nothing and the sheet count followed the
+    discretisation instead of the study.
+    """
     combined = _concat_configurations(configuration_dict)
     key_list = list(keys)
     if not key_list:
@@ -291,7 +300,13 @@ def iter_flight_points(
     if missing:
         raise KeyError(f"Flight parameters not found in configuration data: {missing}")
 
-    unique_rows = combined[key_list].drop_duplicates()
+    frame = combined[key_list]
+    for key in key_list:
+        declared = (specs or {}).get(key, {}).get("values")
+        if declared:
+            frame = frame[frame[key].isin([float(value) for value in declared])]
+
+    unique_rows = frame.drop_duplicates()
     for _, row in unique_rows.iterrows():
         yield {key: float(row[key]) for key in key_list}
 
@@ -300,13 +315,19 @@ def iter_fixed_sweep_combinations(
     configuration_dict: dict[str, dict[str, Any]],
     sweep_keys: Sequence[str],
     x_sweep_key: str,
+    specs: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> Iterator[dict[str, float]]:
-    """Yield every combination of sweep variables held fixed for one polar."""
+    """Yield every combination of sweep variables held fixed for one polar.
+
+    *x_sweep_key* is the abscissa and is never pinned, so its own ``values``
+    never restrict anything here: a sweep is dropped from the directory levels
+    only on the polar that draws it.
+    """
     other_keys = [key for key in sweep_keys if key != x_sweep_key]
     if not other_keys:
         yield {}
         return
-    yield from iter_flight_points(configuration_dict, other_keys)
+    yield from iter_flight_points(configuration_dict, other_keys, specs)
 
 
 def build_output_path(
@@ -639,6 +660,7 @@ def _prepare_flight_point_dict(
     completed: dict[str, dict[str, Any]] = {}
     for key in flight_keys:
         spec = _normalize_flight_point_spec(key, flight_point_dict[key])
+        _warn_unknown_values(key, spec["values"], discovered[key], "flight_point_dict")
         values = spec["values"] or discovered[key]
         completed[key] = {
             "values": list(values),
@@ -653,14 +675,57 @@ def _prepare_flight_point_dict(
 def _prepare_sweep_dict(
     configuration_dict: dict[str, dict[str, Any]],
     sweep_dict: dict[str, dict[str, Any]],
+    flight_point_dict: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Complete every sweep spec, values included.
+
+    A sweep's ``values`` say **where it is pinned** — which values become a
+    directory level on the polars drawn against another sweep. They never touch
+    the abscissa: the polar that draws this sweep shows every point the table
+    holds, which is the whole reason for calling a model finely.
+
+    A key written in *both* dictionaries takes its values from the flight-point
+    entry when the sweep entry has none. That is where a reader naturally
+    writes "alpha is 0 and 10 for me", and the sweep entry is about how to draw
+    the axis.
+    """
     discovered = discover_flight_point_values(configuration_dict, sweep_dict.keys())
+    shared = flight_point_dict or {}
     completed: dict[str, dict[str, Any]] = {}
     for key, raw_spec in sweep_dict.items():
         spec = _normalize_sweep_spec(key, raw_spec)
-        values = spec["values"] or discovered[key]
-        completed[key] = {**spec, "values": list(values)}
+        values = spec["values"]
+        if not values and key in shared:
+            values = _normalize_flight_point_spec(key, shared[key])["values"]
+        _warn_unknown_values(key, values, discovered[key], "sweep_dict")
+        completed[key] = {**spec, "values": list(values or discovered[key])}
     return completed
+
+
+def _warn_unknown_values(
+    key: str, declared: Sequence[float], available: Sequence[float], where: str
+) -> None:
+    """Say so when a declared value matches nothing, instead of one fewer sheet.
+
+    Declared values are matched exactly, as every other filter in this module
+    matches them. A value that lands nowhere therefore costs a directory that
+    simply never appears — silent, and indistinguishable from a study that was
+    not run.
+    """
+    if not declared:
+        return
+    known = {float(value) for value in available}
+    unknown = [value for value in declared if float(value) not in known]
+    if not unknown:
+        return
+    preview = ", ".join(_format_path_value(value) for value in list(available)[:6])
+    warnings.warn(
+        f"{where}[{key!r}] declares {unknown}, which no row holds — those levels "
+        f"will not be written. The table has: {preview}"
+        f"{', …' if len(available) > 6 else ''}.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 def _collect_source_curves(
@@ -740,11 +805,14 @@ def _enumerate_jobs(
         other_sweep_keys = [key for key in sweep_keys if key != x_key]
         varying_other_sweep_keys = [key for key in other_sweep_keys if key in varying_sw_keys]
 
-        for flight_point in iter_flight_points(configuration_dict, flight_point_keys):
+        for flight_point in iter_flight_points(
+            configuration_dict, flight_point_keys, completed_flight_points
+        ):
             for fixed_sweeps in iter_fixed_sweep_combinations(
                 configuration_dict,
                 sweep_keys,
                 x_key,
+                completed_sweeps,
             ):
                 for y_key, y_spec in y_axis_dict.items():
                     y_col = y_spec["col_name"]
@@ -1702,11 +1770,15 @@ def _print_batch_plan(
             fp_table.add_row(f"{key}  [{name}]", str(len(values)), _format_values_preview(values))
         _console.print(fp_table)
 
-        sw_table = Table(title="Sweep / polar loops", show_header=True, header_style="bold")
+        sw_table = Table(
+            title="Sweep / polar loops  (values = where it is pinned on the other polars)",
+            show_header=True,
+            header_style="bold",
+        )
         sw_table.add_column("Sweep key", style="cyan")
         sw_table.add_column("Polar")
         sw_table.add_column("n", justify="right", style="magenta")
-        sw_table.add_column("Unique values")
+        sw_table.add_column("Pinned at")
         for key, spec in completed_sweeps.items():
             values = spec.get("values", [])
             sw_table.add_row(
@@ -1738,7 +1810,7 @@ def _print_batch_plan(
     for key, spec in completed_flight_points.items():
         values = spec.get("values", [])
         print(f"  {key}: n={len(values)}  [{_format_values_preview(values)}]")
-    print("\nSweep / polar loops:")
+    print("\nSweep / polar loops (values = where each is pinned):")
     for key, spec in completed_sweeps.items():
         values = spec.get("values", [])
         print(
@@ -2246,7 +2318,9 @@ def batch_plot(
     if not resolved_sweep_dict:
         raise ValueError("Either sweep_dict or x_axis_dict must be provided.")
 
-    completed_sweeps = _prepare_sweep_dict(configuration_dict, resolved_sweep_dict)
+    completed_sweeps = _prepare_sweep_dict(
+        configuration_dict, resolved_sweep_dict, flight_point_dict
+    )
     completed_flight_points = _prepare_flight_point_dict(
         configuration_dict,
         flight_point_dict,
@@ -2372,6 +2446,7 @@ def _enumerate_compare_jobs(
             configuration_dict,
             sweep_keys,
             x_key,
+            completed_sweeps,
         ):
             for y_key, y_spec in y_axis_dict.items():
                 y_col = y_spec["col_name"]
@@ -2722,11 +2797,15 @@ def _print_compare_plan(
             )
         _console.print(cmp_table)
 
-        sw_table = Table(title="Sweep / polar loops", show_header=True, header_style="bold")
+        sw_table = Table(
+            title="Sweep / polar loops  (values = where it is pinned on the other polars)",
+            show_header=True,
+            header_style="bold",
+        )
         sw_table.add_column("Sweep key", style="cyan")
         sw_table.add_column("Polar")
         sw_table.add_column("n", justify="right", style="magenta")
-        sw_table.add_column("Unique values")
+        sw_table.add_column("Pinned at")
         for key, spec in completed_sweeps.items():
             values = spec.get("values", [])
             sw_table.add_row(
@@ -2757,7 +2836,7 @@ def _print_compare_plan(
             format_flight_point_title_suffix(values, fp_keys, completed_flight_points)
         )
         print(f"  {name}: {suffix}")
-    print("\nSweep / polar loops:")
+    print("\nSweep / polar loops (values = where each is pinned):")
     for key, spec in completed_sweeps.items():
         values = spec.get("values", [])
         print(
@@ -2903,7 +2982,9 @@ def batch_compare_flight_points(
     if not resolved_sweep_dict:
         raise ValueError("Either sweep_dict or x_axis_dict must be provided.")
 
-    completed_sweeps = _prepare_sweep_dict(configuration_dict, resolved_sweep_dict)
+    completed_sweeps = _prepare_sweep_dict(
+        configuration_dict, resolved_sweep_dict, flight_point_dict
+    )
     completed_flight_points = _prepare_flight_point_dict(
         configuration_dict,
         flight_point_dict,

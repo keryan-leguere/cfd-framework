@@ -32,7 +32,12 @@ from cfd_plot import (
     iter_flight_points,
     varying_flight_keys,
 )
-from cfd_plot.batch import _extract_plot_style_kwargs
+from cfd_plot.batch import (
+    _enumerate_jobs,
+    _extract_plot_style_kwargs,
+    _prepare_flight_point_dict,
+    _prepare_sweep_dict,
+)
 
 
 def _make_row(
@@ -1046,3 +1051,176 @@ class TestConfigurationExtraKeys:
         out = capsys.readouterr().out
         assert "colour" in out
         assert "masse" in out
+
+
+class TestDeclaredValues:
+    """``values`` say which levels to write — they are not decoration.
+
+    The case that brought this up: a model called finely enough to draw a
+    smooth polar holds a hundred alphas, and every one of them that is *not*
+    the abscissa used to become a directory of its own on every other polar.
+    """
+
+    @staticmethod
+    def _fine_config() -> dict:
+        rows = [
+            _make_row(mach, 8000, alpha, 0.1 + 0.01 * alpha, "KW", beta=beta)
+            for mach in (0.80, 0.85)
+            for alpha in (0.0, 1.0, 2.0, 3.0, 4.0)
+            for beta in (0.0, 2.0)
+        ]
+        return {
+            "KW": {"name": "KW", "label": "KW", "dir": "", "df": pd.DataFrame(rows)}
+        }
+
+    _TWO_SWEEPS = {
+        "alpha": {"col_name": "alpha", "symbol": r"$\alpha$", "x_save_name": "alpha",
+                  "polar_prefix": "ALPHA_POLAR", "save_name": "ALPHA"},
+        "beta": {"col_name": "beta", "symbol": r"$\beta$", "x_save_name": "beta",
+                 "polar_prefix": "BETA_POLAR", "save_name": "BETA"},
+    }
+
+    def _run(self, config, tmp_path, flight_points, sweeps=None):
+        return batch_plot(
+            configuration_dict=config,
+            y_axis_dict=_CN_AXIS,
+            sweep_dict=sweeps or self._TWO_SWEEPS,
+            flight_point_dict=flight_points,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            dry_run=True,
+        )
+
+    def test_a_flight_point_is_restricted_to_the_values_it_declares(self, tmp_path):
+        written = self._run(
+            self._fine_config(),
+            tmp_path,
+            {"Mach": {"values": [0.80], "label": "M", "save_name": "M"}},
+            sweeps=_ALPHA_SWEEP,
+        )
+        assert {path.parent.name for path in written} == {"M_0.8"}
+
+    def test_no_declared_values_still_walks_the_table(self, tmp_path):
+        written = self._run(
+            self._fine_config(),
+            tmp_path,
+            {"Mach": {"values": [], "label": "M", "save_name": "M"}},
+            sweeps=_ALPHA_SWEEP,
+        )
+        assert {path.parent.name for path in written} == {"M_0.8", "M_0.85"}
+
+    def test_a_sweep_is_pinned_at_the_values_its_flight_point_entry_declares(
+        self, tmp_path
+    ):
+        """alpha in both dicts: two levels on the beta polar, not five."""
+        written = self._run(
+            self._fine_config(),
+            tmp_path,
+            {
+                "Mach": {"values": [0.80], "label": "M", "save_name": "M"},
+                "alpha": {"values": [0.0, 4.0], "label": "alpha", "save_name": "ALPHA"},
+            },
+        )
+        beta_polar = [path for path in written if "BETA_POLAR" in path.parts]
+        assert {path.parent.name for path in beta_polar} == {"ALPHA_0", "ALPHA_4"}
+
+    def test_its_own_polar_still_holds_every_point(self, tmp_path):
+        """The restriction is about directories, never about the abscissa."""
+        config = self._fine_config()
+        jobs = _enumerate_jobs(
+            configuration_dict=config,
+            y_axis_dict=_CN_AXIS,
+            completed_sweeps=_prepare_sweep_dict(
+                config,
+                self._TWO_SWEEPS,
+                {"alpha": {"values": [0.0, 4.0], "label": "a", "save_name": "ALPHA"}},
+            ),
+            completed_flight_points=_prepare_flight_point_dict(
+                config, {"Mach": {"values": [0.80], "label": "M", "save_name": "M"}},
+                list(self._TWO_SWEEPS),
+            ),
+            output_base=tmp_path,
+            include_curve=None,
+        )
+        alpha_polar = [job for job in jobs if job.sweep_key == "alpha"]
+        assert alpha_polar
+        for job in alpha_polar:
+            assert len(job.curves[0].x) == 5
+
+    def test_a_sweep_entry_of_its_own_wins(self, tmp_path):
+        sweeps = {
+            **self._TWO_SWEEPS,
+            "alpha": {**self._TWO_SWEEPS["alpha"], "values": [2.0]},
+        }
+        written = self._run(
+            self._fine_config(),
+            tmp_path,
+            {
+                "Mach": {"values": [0.80], "label": "M", "save_name": "M"},
+                "alpha": {"values": [0.0, 4.0], "label": "alpha", "save_name": "ALPHA"},
+            },
+            sweeps=sweeps,
+        )
+        beta_polar = [path for path in written if "BETA_POLAR" in path.parts]
+        assert {path.parent.name for path in beta_polar} == {"ALPHA_2"}
+
+    def test_the_count_of_figures_follows_the_study_not_the_discretisation(
+        self, tmp_path
+    ):
+        config = self._fine_config()
+        loose = self._run(
+            config, tmp_path, {"Mach": {"values": [], "label": "M", "save_name": "M"}}
+        )
+        tight = self._run(
+            config,
+            tmp_path,
+            {
+                "Mach": {"values": [], "label": "M", "save_name": "M"},
+                "alpha": {"values": [0.0, 4.0], "label": "a", "save_name": "ALPHA"},
+            },
+        )
+        # 2 Mach x (2 beta levels on the alpha polar + 5 alpha levels on the
+        # beta polar) against 2 x (2 + 2) once alpha says where it is pinned.
+        assert len(loose) == 14
+        assert len(tight) == 8
+
+    def test_a_value_no_row_holds_is_named_rather_than_silently_dropped(
+        self, tmp_path
+    ):
+        with pytest.warns(RuntimeWarning, match=r"declares \[0\.9\]"):
+            written = self._run(
+                self._fine_config(),
+                tmp_path,
+                {"Mach": {"values": [0.80, 0.9], "label": "M", "save_name": "M"}},
+                sweeps=_ALPHA_SWEEP,
+            )
+        assert {path.parent.name for path in written} == {"M_0.8"}
+
+    def test_the_warning_names_what_the_table_does_hold(self, tmp_path):
+        with pytest.warns(RuntimeWarning, match="0.8, 0.85"):
+            self._run(
+                self._fine_config(),
+                tmp_path,
+                {"Mach": {"values": [0.9], "label": "M", "save_name": "M"}},
+                sweeps=_ALPHA_SWEEP,
+            )
+
+    def test_iter_flight_points_takes_the_specs_directly(
+        self, sample_configuration_dict
+    ):
+        specs = {"Mach": {"values": [0.85]}}
+        points = list(
+            iter_flight_points(sample_configuration_dict, ["Mach", "Altitude_m"], specs)
+        )
+        assert points == [{"Mach": 0.85, "Altitude_m": 10000.0}]
+
+    def test_the_abscissa_sweep_never_restricts_itself(self, sample_configuration_dict):
+        """iter_fixed_sweep_combinations drops the x sweep before it looks at values."""
+        specs = {"alpha": {"values": [0.0]}, "beta": {"values": [0.0]}}
+        combos = list(
+            iter_fixed_sweep_combinations(
+                sample_configuration_dict, ["alpha", "beta"], "alpha", specs
+            )
+        )
+        assert combos == [{"beta": 0.0}]

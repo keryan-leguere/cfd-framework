@@ -276,6 +276,16 @@ class TestEnumeration:
         assert {job.output_path.parent.name for job in jobs} == {"Z_5000", "Z_10000"}
         assert all(job.fixed_sweeps for job in jobs)
 
+    def test_a_pinned_sweep_honours_the_values_it_declares(
+        self, configuration_dict, tmp_path
+    ):
+        """Same rule as batch_plot: a declared value list is where it is pinned."""
+        sweeps = {**_SWEEPS, "Altitude_m": {"col_name": "Altitude_m", "x_save_name": "Z",
+                                            "save_name": "Z", "values": [5000.0]}}
+        jobs = _jobs(configuration_dict, tmp_path, sweep_dict=sweeps,
+                     pairs=[("alpha", "Mach")])
+        assert {job.output_path.parent.name for job in jobs} == {"Z_5000"}
+
     def test_one_panel_per_configuration(self, configuration_dict, tmp_path):
         job = _jobs(configuration_dict, tmp_path)[0]
         assert [panel.source for panel in job.panels] == ["CFD", "MODEL"]

@@ -141,6 +141,18 @@ CARTO_KEY = "CARTO"
 # sized for one wide curve panel.
 _CARTO_PANEL_SIZE_FACTOR = (0.95, 1.05)
 
+# Behind the field, not over it. ``contourf`` sits at zorder 1 and its
+# iso-lines at 2, so a zone drawn above them would hatch over data that a
+# neighbouring source *does* hold on a shared-axes panel — and the hatching is
+# the least important thing on the sheet. It stays visible because the cells it
+# covers are exactly the ones the field leaves blank.
+_ZONE_ZORDER = 0.4
+
+# The message is the exception: it is the one thing on the zone that has to be
+# read, it covers a few characters, and half of it under a neighbouring panel's
+# fill would be worse than useless.
+_ZONE_MESSAGE_ZORDER = 4.0
+
 # 'level' is the spelling that comes to mind at the call site (and the one
 # Matplotlib does *not* use). Accepted, mapped, documented — a silent no-op
 # would be the worst of the three options.
@@ -1299,7 +1311,7 @@ def _shade_region(
     path = _region_path(x, y, quads)
     if spec.facecolor is not None:
         ax.add_patch(
-            PathPatch(path, facecolor=spec.facecolor, linewidth=0.0, zorder=3.0)
+            PathPatch(path, facecolor=spec.facecolor, linewidth=0.0, zorder=_ZONE_ZORDER)
         )
     # linewidth=0 on the hatched patch: the hatch still draws in the edge
     # colour, and nothing strokes the seams between neighbouring cells.
@@ -1310,7 +1322,7 @@ def _shade_region(
             edgecolor=spec.color,
             hatch=spec.hatch,
             linewidth=0.0,
-            zorder=3.1,
+            zorder=_ZONE_ZORDER + 0.1,
         )
     )
     ax.add_collection(
@@ -1318,7 +1330,7 @@ def _shade_region(
             _region_boundary(x, y, quads),
             colors=spec.color,
             linewidths=spec.linewidth,
-            zorder=3.2,
+            zorder=_ZONE_ZORDER + 0.2,
         )
     )
 
@@ -1343,7 +1355,7 @@ def _shade_region(
         fontsize = float(plt.rcParams["font.size"]) * 0.9
     ax.text(
         anchor[0], anchor[1], mathtext_safe(spec.message),
-        ha="center", va="center", fontsize=fontsize, color=spec.color, zorder=3.3,
+        ha="center", va="center", fontsize=fontsize, color=spec.color, zorder=_ZONE_MESSAGE_ZORDER,
         bbox={
             "boxstyle": "round,pad=0.28",
             "facecolor": "white",
@@ -1831,8 +1843,12 @@ def _enumerate_carto_jobs(
         other_sweeps = [key for key in sweep_keys if key not in (x_key, y_key)]
         varying_other_sweeps = [key for key in other_sweeps if key in varying_sw_keys]
 
-        for flight_point in iter_flight_points(configuration_dict, flight_point_keys):
-            for fixed_sweeps in iter_flight_points(configuration_dict, other_sweeps):
+        for flight_point in iter_flight_points(
+            configuration_dict, flight_point_keys, completed_flight_points
+        ):
+            for fixed_sweeps in iter_flight_points(
+                configuration_dict, other_sweeps, completed_sweeps
+            ):
                 for qoi_key, qoi_spec in y_axis_dict.items():
                     qoi_col = qoi_spec.get("col_name", qoi_key)
                     qoi_save = qoi_spec.get("y_save_name", qoi_key)
@@ -2067,7 +2083,9 @@ def batch_carto(
     if not resolved_sweep_dict:
         raise ValueError("Either sweep_dict or x_axis_dict must be provided.")
 
-    completed_sweeps = _prepare_sweep_dict(configuration_dict, resolved_sweep_dict)
+    completed_sweeps = _prepare_sweep_dict(
+        configuration_dict, resolved_sweep_dict, flight_point_dict
+    )
     completed_flight_points = _prepare_flight_point_dict(
         configuration_dict,
         flight_point_dict,

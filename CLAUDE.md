@@ -290,6 +290,13 @@ not part of the Bash framework's runtime:
   panels or, `layout="overlay"`, on one axes under `FOLD_OVERLAY/` where colour reads the
   condition and marker/linestyle the source; families larger than `max_panels` split into
   numbered sheets rather than shrinking).
+  **`values` in `flight_point_dict` / `sweep_dict` restrict the loops** — they were
+  informational before, and the enumeration always walked every value in the table, so a model
+  called finely for a smooth polar turned each of its hundred alphas into a directory on every
+  *other* polar. A key in both dicts is handled by the sweep machinery but keeps the `values`
+  written on the flight-point entry; on a sweep they say where it is **pinned**, never what the
+  abscissa shows. A declared value no row holds is named in a warning rather than costing a
+  directory that silently never appears.
   `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
   out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
   hook's own limits are the last word.
@@ -405,8 +412,15 @@ not part of the Bash framework's runtime:
       flight-point *column* (every figure would otherwise get every draw), and a flight point absent
       from the dispersed table — raised on the *first* figure, because two hundred undecorated
       figures read as a model without dispersion (`absent="ignorer"` for a deliberately partial
-      study); several labelled curves with no `serie=`. Fold sheets are skipped (their curves are
-      relabelled and stacked bundles would not read); compare panels are decorated one call each.
+      study); several labelled curves with no `serie=`. Fold sheets (`fold=`) follow one rule —
+      **panels are decorated, overlays are not**: `kind="context"` (one panel per flight point)
+      and `kind="y"` (one panel per quantity) each give the hook its own axes and its own
+      context per panel, so they slice exactly like an ordinary figure, while
+      `layout="overlay"` stacks the whole family on one axes under relabelled curves and is
+      left untouched. Compare panels are decorated one call each, for the same reason. On a
+      sheet `batch_plot` legends only the first panel when they share labels, so the hook
+      passes `legende_=False` where there is no legend to refresh — each panel still carries
+      its own parameter box, which is where its own numbers live.
       `lois=` adds the prescribed band over the obtained cloud, which is the only place a model
       dispersing more than asked shows up. `01_EXEMPLE/09_batch_plot_dispersion.py` is the runnable
       version, and README §10.1 the documented one.

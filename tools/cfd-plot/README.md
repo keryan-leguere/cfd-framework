@@ -664,8 +664,13 @@ sweep_dict = {
 }
 ```
 
-**`flight_point_dict`** — the parameters that define a flight point. `values` can be left
-empty and discovered from the data:
+`values` on a sweep says **where it is pinned** — which of its values become a directory level
+on the polars drawn against *another* sweep. It never touches the abscissa: the polar that
+draws this sweep always shows every point the table holds, which is the whole reason for
+calling a model finely.
+
+**`flight_point_dict`** — the parameters that define a flight point. `values` says which
+levels to write, and can be left empty to take every value the data holds:
 
 ```python
 from cfd_plot import discover_flight_point_values
@@ -680,9 +685,23 @@ flight_point_dict = {
 }
 ```
 
-A key present in **both** `sweep_dict` and `flight_point_dict` is automatically dropped from
-the flight point when it is the current X axis — so you can keep one reusable
-`flight_point_dict` across projects instead of editing it per sweep.
+A key present in **both** `sweep_dict` and `flight_point_dict` is handled by the sweep — it is
+the abscissa on its own polar and a directory level on every other — but it **keeps the
+`values` you wrote in `flight_point_dict`**, since that is where a reader naturally writes
+"alpha is 0 and 10 for me". So you can keep one reusable `flight_point_dict` across projects
+instead of editing it per sweep:
+
+```python
+sweep_dict        = {"alpha": {...}, "beta": {...}}
+flight_point_dict = {"alpha": {"values": [0, 10], ...}, "Mach": {"values": [0.8, 1.2], ...}}
+```
+
+- the **alpha** polar draws all hundred alphas of a finely called model, one curve per figure;
+- the **beta** polar is written at `ALPHA_0/` and `ALPHA_10/` only — two sheets, not a hundred.
+
+Without the `values`, every alpha the table holds becomes a directory on the beta polar, and
+the sheet count follows the discretisation rather than the study. A declared value that no row
+holds is **named in a warning** rather than costing a directory that silently never appears.
 `DEFAULT_FLIGHT_POINT_KEYS` is `("Mach", "Altitude_m", "DL", "DM", "DN")`.
 
 ### Running it
@@ -2091,6 +2110,7 @@ this codebase.
 | Shared colorbar does not match the panels | panels normalised independently | pass the same `vmin`/`vmax` everywhere and `colorbar=False` |
 | `ValueError: field must be 3D` from `extract_slice2d` | it slices a 3D volume, not a 2D plane | index the 2D array directly, or pass an `(nx, ny, nz)` array |
 | `KeyError: compare_flight_points[...] missing flight-point keys` | each compare entry must pin every active key | add the missing keys (the sweep variable is excluded) |
+| The figure count follows the model's discretisation — one directory per alpha on every other polar | up to 1.2.0, `values` in `flight_point_dict` / `sweep_dict` were informational: the loops always walked every value the table holds | fixed — upgrade; declared `values` now restrict the directory levels, while the polar drawn against that sweep still shows every point |
 | Fonts look wrong / fall back to DejaVu | bundled fonts not registered | `register_fonts()`; check `src/cfd_plot/fonts/` was installed as package data |
 | EMF export silently produces SVG | Inkscape not on `PATH` | install Inkscape, or export SVG/PDF |
 | Image tests pass but never catch anything | `pytest` without `--mpl` builds figures without comparing | run `pytest --mpl` |
