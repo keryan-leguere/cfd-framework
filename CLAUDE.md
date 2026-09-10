@@ -474,36 +474,6 @@ not part of the Bash framework's runtime:
       — are **recomposed** from its sources' with the same weights. `coefficients=` replaces the
       default list (laws + relation targets), `coefficients_en_plus=` adds to it.
       `01_EXEMPLE/sortie_modele_relations.py` + `10_relations.py` are the runnable version.
-    - **Both walkers take `batch_plot`'s three CLI arguments**, transliterated: `verbeux`
-      (`verbose` — the plan panel, the flight-point loop tables, then a Rich progress bar naming
-      the flight point and draw in flight), `rapport` (`report`, default **True** — the files
-      written, grouped by flight point, with sizes) and `a_blanc` (`dry_run` — enumerate and write
-      nothing, cleaning included). The rendering lives in `report/parcours.py`, and the dry run
-      composes filenames through the same `_Travail.fichiers_prevus()` the real run uses, so a
-      `a_blanc=True` provably says what a real run would write (asserted).
-    - **`relations={"CN": "-CZ", "CA": "CX1 + CX2"}` gives a law to an output the model does not
-      disperse** (`core/relation.py`). The law table covers what the model *consumes*, the output
-      table what it *produces*; when the gap is linear, each target gets **both** its laws, derived
-      from its sources', plus its drawn components, derived from the row's draw — so it is plotted
-      like a declared coefficient, and the model-vs-calcul check then covers the **relation
-      itself**. The split is not the same for the two components: at a fixed nominal a convention
-      is `α·Biais + β·FE + cst` (measured, via `decomposition_affine`), so the bias weights are the
-      `aᵢ` and the scale-factor weights are **shares**, `aᵢ·cᵢ/c_cible` — hence laws derived **per
-      flight point**, from the sources' nominals read out of `reference=`. One term and no constant
-      (`CN = -CZ`) is the exception: shares are 1, no nominal is needed, and the law **stays in its
-      family** (a `LoiDispersion` with the same type and `ET`); several terms leave the six
-      families for a `LoiDerivee` over `ot.LinearCombinationDistribution`. The constant offset is
-      chosen so a **neutral draw stays neutral**, and the whole derivation is then replayed against
-      the relation on fictitious draws before use. Three refusals: a multi-term relation without
-      its sources' nominals; a relation that disagrees with the reference's own target column (every
-      derived law of that flight point would be wrong, silently); a non-affine convention or a
-      correlated law set. `LoiComposante` (a Protocol in `core/loi.py`) is what lets figures,
-      validation and the terminal report treat both kinds alike; `LoiCoefficient.en_table()` is the
-      inverse of `charger_lois` and **refuses** a derived law, since no `(type, M, ET)` describes a
-      combination. In the histogram walker the target's components — which the model never returns
-      — are **recomposed** from its sources' with the same weights. `coefficients=` replaces the
-      default list (laws + relation targets), `coefficients_en_plus=` adds to it.
-      `01_EXEMPLE/sortie_modele_relations.py` + `10_relations.py` are the runnable version.
     - **The nominal comes from a second table, and the model gets checked.** `reference=` on the
       walker is the same model run once with a neutral draw (`tirage_neutre` — `FE = 1` for
       `biais + FE·c`, `FE = 0` for the percentage form, *resolved* from the relation rather than
