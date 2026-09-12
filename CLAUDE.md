@@ -299,7 +299,9 @@ not part of the Bash framework's runtime:
   directory that silently never appears.
   `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
   out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
-  hook's own limits are the last word.
+  hook's own limits are the last word. `on_before_save` takes one callable **or a sequence**
+  (`HookChain`, a frozen dataclass so it pickles whenever its hooks do), run in order on every
+  figure — the same on `batch_carto` and the compare figures.
   `cfd_plot.carto` (`batch_carto`, `CartoSpec`) is the same loop one dimension wider: one
   figure per **pair** of sweeps (every other sweep pinned as a directory, like `batch_plot`),
   one panel per configuration, drawn as `plot_contourf` + black `plot_contour` + `clabel`.
@@ -321,10 +323,14 @@ not part of the Bash framework's runtime:
   A blank cell says *which* blank it is (`RegionSpec`, `EquilibreSpec`): an `Equilibre` column
   reading `NON` is picked up without being asked, hatched under a "non équilibrable" message and
   dropped from the field — so it leaves the colour scale and the delta too — while cells the
-  study never ran are outlined and hatched with a message of your own. Whole cells, not the
-  half-cells a contour at 0.5 would give, since `contourf` blanks a cell on one missing corner.
-  Turning the zones on also pads short panels to the figure's extent, so two maps of one
-  quantity always share their axes. `panel_title` / `suptitle` / `subtitle` (and `DeltaSpec.title`)
+  study never ran are outlined and hatched with a message of your own — crossed against
+  dotted, never a mirror image. Whole cells, not the half-cells a contour at 0.5 would give,
+  since `contourf` blanks a cell on one missing corner (drawn with `corner_mask=False` so the
+  fill agrees); a seam cell touching both zones goes to the un-trimmable one, never to both;
+  the zones sit *behind* the field with only the message on top; and the delta panel carries
+  both zones (either source's un-trimmable nodes, resampled) and is padded to the field
+  panels' extent like they pad each other. Turning the zones on also pads short panels to the
+  figure's extent, so two maps of one quantity always share their axes. `panel_title` / `suptitle` / `subtitle` (and `DeltaSpec.title`)
   take a template or a callable; a panel's template can name any key of its `configuration_dict`
   entry (`{masse}`, `{CDG}`), an unknown field is left verbatim so LaTeX braces survive, and the
   resolution happens in the parent so a lambda costs no worker.

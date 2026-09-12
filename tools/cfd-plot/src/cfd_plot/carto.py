@@ -92,6 +92,7 @@ import numpy as np
 from ._compat import zip_strict
 from .batch import (
     BatchPlotContext,
+    HookArg,
     PdfReportArg,
     _cli_text,
     _coalesce_sweep_dict,
@@ -100,6 +101,7 @@ from .batch import (
     _prepare_flight_point_dict,
     _prepare_sweep_dict,
     _print_clean_report,
+    _resolve_hooks,
     _resolve_pdf_spec,
     _run_jobs,
     _subplot_grid_shape,
@@ -147,6 +149,13 @@ _CARTO_PANEL_SIZE_FACTOR = (0.95, 1.05)
 # the least important thing on the sheet. It stays visible because the cells it
 # covers are exactly the ones the field leaves blank.
 _ZONE_ZORDER = 0.4
+
+# Matplotlib's default (``corner_mask=True``) still fills three quarters of a
+# cell that has one blank corner. The zones hatch *whole* cells, so with it on
+# the fill would show as an octagon bitten out of every hatched patch, with
+# the outline under it. Off, a cell with a blank corner is blank, and the two
+# drawings agree to the pixel.
+_CORNER_MASK = False
 
 # The message is the exception: it is the one thing on the zone that has to be
 # read, it covers a few characters, and half of it under a neighbouring panel's
@@ -262,6 +271,10 @@ class EquilibreSpec(RegionSpec):
         value — a house spelling silently hatched is worse than a refusal.
     """
 
+    #: Crossed, not merely slanted the other way: a mirror of the unrun hatch
+    #: is the same pattern to a reader glancing across a sheet, and crossed
+    #: reads as "barred", which is what a flight point that does not trim is.
+    hatch: str = "xx"
     message: str | None = "non équilibrable"
     column: str = "Equilibre"
     ok_values: tuple[str, ...] = ("OUI", "YES", "O", "Y", "TRUE", "1")
@@ -283,7 +296,7 @@ class EquilibreSpec(RegionSpec):
 #: Discreet by default: the cells nobody ran get an outline and a thin hatch,
 #: not a slab of colour competing with the field next to it.
 _DEFAULT_MISSING = RegionSpec(
-    hatch="\\\\", color="0.55", facecolor=None, linewidth=0.7, message=None
+    hatch="..", color="0.55", facecolor=None, linewidth=0.7, message=None
 )
 _DEFAULT_EQUILIBRE = EquilibreSpec()
 
@@ -869,6 +882,9 @@ class _DeltaPanel:
     z: np.ndarray
     spec: DeltaSpec
     cbar_label: str
+    #: Fine-grid nodes touched by an un-trimmable cell of either source, so the
+    #: panel hatches them as such rather than as "not computed".
+    equilibre_mask: np.ndarray | None = None
 
     @property
     def half_range(self) -> float:
@@ -942,9 +958,14 @@ def _build_delta_panel(
             )
         x_axis, y_axis = reference.x, reference.y
         z_reference, z_other = reference.z, other.z
+        equilibre_mask = _union_masks(reference.equilibre_mask, other.equilibre_mask)
     else:
         x_axis, y_axis, z_reference, z_other = _common_field(
             reference, other, spec, qoi_key
+        )
+        equilibre_mask = _union_masks(
+            _resample_mask(reference, x_axis, y_axis),
+            _resample_mask(other, x_axis, y_axis),
         )
 
     title, cbar_label = _delta_labels(spec, reference, other, qoi_spec, qoi_key)
@@ -967,7 +988,34 @@ def _build_delta_panel(
         z=_delta_field(z_reference, z_other, spec.mode),
         spec=replace(spec, title=None),
         cbar_label=cbar_label,
+        equilibre_mask=equilibre_mask,
     )
+
+
+def _union_masks(first: np.ndarray | None, second: np.ndarray | None) -> np.ndarray | None:
+    if first is None:
+        return second
+    if second is None:
+        return first
+    union: np.ndarray = first | second
+    return union
+
+
+def _resample_mask(
+    panel: _CartoPanel, x_axis: np.ndarray, y_axis: np.ndarray
+) -> np.ndarray | None:
+    """The un-trimmable nodes of *panel*, carried onto the common grid.
+
+    Interpolated as 0/1 and thresholded at "any": a fine node whose bracket
+    holds one un-trimmable coarse node is exactly a node whose value came out
+    ``NaN`` for that reason, so the two masks stay in step.
+    """
+    if panel.equilibre_mask is None:
+        return None
+    weight = _resample_bilinear(
+        panel.x, panel.y, panel.equilibre_mask.astype(float), x_axis, y_axis
+    )
+    return weight > 0.0
 
 
 def _resample_counts(spec: DeltaSpec) -> tuple[int | None, int | None]:
@@ -1292,17 +1340,17 @@ def _shade_region(
     ax: Any,
     x: np.ndarray,
     y: np.ndarray,
-    mask: np.ndarray,
+    quads: np.ndarray,
     spec: RegionSpec,
     *,
     legend_label: str,
     handles: list[Any],
 ) -> None:
-    """Outline, hatch and name the cells the field does not cover."""
-    if mask.size == 0 or not mask.any() or x.size < 2 or y.size < 2:
-        return
-    quads = _region_quads(mask)
-    if not quads.any():
+    """Outline, hatch and name the cells the field does not cover.
+
+    *quads* is a **cell** mask, ``(ny-1, nx-1)`` — see :func:`_region_quads`.
+    """
+    if quads.size == 0 or not quads.any() or x.size < 2 or y.size < 2:
         return
 
     from matplotlib.collections import LineCollection
@@ -1370,20 +1418,37 @@ def _midpoints(axis: np.ndarray) -> np.ndarray:
     return np.asarray(0.5 * (axis[:-1] + axis[1:]), dtype=float)
 
 
-def _shade_panel_regions(ax: Any, panel: _CartoPanel) -> None:
-    """Both zones of one field panel, in the order they must be read."""
+def _shade_zones(
+    ax: Any,
+    x: np.ndarray,
+    y: np.ndarray,
+    z: np.ndarray,
+    equilibre_mask: np.ndarray | None,
+    *,
+    equilibre: EquilibreSpec | None,
+    missing: RegionSpec | None,
+) -> None:
+    """Both zones of one panel, each cell in exactly one of them.
+
+    A cell is blank as soon as one of its corners is, so a cell on the seam
+    between the two zones has a corner in each and would be claimed by both —
+    two hatches on one cell read as a third pattern nobody declared. The
+    un-trimmable zone wins the seam: it is the more specific statement, "we
+    know why this is blank", and the unrun zone is what is left.
+    """
     handles: list[Any] = []
-    equilibre = panel.spec.resolved_equilibre
-    if equilibre is not None and panel.equilibre_mask is not None:
+    equilibre_cells, missing_cells = _zone_cells(
+        z, equilibre_mask if equilibre is not None else None
+    )
+    if equilibre is not None and equilibre_cells.any():
         _shade_region(
-            ax, panel.x, panel.y, panel.equilibre_mask, equilibre,
+            ax, x, y, equilibre_cells, equilibre,
             legend_label=equilibre.message or "not balanced",
             handles=handles,
         )
-    missing = panel.spec.resolved_missing
     if missing is not None:
         _shade_region(
-            ax, panel.x, panel.y, panel.missing_mask, missing,
+            ax, x, y, missing_cells, missing,
             legend_label=missing.message or "not computed",
             handles=handles,
         )
@@ -1394,6 +1459,25 @@ def _shade_panel_regions(ax: Any, panel: _CartoPanel) -> None:
             fontsize=float(plt.rcParams["font.size"]) * 0.8,
             framealpha=0.9,
         )
+
+
+def _zone_cells(
+    z: np.ndarray, equilibre_mask: np.ndarray | None
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(un-trimmable cells, unrun cells)`` — disjoint, and together every blank cell."""
+    blank_cells = _region_quads(~np.isfinite(z))
+    if equilibre_mask is None or not equilibre_mask.any():
+        return np.zeros_like(blank_cells), blank_cells
+    equilibre_cells = _region_quads(equilibre_mask)
+    return equilibre_cells, blank_cells & ~equilibre_cells
+
+
+def _shade_panel_regions(ax: Any, panel: _CartoPanel) -> None:
+    _shade_zones(
+        ax, panel.x, panel.y, panel.z, panel.equilibre_mask,
+        equilibre=panel.spec.resolved_equilibre,
+        missing=panel.spec.resolved_missing,
+    )
 
 
 def _check_panels_agree(job: _CartoPlotJob) -> None:
@@ -1467,6 +1551,7 @@ def _render_one_carto_job(
             cbar_label=qoi_label,
             extend=panel_spec.extend,
             aspect=panel_spec.aspect,
+            corner_mask=_CORNER_MASK,
         )
         last_fill = fill
 
@@ -1497,6 +1582,7 @@ def _render_one_carto_job(
             y_label,
             spec.aspect,
             missing=spec.resolved_missing,
+            equilibre=spec.resolved_equilibre,
         )
 
     for ax in axes_flat[n_panels:]:
@@ -1562,6 +1648,7 @@ def _render_delta_panel(
     aspect: str | float | None,
     *,
     missing: RegionSpec | None = None,
+    equilibre: EquilibreSpec | None = None,
 ) -> None:
     """Draw the difference panel: symmetric diverging fill, iso-lines, own bar."""
     spec = panel.spec
@@ -1577,6 +1664,7 @@ def _render_delta_panel(
         cbar_label=mathtext_safe(panel.cbar_label),
         extend=spec.resolved_extend,
         aspect=aspect,
+        corner_mask=_CORNER_MASK,
     )
     if spec.line_color is not None:
         _draw_iso_lines(
@@ -1590,14 +1678,12 @@ def _render_delta_panel(
             clabel_fontsize=spec.clabel_fontsize,
             aspect=aspect,
         )
-    if missing is not None:
-        # The holes here are wider than the sources' own: interpolation onto
-        # the common grid cannot span a cell nobody ran.
-        _shade_region(
-            ax, panel.x, panel.y, ~np.isfinite(panel.z), missing,
-            legend_label=missing.message or "not computed",
-            handles=[],
-        )
+    # The holes here are wider than the sources' own: interpolation onto the
+    # common grid cannot span a cell nobody ran.
+    _shade_zones(
+        ax, panel.x, panel.y, panel.z, panel.equilibre_mask,
+        equilibre=equilibre, missing=missing,
+    )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     set_title(ax, mathtext_safe(panel.label))
@@ -1654,6 +1740,37 @@ def _pad_axis(
         return axis, 0, 0
     parts = [np.array([low])] * before + [axis] + [np.array([high])] * after
     return np.concatenate(parts), before, after
+
+
+def _align_delta_extent(
+    delta: _DeltaPanel, panels: Sequence[_CartoPanel]
+) -> _DeltaPanel:
+    """Pad the delta to the field panels' extent, the way they pad each other.
+
+    It is built on the *intersection* of the two sources, so it is often the
+    narrowest panel on the sheet; left alone it would sit beside two aligned
+    maps with axes of its own, and the margin it lacks is exactly "nothing to
+    difference here" — an unrun zone like any other.
+    """
+    if not panels or any(panel.spec.resolved_missing is None for panel in panels):
+        return delta
+    x_low = min(float(panel.x[0]) for panel in panels)
+    x_high = max(float(panel.x[-1]) for panel in panels)
+    y_low = min(float(panel.y[0]) for panel in panels)
+    y_high = max(float(panel.y[-1]) for panel in panels)
+    x_axis, left, right = _pad_axis(delta.x, x_low, x_high)
+    y_axis, below, above = _pad_axis(delta.y, y_low, y_high)
+    if not (left or right or below or above):
+        return delta
+    pad = ((below, above), (left, right))
+    mask = delta.equilibre_mask
+    return replace(
+        delta,
+        x=x_axis,
+        y=y_axis,
+        z=np.pad(delta.z, pad, constant_values=np.nan),
+        equilibre_mask=None if mask is None else np.pad(mask, pad, constant_values=False),
+    )
 
 
 def _align_panel_extents(panels: Sequence[_CartoPanel]) -> list[_CartoPanel]:
@@ -1932,6 +2049,8 @@ def _enumerate_carto_jobs(
                     # holds, and padding first would hand it two grids of NaN
                     # margins to intersect.
                     panels = _align_panel_extents(panels)
+                    if delta_panel is not None:
+                        delta_panel = _align_delta_extent(delta_panel, panels)
 
                     output_path = build_output_path(
                         output_base,
@@ -1998,7 +2117,7 @@ def batch_carto(
     delta: DeltaArg = None,
     style_profile: str = "paper",
     formats: tuple[str, ...] = ("svg",),
-    on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None = None,
+    on_before_save: HookArg = None,
     include_panel: Callable[..., bool] | None = None,
     report: bool = True,
     verbose: bool = False,
@@ -2050,7 +2169,8 @@ def batch_carto(
         Called once per panel with the panel's axes and a
         :class:`~cfd_plot.BatchPlotContext` whose ``carto_sweep_key`` /
         ``carto_sweep_spec`` describe the vertical sweep and whose
-        ``carto_source`` names the configuration.
+        ``carto_source`` names the configuration. One callable, or a sequence
+        of them run in order, as in :func:`~cfd_plot.batch_plot`.
     report, verbose, dry_run, n_jobs, pdf_report, clean :
         As in :func:`~cfd_plot.batch_plot`.
 
@@ -2069,6 +2189,7 @@ def batch_carto(
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
+    on_before_save = _resolve_hooks(on_before_save)
 
     base_spec = _resolve_carto_arg(carto)
     if delta is not None and delta is not False:

@@ -1098,6 +1098,25 @@ def on_before_save(fig, ax, context):
 Branch on `context.sweep_key` / `context.y_key`, not on `polar_prefix` — the keys are the
 stable contract, the prefix is a path convenience.
 
+**Several hooks** — pass a list (or a tuple) and they run in order on every figure, each seeing
+the axes as the previous one left them. One concern per function, and whatever must have the
+last word on the limits goes last:
+
+```python
+batch_plot(
+    ...,
+    on_before_save=[
+        hook_dispersion_tableau(df_disperse),     # the band, from cfd-dispersion
+        reference_lines,                          # CN = 0
+        stamp_transonic,                          # a box, past M 0.8
+    ],
+)
+```
+
+The chain (`cfd_plot.HookChain`) pickles whenever its hooks do, so module-level functions keep
+`n_jobs` on the pool; one `lambda` in the list costs it, exactly as a lone one would, with the
+same warning. An empty list means no hook.
+
 ### Path helpers
 
 Available if you need to reproduce the naming outside a batch run: `build_output_path`,
@@ -1811,7 +1830,7 @@ this one.
 
 | Key | Default (`missing`) | Default (`equilibre`) | What it does |
 |:---|:---|:---|:---|
-| `hatch` | `"\\\\"` | `"//"` | Matplotlib hatch pattern; repeat a character to densify |
+| `hatch` | `".."` | `"xx"` | Matplotlib hatch pattern; repeat a character to densify |
 | `color` | `"0.55"` | `"0.35"` | Hatching *and* outline |
 | `facecolor` | `None` | `"white"` | Wash under the hatching |
 | `linewidth` | `0.7` | `0.8` | Outline width |
@@ -1822,9 +1841,27 @@ this one.
 | `column` | — | `"Equilibre"` | Column to read |
 | `ok_values`, `ko_values` | — | see above | Accepted spellings |
 
+Two hatches that cannot be confused — dots for what was never run, crossed for what does not
+trim. Not a mirror image of each other: `//` against `\\` is one pattern to a reader glancing
+across a sheet, and *crossed* reads as barred, which is what a flight point that does not trim
+is.
+
 The hatching covers whole **cells**, not the half-cells a contour at 0.5 would give: `contourf`
 blanks a cell as soon as one of its four corners is missing, so anything narrower would leave a
-white ring between the field and its own hatching.
+white ring between the field and its own hatching. The fill is drawn with `corner_mask=False`
+for the same reason — Matplotlib's default still paints three quarters of a cell that has one
+blank corner, which would show as an octagon bitten out of every hatched patch.
+
+**On the seam between the two zones**, a cell has a corner in each and would be claimed by both;
+two hatches on one cell read as a third pattern nobody declared. The un-trimmable zone wins the
+seam — it is the more specific statement, "we know why this is blank" — and the unrun zone is
+what is left. The zones sit **behind** the field (their cells are the ones it leaves blank, so
+nothing is lost), with only the message on top.
+
+The **delta panel** carries both zones too: an un-trimmable cell of either source is
+un-trimmable on the difference, and it is padded to the field panels' extent the way they pad
+each other — built on the intersection of the two sources, it would otherwise be the narrow one
+on the sheet, and the margin it lacks is exactly "nothing to difference here".
 
 ### Headings you write yourself
 
@@ -2009,7 +2046,7 @@ fixed_sweeps)` is the analogue of `include_curve`.
 | **Legends** | `make_legend`, `make_figure_legend` |
 | **Data prep** | `reshape_structured2d`, `dataframe_to_grid`, `dataframe_to_masked_grid`, `mask_field`, `extract_slice2d` |
 | **Export** | `save_figure`, `print_file_report` |
-| **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
+| **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `HookChain`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |

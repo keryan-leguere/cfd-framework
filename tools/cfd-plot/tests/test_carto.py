@@ -20,6 +20,7 @@ from cfd_plot.batch import (
     _prepare_sweep_dict,
 )
 from cfd_plot.carto import (
+    _DEFAULT_MISSING,
     _CartoPlotJob,
     _common_axis,
     _delta_levels,
@@ -30,6 +31,7 @@ from cfd_plot.carto import (
     _resolve_delta_arg,
     _resolve_pairs,
     _shared_levels,
+    _zone_cells,
 )
 
 
@@ -1056,10 +1058,10 @@ class TestEquilibre:
     def test_one_source_can_override_the_zone(self, configuration_dict, tmp_path):
         for config in configuration_dict.values():
             config["df"] = _with_equilibre(config["df"], lambda row: row["alpha"] >= 4.0)
-        configuration_dict["MODEL"]["CARTO"] = {"equilibre": {"hatch": "xx"}}
+        configuration_dict["MODEL"]["CARTO"] = {"equilibre": {"hatch": "++"}}
         job = _jobs(configuration_dict, tmp_path)[0]
-        assert job.panels[0].spec.resolved_equilibre.hatch == "//"
-        assert job.panels[1].spec.resolved_equilibre.hatch == "xx"
+        assert job.panels[0].spec.resolved_equilibre.hatch == "xx"
+        assert job.panels[1].spec.resolved_equilibre.hatch == "++"
 
     def test_an_unknown_equilibre_key_is_rejected_by_name(
         self, configuration_dict, tmp_path
@@ -1305,9 +1307,13 @@ class TestDeltaResample:
         frame = configuration_dict["MODEL"]["df"]
         configuration_dict["MODEL"]["df"] = frame[frame["alpha"] <= 4.0]
         job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
-        assert job.delta.x.min() == 0.0
-        assert job.delta.x.max() == 4.0
-        assert np.isfinite(job.delta.z).all()
+        finite_x = job.delta.x[np.isfinite(job.delta.z).any(axis=0)]
+        assert finite_x.min() == 0.0
+        assert finite_x.max() == 4.0
+        # The axis itself is padded to the field panels' extent (alpha runs
+        # to 6 on the CFD), and that margin is a hole, not a value.
+        assert job.delta.x.max() == 6.0
+        assert np.isnan(job.delta.z[:, -1]).all()
 
     def test_disjoint_domains_are_refused(self, configuration_dict, tmp_path):
         frame = configuration_dict["MODEL"]["df"]
@@ -1357,3 +1363,143 @@ class TestDeltaResample:
         job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
         assert np.isnan(job.delta.z).any()
         assert np.isfinite(job.delta.z).any()
+
+
+class TestBothZonesOnOneMap:
+    """Un-trimmable *and* unrun cells on the same panel, told apart."""
+
+    @staticmethod
+    def _both(configuration_dict):
+        """CFD: NON at alpha >= 4, and the (alpha=0, Mach=1.0) cell never run."""
+        frame = _with_equilibre(
+            configuration_dict["CFD"]["df"], lambda row: row["alpha"] >= 4.0
+        )
+        configuration_dict["CFD"]["df"] = frame[
+            ~((frame["alpha"] == 0.0) & (frame["Mach"] == 1.0))
+        ]
+        return configuration_dict
+
+    def test_the_two_default_hatches_cannot_be_confused(self):
+        assert EquilibreSpec().hatch != _DEFAULT_MISSING.hatch
+        # Not a mirror image either: "//" against "\\" is one pattern to a
+        # reader glancing across a sheet.
+        assert set(EquilibreSpec().hatch) != set(_DEFAULT_MISSING.hatch.replace("\\", "/"))
+
+    def test_every_blank_cell_belongs_to_exactly_one_zone(self):
+        z = np.array(
+            [[1.0, np.nan, 1.0, 1.0],
+             [1.0, 1.0, np.nan, np.nan],
+             [1.0, 1.0, np.nan, np.nan]]
+        )
+        equilibre = np.array(
+            [[False, False, False, False],
+             [False, False, True, True],
+             [False, False, True, True]]
+        )
+        eq_cells, missing_cells = _zone_cells(z, equilibre)
+        blank_cells = (
+            ~np.isfinite(z[:-1, :-1]) | ~np.isfinite(z[1:, :-1])
+            | ~np.isfinite(z[:-1, 1:]) | ~np.isfinite(z[1:, 1:])
+        )
+        assert not (eq_cells & missing_cells).any()
+        assert ((eq_cells | missing_cells) == blank_cells).all()
+
+    def test_the_seam_goes_to_the_untrimmable_zone(self):
+        """A cell with one corner in each zone is claimed once, by equilibre."""
+        z = np.array([[1.0, np.nan, np.nan], [1.0, np.nan, np.nan]])
+        equilibre = np.array([[False, False, True], [False, False, True]])
+        eq_cells, missing_cells = _zone_cells(z, equilibre)
+        # cell (0,1) touches an unrun node (col 1) and an un-trimmable one (col 2)
+        assert eq_cells[0, 1] and not missing_cells[0, 1]
+        # cell (0,0) touches the unrun node only
+        assert missing_cells[0, 0] and not eq_cells[0, 0]
+
+    def test_without_equilibre_every_blank_cell_is_unrun(self):
+        z = np.array([[1.0, np.nan], [1.0, 1.0]])
+        eq_cells, missing_cells = _zone_cells(z, None)
+        assert not eq_cells.any()
+        assert missing_cells.all()
+
+    def test_both_messages_land_on_the_same_panel(self, configuration_dict, tmp_path):
+        self._both(configuration_dict)
+        seen: dict[str, list[str]] = {}
+
+        def on_before_save(fig, ax, context):
+            seen[context.carto_source] = [text.get_text() for text in ax.texts]
+
+        _carto(
+            configuration_dict,
+            tmp_path,
+            carto={"missing": {"message": "non calculé", "min_area": 0.0}},
+            on_before_save=on_before_save,
+        )
+        assert "non équilibrable" in seen["CFD"]
+        assert "non calculé" in seen["CFD"]
+        assert "non équilibrable" not in seen["MODEL"]
+
+    def test_the_two_zones_are_drawn_with_their_own_hatch(
+        self, configuration_dict, tmp_path
+    ):
+        self._both(configuration_dict)
+        hatches: dict[str, set[str]] = {}
+
+        def on_before_save(fig, ax, context):
+            hatches[context.carto_source] = {
+                patch.get_hatch() for patch in ax.patches if patch.get_hatch()
+            }
+
+        _carto(configuration_dict, tmp_path, on_before_save=on_before_save)
+        assert hatches["CFD"] == {EquilibreSpec().hatch, _DEFAULT_MISSING.hatch}
+        assert hatches["MODEL"] == set()
+
+    def test_the_delta_carries_the_untrimmable_zone(self, configuration_dict, tmp_path):
+        self._both(configuration_dict)
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        delta = job.delta
+        assert delta.equilibre_mask is not None
+        # alpha >= 4 is un-trimmable on the CFD: every fine node past the last
+        # trimmed alpha (2.0) carries it, none before.
+        columns = delta.equilibre_mask.any(axis=0)
+        assert columns[delta.x > 2.0].all()
+        assert not columns[delta.x < 2.0].any()
+
+    def test_the_delta_hatches_both_zones_too(self, configuration_dict, tmp_path):
+        self._both(configuration_dict)
+        hatches: set[str] = set()
+
+        def on_before_save(fig, ax, context):
+            if context.carto_delta is not None:
+                hatches.update(p.get_hatch() for p in ax.patches if p.get_hatch())
+
+        _carto(configuration_dict, tmp_path, delta=True, on_before_save=on_before_save)
+        assert hatches == {EquilibreSpec().hatch, _DEFAULT_MISSING.hatch}
+
+    def test_the_delta_is_padded_to_the_field_panels(self, configuration_dict, tmp_path):
+        """Built on the intersection, it would otherwise be the narrow one."""
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[frame["Mach"] <= 0.8]
+        job = _jobs(configuration_dict, tmp_path, base_spec=CartoSpec(delta=True))[0]
+        assert job.delta.y.max() == job.panels[0].y.max() == 1.0
+        assert np.isnan(job.delta.z[-1]).all()
+
+    def test_missing_off_leaves_the_delta_on_its_own_extent(
+        self, configuration_dict, tmp_path
+    ):
+        frame = configuration_dict["MODEL"]["df"]
+        configuration_dict["MODEL"]["df"] = frame[frame["Mach"] <= 0.8]
+        spec = CartoSpec(delta=True, missing=False)
+        job = _jobs(configuration_dict, tmp_path, base_spec=spec)[0]
+        assert job.delta.y.max() == 0.8
+
+    def test_a_cell_with_one_blank_corner_is_wholly_blank(self, configuration_dict, tmp_path):
+        """corner_mask=False: the fill and the hatching agree to the cell."""
+        self._both(configuration_dict)
+        corner_masks: set = set()
+
+        def on_before_save(fig, ax, context):
+            for coll in ax.collections:
+                if hasattr(coll, "levels") and hasattr(coll, "filled") and coll.filled:
+                    corner_masks.add(getattr(coll, "_corner_mask", None))
+
+        _carto(configuration_dict, tmp_path, on_before_save=on_before_save)
+        assert corner_masks == {False}

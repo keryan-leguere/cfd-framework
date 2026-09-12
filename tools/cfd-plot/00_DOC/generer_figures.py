@@ -975,9 +975,10 @@ def fig_carto_rapport() -> None:
 def fig_carto_zones() -> None:
     """The two ways a cell can be blank, told apart on the figure.
 
-    The CFD does not trim past the transonic corner; the model was never run
-    above M 1.2. Both come out white on a plain map, and they are not the same
-    fact — hence one hatch and one message each.
+    The CFD does not trim past the transonic corner and has holes of its own;
+    the model was never run above M 1.15. All of it comes out white on a plain
+    map, and they are not the same fact — hence one hatch and one message
+    each, on the delta panel as well.
     """
     import shutil
 
@@ -988,6 +989,12 @@ def fig_carto_zones() -> None:
     cfd["Equilibre"] = np.where(
         (cfd["Mach"] >= 1.10) & (cfd["alpha"] >= 7.0), "NON", "OUI"
     )
+    # …and three things the CFD never ran: a corner, an interior hole, and a
+    # strip right against the un-trimmable zone — the seam is the case that
+    # has to read.
+    cfd = cfd[~((cfd["Mach"] >= 1.20) & (cfd["alpha"] <= 3.0))]
+    cfd = cfd[~(cfd["Mach"].between(0.7, 0.8) & cfd["alpha"].between(4.0, 6.0))]
+    cfd = cfd[~((cfd["Mach"] >= 1.0) & (cfd["alpha"] >= 11.0))]
     model = cfg["MODEL"]["df"]
     model = model[model["Mach"] <= 1.15]
 
@@ -1014,6 +1021,7 @@ def fig_carto_zones() -> None:
         configuration_dict=zones_cfg, y_axis_dict=y_axis_zones, sweep_dict=sweep,
         flight_point_dict=fp, output_base=tmp,
         style_profile="paper", formats=("png",), report=False,
+        delta="relative",
     )
     shutil.copy(sorted(written)[0], FIGURES / "36_batch_carto_zones.png")
     print("  36_batch_carto_zones.png")

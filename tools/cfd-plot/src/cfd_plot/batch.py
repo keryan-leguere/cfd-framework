@@ -1643,6 +1643,53 @@ def _paths_for_formats(output_path: Path, formats: Sequence[str]) -> list[Path]:
     return [output_path.with_suffix(f".{fmt}") for fmt in formats]
 
 
+#: What ``on_before_save`` accepts: one hook, or several run in order.
+Hook = Callable[[plt.Figure, plt.Axes, BatchPlotContext], None]
+HookArg = Union[Hook, Sequence[Hook], None]
+
+
+@dataclass(frozen=True)
+class HookChain:
+    """Several ``on_before_save`` hooks, called in order on every figure.
+
+    A module-level frozen dataclass rather than a closure so that it pickles
+    whenever its hooks do — a ``lambda`` in the tuple still costs the process
+    pool, and it is reported exactly as one hook would be. Each hook sees the
+    axes as the previous one left them, so order them the way the drawing
+    stacks: what must have the last word on the limits goes last.
+    """
+
+    hooks: tuple[Hook, ...]
+
+    def __call__(self, fig: plt.Figure, ax: plt.Axes, context: BatchPlotContext) -> None:
+        for hook in self.hooks:
+            hook(fig, ax, context)
+
+
+def _resolve_hooks(on_before_save: HookArg) -> Hook | None:
+    """One callable or none — a sequence becomes a :class:`HookChain`."""
+    if on_before_save is None:
+        return None
+    if callable(on_before_save):
+        return on_before_save
+    if isinstance(on_before_save, (str, bytes)) or not isinstance(on_before_save, Sequence):
+        raise TypeError(
+            "on_before_save must be a callable, a sequence of callables or None, "
+            f"got {type(on_before_save).__name__}."
+        )
+    hooks = tuple(on_before_save)
+    not_callable = [repr(hook) for hook in hooks if not callable(hook)]
+    if not_callable:
+        raise TypeError(
+            f"on_before_save holds something that is not callable: {not_callable}."
+        )
+    if not hooks:
+        return None
+    if len(hooks) == 1:
+        return hooks[0]
+    return HookChain(hooks)
+
+
 def _is_picklable(obj: Any) -> bool:
     if obj is None:
         return True
@@ -2224,7 +2271,7 @@ def batch_plot(
     output_base: str | Path,
     style_profile: str = "paper",
     formats: tuple[str, ...] = ("svg",),
-    on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None = None,
+    on_before_save: HookArg = None,
     include_curve: Callable[..., bool] | None = None,
     report: bool = True,
     verbose: bool = False,
@@ -2249,6 +2296,13 @@ def batch_plot(
 
     Parameters
     ----------
+    on_before_save :
+        Called on every figure once it is drawn and just before it is written,
+        as ``hook(fig, ax, context)`` with a :class:`BatchPlotContext`. One
+        callable, or a **sequence** of them run in order — each sees the axes
+        as the previous one left them, so whatever must have the last word on
+        the limits goes last. The dispersion band, a stamp, a reference line:
+        three concerns, three functions, one list.
     report :
         Pretty-print exported files, grouped by polar then flight point, after
         a real run.
@@ -2313,6 +2367,7 @@ def batch_plot(
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
+    on_before_save = _resolve_hooks(on_before_save)
 
     resolved_sweep_dict = _coalesce_sweep_dict(sweep_dict, x_axis_dict)
     if not resolved_sweep_dict:
@@ -2919,7 +2974,7 @@ def batch_compare_flight_points(
     formats: tuple[str, ...] = ("svg",),
     max_cols: int = 3,
     sync_axes: str | None = "both",
-    on_before_save: Callable[[plt.Figure, plt.Axes, BatchPlotContext], None] | None = None,
+    on_before_save: HookArg = None,
     include_curve: Callable[..., bool] | None = None,
     report: bool = True,
     verbose: bool = False,
@@ -2971,6 +3026,7 @@ def batch_compare_flight_points(
     """
     if not y_axis_dict:
         raise ValueError("y_axis_dict must contain at least one entry.")
+    on_before_save = _resolve_hooks(on_before_save)
     if max_cols < 1 or max_cols > 3:
         raise ValueError("max_cols must be between 1 and 3.")
     if sync_axes is not None and sync_axes not in _SYNC_AXES_VALUES:

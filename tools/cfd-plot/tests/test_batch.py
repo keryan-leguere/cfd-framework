@@ -1224,3 +1224,116 @@ class TestDeclaredValues:
             )
         )
         assert combos == [{"beta": 0.0}]
+
+
+# Module-level so they pickle: a hook chain is only as parallel as its hooks.
+def _hook_stamp(fig, ax, context):
+    ax.text(0.02, 0.98, "stamp", transform=ax.transAxes, va="top")
+
+
+def _hook_pin_limits(fig, ax, context):
+    ax.set_xlim(-1.0, 11.0)
+
+
+class TestSeveralHooks:
+    """``on_before_save`` takes a list: one concern per function, run in order."""
+
+    def _run(self, config, tmp_path, hooks, **kwargs):
+        return batch_plot(
+            configuration_dict=config,
+            y_axis_dict=_CN_AXIS,
+            sweep_dict=_ALPHA_SWEEP,
+            flight_point_dict=_EMPTY_FLIGHT_POINTS,
+            output_base=tmp_path,
+            formats=("svg",),
+            report=False,
+            on_before_save=hooks,
+            **kwargs,
+        )
+
+    def test_every_hook_runs_on_every_figure(self, sample_configuration_dict, tmp_path):
+        calls: list[str] = []
+
+        def first(fig, ax, context):
+            calls.append("first")
+
+        def second(fig, ax, context):
+            calls.append("second")
+
+        written = self._run(sample_configuration_dict, tmp_path, [first, second])
+        assert calls == ["first", "second"] * len(written)
+
+    def test_hooks_run_in_the_order_given(self, sample_configuration_dict, tmp_path):
+        """The second hook sees the first one's limits, not the autoscaled ones."""
+        seen: list[tuple[float, float]] = []
+
+        def record(fig, ax, context):
+            seen.append(tuple(float(v) for v in ax.get_xlim()))
+
+        self._run(sample_configuration_dict, tmp_path, [_hook_pin_limits, record])
+        assert set(seen) == {(-1.0, 11.0)}
+
+    def test_a_single_callable_still_works(self, sample_configuration_dict, tmp_path):
+        calls: list[int] = []
+        self._run(sample_configuration_dict, tmp_path, lambda f, a, c: calls.append(1))
+        assert calls
+
+    def test_a_tuple_is_as_good_as_a_list(self, sample_configuration_dict, tmp_path):
+        calls: list[str] = []
+        self._run(
+            sample_configuration_dict,
+            tmp_path,
+            (lambda f, a, c: calls.append("a"), lambda f, a, c: calls.append("b")),
+        )
+        assert calls[:2] == ["a", "b"]
+
+    def test_an_empty_list_means_no_hook(self, sample_configuration_dict, tmp_path):
+        assert self._run(sample_configuration_dict, tmp_path, [])
+
+    def test_a_non_callable_in_the_list_is_named(self, sample_configuration_dict, tmp_path):
+        with pytest.raises(TypeError, match=r"not callable.*'oops'"):
+            self._run(sample_configuration_dict, tmp_path, [_hook_stamp, "oops"])
+
+    def test_a_string_is_not_a_sequence_of_hooks(self, sample_configuration_dict, tmp_path):
+        with pytest.raises(TypeError, match="callable, a sequence of callables"):
+            self._run(sample_configuration_dict, tmp_path, "stamp")
+
+    def test_a_chain_of_module_level_hooks_keeps_the_pool(
+        self, sample_configuration_dict, tmp_path, recwarn
+    ):
+        written = self._run(
+            sample_configuration_dict, tmp_path, [_hook_stamp, _hook_pin_limits], n_jobs=2
+        )
+        assert written
+        assert not [w for w in recwarn if "not picklable" in str(w.message)]
+
+    def test_one_lambda_in_the_chain_costs_the_pool_like_a_lone_one(
+        self, sample_configuration_dict, tmp_path
+    ):
+        with pytest.warns(UserWarning, match="not picklable"):
+            self._run(
+                sample_configuration_dict,
+                tmp_path,
+                [_hook_stamp, lambda f, a, c: None],
+                n_jobs=2,
+            )
+
+    def test_the_chain_is_exported_and_pickles(self):
+        import pickle
+
+        from cfd_plot import HookChain
+
+        chain = HookChain((_hook_stamp, _hook_pin_limits))
+        assert pickle.loads(pickle.dumps(chain)).hooks == chain.hooks
+
+    def test_compare_takes_a_list_too(self, compare_configuration_dict, tmp_path):
+        calls: list[str] = []
+
+        def one(fig, ax, context):
+            calls.append("one")
+
+        def two(fig, ax, context):
+            calls.append("two")
+
+        _compare(compare_configuration_dict, tmp_path, on_before_save=[one, two])
+        assert calls and calls[:2] == ["one", "two"]
