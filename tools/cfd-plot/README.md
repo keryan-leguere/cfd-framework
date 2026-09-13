@@ -1520,7 +1520,33 @@ figure already is:
 
 `label_loc="top"` (the default) writes the names just above the frame **and pushes the axes
 title up** to make room — once per axes, no matter how many times you call it. `"inside"`,
-`"bottom"` and `"none"` never touch the title.
+`"bottom"` and `"none"` never touch the title. The room is remembered on the axes, so a title
+set *afterwards* through `set_title` still clears the names (`ax.set_title` resets its own
+pad on every call and cannot be told).
+
+### Names that would collide
+
+Narrow regions have names as long as wide ones, and two names over three narrow regions land
+on each other. The names are **measured**, and the ones that would touch move up to a second
+row — a third if it takes one — each with a thin leader down to the band it names:
+
+![crowded domain names](00_DOC/FIGURES/32b_domains_crowded.png)
+
+The widest regions keep the first row: their names sit right above them, and it is the narrow
+ones that climb. The rows are offsets in *points*, so they stay the same distance apart
+whatever the figure size, and the leader is an annotation pinned the same way — it keeps its
+length whatever the layout engine does to the axes afterwards.
+
+| `label_overlap=` | What happens |
+|:---|:---|
+| `"stagger"` *(default)* | Colliding names climb to a further row, with a leader |
+| `"hide"` | One row only: what does not fit beside the wider regions' names is dropped |
+| `"ignore"` | Every name in one row, where it falls — the old behaviour |
+
+Names are measured before the layout engine has settled the axes, which only ever makes them
+narrower; a 12 % margin covers what `constrained_layout` typically takes for the tick labels,
+so a name that fits now still fits later. On a backend that cannot render off-screen nothing
+is measured and nothing moves.
 
 ### The rest of the arguments
 
@@ -1533,7 +1559,8 @@ plot_domains(
     fill=True, alternate=False, lines=False,
     labels=True, label_loc="top", label_rotation=0.0, label_box=False,
     label_kwargs=None,       # forwarded to ax.text (fontsize, color, …)
-    min_label_width=0.04,    # fraction of the x range below which a name is dropped
+    label_overlap="stagger", # "hide" | "ignore" — see above
+    min_label_width=0.01,    # fraction of the x range below which a name is dropped
     legend=False,
     boundary="midpoint",     # "left" | "right"
     extend="data",           # "axes" → run the outer regions out to the axis limits
@@ -1542,9 +1569,9 @@ plot_domains(
 ) -> list[DomainSpan]
 ```
 
-- **`min_label_width`** is why a sliver region comes out unnamed: a name wider than its own
-  region lands on its neighbour, which is worse than no name. Set it to `0.0` to force them
-  all, or use `legend=True` to name the narrow ones somewhere they fit.
+- **`min_label_width`** is only a noise filter now that colliding names are staggered: a
+  region one sample wide in a column that flickers is not a regime anybody wants named. Set
+  it to `0.0` to name them all, or `legend=True` to name the narrow ones somewhere they fit.
 - **`extend="axes"`** removes the white slivers at the left and right edges (Matplotlib's
   autoscale margin sits outside the data). It reads the limits at call time, so call it last.
 - **The returned `DomainSpan`s** carry `value`, `name`, `start`, `end`, `width`, `color`,

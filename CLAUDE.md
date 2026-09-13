@@ -338,7 +338,11 @@ not part of the Bash framework's runtime:
   per-point integer column (`iDomain`): runs of equal consecutive values, cut halfway between
   the samples that disagree, a hole in the column left blank rather than shaded through, and
   palette colours keyed on the *value* so a regime keeps its colour on a figure where a
-  neighbouring regime is absent.
+  neighbouring regime is absent. Names that would collide are **measured and staggered**
+  (`label_overlap="stagger"`, or `"hide"` / `"ignore"`): the widest regions keep the first
+  row, the narrow ones climb with a leader (an annotation pinned in points, so it survives
+  the layout engine), and the title pad is remembered on the axes so `cfd_plot.set_title`
+  called *after* `plot_domains` still clears the rows — `ax.set_title` resets its pad.
   A configuration entry may also carry the caller's own keys (`masse`, `maillage`): only
   keywords Matplotlib recognises (asked of `ArtistInspector(Line2D)`) reach `plot_line`, with
   `style` as the never-filtered escape hatch. Matplotlib parses a whole string as **mathtext**

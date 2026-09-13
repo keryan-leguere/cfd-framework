@@ -835,6 +835,31 @@ def fig_domains() -> None:
             make_legend(ax, loc="lower left", fontsize=7)
     _write(fig, "32_domains_variants")
 
+    # Seven regimes, four of them too narrow for their own name: the names
+    # that would collide climb to a further row, with a leader down to the
+    # band they name. The wide regimes keep the first row.
+    mach = np.linspace(0.3, 2.0, 120)
+    cn = 0.8 + 0.6 / np.sqrt(np.abs(1 - mach**2) + 0.08)
+    idomain = np.digitize(mach, [0.75, 0.86, 0.93, 1.0, 1.07, 1.25])
+    crowded = {
+        0: "Subsonic", 1: "Drag rise", 2: "Buffet onset", 3: "Sonic",
+        4: "Shock detach.", 5: "Transonic tail", 6: "Supersonic",
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.2))
+    for ax, (title, options) in zip(
+        axes,
+        (
+            ('label_overlap="stagger" (default)', {}),
+            ("label_box=True", {"label_box": True}),
+        ),
+    ):
+        plot_line(ax, mach, cn, label=r"$C_N$")
+        plot_domains(ax, mach, idomain, domains=crowded, **options)
+        ax.set_xlabel(r"$M$ [-]")
+        ax.set_ylabel(r"$C_N$ [-]")
+        set_title(ax, title)
+    _write(fig, "32b_domains_crowded")
+
 
 
 # ---------------------------------------------------------------------------

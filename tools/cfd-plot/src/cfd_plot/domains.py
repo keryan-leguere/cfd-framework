@@ -44,6 +44,18 @@ the right answer depends on how busy the figure already is:
     Each name on a coloured chip. Reads as a ribbon above the axes, and ties
     the name to its tint when the fill is too pale to be sure.
 
+Names that would collide
+------------------------
+Narrow regions have names as long as wide ones, and two names over three
+narrow regions land on each other. By default (``label_overlap="stagger"``)
+the names are measured and the ones that would touch move up to a second
+row — a third if it takes one — each with a thin leader down to its region,
+so the eye still knows which band it names. The widest regions keep the
+first row: their names sit right above them, and it is the narrow ones that
+climb. ``"hide"`` drops the colliding names instead (widest kept), for a
+figure that must stay one line tall; ``"ignore"`` draws them all where they
+fall.
+
 Colour stability across figures
 -------------------------------
 Region colours are picked from the palette by the domain *value* when it is a
@@ -80,11 +92,22 @@ _BOUNDARY_MODES = ("midpoint", "left", "right")
 _LABEL_LOCATIONS = ("top", "inside", "bottom", "none")
 _EXTEND_MODES = ("data", "axes")
 
-# Labels below this fraction of the x range are dropped: a name that does not
-# fit its own region is worse than no name, because it lands on its neighbour.
-_DEFAULT_MIN_LABEL_WIDTH = 0.04
+# Labels below this fraction of the x range are dropped. Now that names that
+# would collide are staggered onto a second row with a leader, this is only a
+# noise filter: a region one sample wide in a column that flickers is not a
+# regime anybody wants named.
+_DEFAULT_MIN_LABEL_WIDTH = 0.01
+
+_LABEL_OVERLAP_MODES = ("stagger", "hide", "ignore")
+
+# Labels are measured before the layout engine has settled the axes, which
+# only ever makes them narrower: what fits now may touch later. The margin
+# covers what constrained_layout typically takes for the tick labels.
+_LABEL_MEASURE_MARGIN = 1.12
 
 _TITLE_BUMP_MARKER = "_cfd_plot_domain_title_bumped"
+#: Extra title padding, in points, left on the axes for ``set_title`` to find.
+TITLE_EXTRA_PAD_ATTR = "_cfd_plot_title_extra_pad"
 
 # Sentinel for a point the model gave no domain for.
 _MISSING = object()
@@ -270,6 +293,7 @@ def plot_domains(
     label_rotation: float = 0.0,
     label_box: bool = False,
     label_kwargs: Mapping[str, Any] | None = None,
+    label_overlap: str = "stagger",
     min_label_width: float = _DEFAULT_MIN_LABEL_WIDTH,
     legend: bool = False,
     boundary: str = "midpoint",
@@ -303,6 +327,11 @@ def plot_domains(
         axes title up to make room; ``"inside"`` writes them inside, under the
         top spine, which is the one to use when the header is already busy
         (a subtitle, a two-line suptitle).
+    label_overlap : {"stagger", "hide", "ignore"}
+        What to do with names that would land on each other. ``"stagger"``
+        (default) moves the colliding ones to a further row, with a leader
+        down to their region; ``"hide"`` drops them, keeping the widest
+        regions' names; ``"ignore"`` draws them all in one row.
     min_label_width
         Regions narrower than this fraction of the x range go unlabelled.
         Use ``legend=True`` to name them anyway.
@@ -327,6 +356,10 @@ def plot_domains(
         )
     if extend not in _EXTEND_MODES:
         raise ValueError(f"extend must be one of {_EXTEND_MODES}, got {extend!r}.")
+    if label_overlap not in _LABEL_OVERLAP_MODES:
+        raise ValueError(
+            f"label_overlap must be one of {_LABEL_OVERLAP_MODES}, got {label_overlap!r}."
+        )
 
     segments = domain_segments(x, domain, boundary=boundary)
     if not segments:
@@ -357,6 +390,7 @@ def plot_domains(
 
     labelled: set[Any] = set()
     spans: list[DomainSpan] = []
+    label_rows: list[_LabelSlot] = []
 
     for position, (value, start, end) in enumerate(segments):
         spec = _as_domain(value, mapping.get(value))
@@ -393,6 +427,7 @@ def plot_domains(
                 box=label_box,
                 extra=dict(label_kwargs or {}),
             )
+            label_rows.append(_LabelSlot(text, 0.5 * (start + end), end - start, color))
 
         spans.append(
             DomainSpan(
@@ -406,6 +441,16 @@ def plot_domains(
                 text=text,
             )
         )
+
+    if label_rows:
+        n_rows = _layout_labels(ax, label_rows, label_loc=label_loc, mode=label_overlap)
+        if label_loc == "top":
+            _bump_title(ax, n_rows * _row_height(label_rows[0].text) + 4)
+        dropped = {id(slot.text) for slot in label_rows if slot.dropped}
+        if dropped:
+            spans = [
+                replace_text(span) if id(span.text) in dropped else span for span in spans
+            ]
 
     if legend:
         # One entry per value, added in x order so the legend reads left to
@@ -472,44 +517,197 @@ def _draw_label(
         }
     kwargs.update(extra)
 
-    if label_loc == "top":
-        # Just above the frame, with the title pushed up out of the way.
-        transform = ax.get_xaxis_transform() + ScaledTranslation(
-            0, 2 / 72.0, ax.figure.dpi_scale_trans
-        )
-        _bump_title(ax, fontsize + 4)
-        return ax.text(x_center, 1.0, name, transform=transform, va="baseline", **kwargs)
+    y, va = _LABEL_ANCHORS[label_loc]
+    text = ax.text(
+        x_center, y, name, transform=_label_transform(ax, label_loc, 0, 0.0), va=va, **kwargs
+    )
+    # The title is pushed up once the rows are known — see plot_domains.
+    return text
 
-    if label_loc == "inside":
-        return ax.text(
-            x_center,
-            0.965,
-            name,
-            transform=ax.get_xaxis_transform(),
-            va="top",
-            **kwargs,
-        )
 
-    return ax.text(
-        x_center,
-        0.02,
-        name,
-        transform=ax.get_xaxis_transform(),
-        va="bottom",
-        **kwargs,
+#: Where each location anchors its first row: (y in axes fraction, va).
+_LABEL_ANCHORS = {"top": (1.0, "baseline"), "inside": (0.965, "top"), "bottom": (0.02, "bottom")}
+
+#: Which way the further rows go, in points per row, by location.
+_ROW_DIRECTION = {"top": 1.0, "inside": -1.0, "bottom": 1.0}
+
+
+def _label_transform(ax: Any, label_loc: str, row: int, row_height: float) -> Any:
+    """x in data, y in axes fraction, plus a points offset for the row."""
+    base_points = 2.0 if label_loc == "top" else 0.0
+    offset = base_points + _ROW_DIRECTION[label_loc] * row * row_height
+    return ax.get_xaxis_transform() + ScaledTranslation(
+        0, offset / 72.0, ax.figure.dpi_scale_trans
+    )
+
+
+@dataclass
+class _LabelSlot:
+    """One region name while the rows are being worked out."""
+
+    text: Any
+    x_center: float
+    width: float
+    color: str
+    row: int = 0
+    dropped: bool = False
+
+
+def replace_text(span: DomainSpan) -> DomainSpan:
+    """The same span with its (removed) label forgotten."""
+    return DomainSpan(
+        value=span.value,
+        name=span.name,
+        start=span.start,
+        end=span.end,
+        color=span.color,
+        alpha=span.alpha,
+        patch=span.patch,
+        text=None,
+    )
+
+
+def _row_height(text: Any) -> float:
+    """One row of names, in points: the font, its leading, and the chip if any."""
+    fontsize = float(text.get_fontsize())
+    chip = 0.7 * fontsize if text.get_bbox_patch() is not None else 0.0
+    return 1.35 * fontsize + chip
+
+
+def _renderer(fig: Any) -> Any:
+    """A renderer to measure text with, or ``None`` when the backend has none yet."""
+    getter = getattr(fig.canvas, "get_renderer", None)
+    if getter is not None:
+        try:
+            return getter()
+        except Exception:  # a canvas that cannot render off-screen
+            pass
+    private = getattr(fig, "_get_renderer", None)
+    if private is not None:
+        try:
+            return private()
+        except Exception:
+            pass
+    return None
+
+
+def _layout_labels(
+    ax: Any, slots: Sequence[_LabelSlot], *, label_loc: str, mode: str
+) -> int:
+    """Move colliding names to further rows (or drop them). Returns the row count.
+
+    The widest regions are placed first and keep the first row: their names
+    sit right above them, and it is the narrow ones that climb. Each name goes
+    to the lowest row where it touches nothing already placed, and every name
+    above the first row gets a leader down to its region, since a name three
+    bands away from what it names is a caption, not a label.
+
+    Measured in axes fraction — centres from the data, widths from a renderer
+    — so the answer holds whatever the figure size. Without a renderer (a
+    backend that cannot draw off-screen) nothing is moved.
+    """
+    if mode == "ignore" or len(slots) < 2:
+        return 1
+    renderer = _renderer(ax.figure)
+    if renderer is None:
+        return 1
+
+    axes_box = ax.get_window_extent(renderer)
+    axes_width = float(axes_box.width)
+    if axes_width <= 0:
+        return 1
+    low, high = ax.get_xlim()
+    x_span = float(high - low)
+    if x_span == 0:
+        return 1
+    gap = 0.5 * float(slots[0].text.get_fontsize()) * ax.figure.dpi / 72.0
+
+    intervals: list[tuple[_LabelSlot, float, float]] = []
+    for slot in slots:
+        width_px = (float(slot.text.get_window_extent(renderer).width) + gap)
+        half = 0.5 * width_px * _LABEL_MEASURE_MARGIN / axes_width
+        centre = (slot.x_center - low) / x_span
+        intervals.append((slot, centre - half, centre + half))
+
+    placed: list[list[tuple[float, float]]] = []  # per row, the intervals it holds
+    for slot, left, right in sorted(intervals, key=lambda item: -item[0].width):
+        row = next(
+            (
+                index
+                for index, taken in enumerate(placed)
+                if all(right <= a or left >= b for a, b in taken)
+            ),
+            None,
+        )
+        if row is None:
+            if mode == "hide" and placed:
+                # One row only: whatever does not fit beside the wider
+                # regions' names goes, rather than onto them.
+                slot.text.remove()
+                slot.dropped = True
+                continue
+            placed.append([])
+            row = len(placed) - 1
+        placed[row].append((left, right))
+        slot.row = row
+
+    row_height = _row_height(slots[0].text)
+    for slot in slots:
+        if slot.dropped or slot.row == 0:
+            continue
+        slot.text.set_transform(_label_transform(ax, label_loc, slot.row, row_height))
+        _draw_leader(ax, slot, label_loc, row_height)
+    return max(len(placed), 1)
+
+
+def _draw_leader(ax: Any, slot: _LabelSlot, label_loc: str, row_height: float) -> None:
+    """A hairline from the frame to a name on a further row.
+
+    An annotation with no text: its head is pinned in x data / y axes
+    coordinates and its tail in *points*, exactly how the name itself is
+    placed, so the leader stays the right length whatever the layout engine
+    does to the axes afterwards.
+    """
+    y_anchor, _ = _LABEL_ANCHORS[label_loc]
+    base_points = 2.0 if label_loc == "top" else 0.0
+    reach = _ROW_DIRECTION[label_loc] * slot.row * row_height
+    # Stop short of the name by a hair, and start a hair off the frame.
+    tail = base_points + reach - _ROW_DIRECTION[label_loc] * 1.5
+    ax.annotate(
+        "",
+        xy=(slot.x_center, y_anchor),
+        xycoords=_label_transform(ax, label_loc, 0, 0.0) if label_loc == "top"
+        else ax.get_xaxis_transform(),
+        xytext=(0.0, tail - base_points),
+        textcoords="offset points",
+        arrowprops={
+            "arrowstyle": "-",
+            "color": slot.color,
+            "linewidth": 0.7,
+            "alpha": 0.85,
+            "shrinkA": 0.0,
+            "shrinkB": 0.0,
+        },
+        annotation_clip=label_loc != "top",
+        zorder=2.9,
     )
 
 
 def _bump_title(ax: Any, extra_points: float) -> None:
-    """Make room above the frame for a row of region names.
+    """Make room above the frame for the rows of region names.
 
     Once per axes: a second call would stack a second gap under a title that
-    has already moved. The title's font properties are saved and restored
-    because ``ax.set_title`` resets them — the same trap ``set_subtitle``
-    documents.
+    has already moved. The extra padding is also remembered on the axes, so a
+    title set *afterwards* through :func:`cfd_plot.set_title` still clears the
+    names — ``ax.set_title`` resets its pad every call, and cannot be told.
+    The title's font properties are saved and restored because ``set_title``
+    resets them too — the same trap ``set_subtitle`` documents.
     """
-    if getattr(ax, _TITLE_BUMP_MARKER, False) or not ax.get_title():
-        setattr(ax, _TITLE_BUMP_MARKER, True)
+    if getattr(ax, _TITLE_BUMP_MARKER, False):
+        return
+    setattr(ax, _TITLE_BUMP_MARKER, True)
+    setattr(ax, TITLE_EXTRA_PAD_ATTR, float(extra_points))
+    if not ax.get_title():
         return
     pad = float(mpl.rcParams["axes.titlepad"])
     font_properties = ax.title.get_fontproperties().copy()
@@ -517,4 +715,3 @@ def _bump_title(ax: Any, extra_points: float) -> None:
     ax.set_title(ax.get_title(), pad=pad + extra_points)
     ax.title.set_fontproperties(font_properties)
     ax.title.set_color(color)
-    setattr(ax, _TITLE_BUMP_MARKER, True)

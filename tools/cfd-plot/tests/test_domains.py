@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from cfd_plot import Domain, domain_segments, plot_domains
+from cfd_plot.domains import _label_transform
 
 
 @pytest.fixture(autouse=True)
@@ -207,13 +208,21 @@ class TestPlotDomains:
         assert spans[1].alpha == 0.5
         assert spans[0].alpha == 0.1
 
-    def test_narrow_regions_go_unlabelled(self):
-        """A name wider than its own region lands on the neighbour instead."""
+    def test_regions_under_min_label_width_go_unlabelled(self):
+        """The floor is a noise filter now that colliding names are staggered."""
+        x = np.linspace(0, 1, 101)
+        idomain = np.where((x > 0.50) & (x < 0.52), 1, 0)
+        fig, ax = plt.subplots()
+        spans = plot_domains(ax, x, idomain, min_label_width=0.04)
+        assert [span.text is not None for span in spans] == [True, False, True]
+
+    def test_a_narrow_region_is_still_named_by_default(self):
+        """Two percent of the range: named, on a further row, with a leader."""
         x = np.linspace(0, 1, 101)
         idomain = np.where((x > 0.50) & (x < 0.52), 1, 0)
         fig, ax = plt.subplots()
         spans = plot_domains(ax, x, idomain)
-        assert [span.text is not None for span in spans] == [True, False, True]
+        assert all(span.text is not None for span in spans)
 
     def test_min_label_width_zero_labels_everything(self):
         x = np.linspace(0, 1, 101)
@@ -358,6 +367,170 @@ class TestPlotDomains:
             plot_domains(ax, x, idomain, domains={0: "Sub", 1: "Trans", 2: "Super"})
             written = save_figure(fig, tmp_path / "domains", formats=("png",))
         assert written[0].exists()
+
+
+def _title_lift(ax) -> float:
+    """How far above the frame the title sits, in pixels (its pad)."""
+    top = ax.title.get_transform().transform((0.5, 1.0))[1]
+    frame = ax.transAxes.transform((0.5, 1.0))[1]
+    return float(top - frame)
+
+
+class TestCollidingNames:
+    """Names of narrow regions climb to a further row instead of overlapping."""
+
+    @staticmethod
+    def _crowded():
+        """Seven regimes on a Mach sweep, four of them too narrow for a name."""
+        x = np.linspace(0.3, 2.0, 120)
+        edges = [0.75, 0.86, 0.93, 1.0, 1.07, 1.25]
+        idomain = np.digitize(x, edges)
+        names = {
+            0: "Subsonic", 1: "Drag rise", 2: "Buffet onset", 3: "Sonic",
+            4: "Shock detachment", 5: "Transonic tail", 6: "Supersonic",
+        }
+        return x, idomain, names
+
+    @staticmethod
+    def _rows(ax, spans):
+        """Which row each name landed on, read back off its transform."""
+        rows = []
+        for span in spans:
+            if span.text is None:
+                rows.append(None)
+                continue
+            probe = span.text.get_transform().transform((0.0, 0.0))
+            rows.append(probe[1])
+        return rows
+
+    def _draw(self, **kwargs):
+        x, idomain, names = self._crowded()
+        fig, ax = plt.subplots(figsize=(6.4, 3.6))
+        ax.plot(x, np.sin(x))
+        spans = plot_domains(ax, x, idomain, domains=names, **kwargs)
+        return fig, ax, spans
+
+    @staticmethod
+    def _extents(fig, spans):
+        renderer = fig.canvas.get_renderer()
+        boxes = [
+            span.text.get_window_extent(renderer) for span in spans if span.text is not None
+        ]
+        return boxes
+
+    def test_no_two_names_overlap(self):
+        fig, ax, spans = self._draw()
+        boxes = self._extents(fig, spans)
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                horizontal = a.x1 <= b.x0 or b.x1 <= a.x0
+                vertical = a.y1 <= b.y0 or b.y1 <= a.y0
+                assert horizontal or vertical, "two region names land on each other"
+
+    def test_the_widest_regions_keep_the_first_row(self):
+        fig, ax, spans = self._draw()
+        rows = self._rows(ax, spans)
+        first_row = min(row for row in rows if row is not None)
+        by_name = {span.name: row for span, row in zip(spans, rows)}
+        assert by_name["Subsonic"] == first_row
+        assert by_name["Supersonic"] == first_row
+        assert by_name["Sonic"] > first_row
+
+    def test_more_than_one_row_is_used(self):
+        fig, ax, spans = self._draw()
+        rows = {row for row in self._rows(ax, spans) if row is not None}
+        assert len(rows) >= 2
+
+    def test_a_name_on_a_further_row_gets_a_leader(self):
+        fig, ax, spans = self._draw()
+        rows = self._rows(ax, spans)
+        first_row = min(row for row in rows if row is not None)
+        climbed = sum(1 for row in rows if row is not None and row > first_row)
+        leaders = [child for child in ax.get_children() if type(child).__name__ == "Annotation"]
+        assert len(leaders) == climbed
+
+    def test_the_leader_is_in_the_region_colour(self):
+        fig, ax, spans = self._draw()
+        rows = self._rows(ax, spans)
+        first_row = min(row for row in rows if row is not None)
+        colours = {
+            span.color for span, row in zip(spans, rows) if row is not None and row > first_row
+        }
+        leaders = [child for child in ax.get_children() if type(child).__name__ == "Annotation"]
+        assert {leader.arrow_patch.get_edgecolor()[:3] for leader in leaders} == {
+            matplotlib.colors.to_rgb(colour) for colour in colours
+        }
+
+    def test_the_title_makes_room_for_every_row(self):
+        fig, ax, spans = self._draw()
+        rows = {row for row in self._rows(ax, spans) if row is not None}
+        fig2, ax2 = plt.subplots(figsize=(6.4, 3.6))
+        ax2.set_title("t")
+        x, idomain, names = self._crowded()
+        ax2.plot(x, np.sin(x))
+        plot_domains(ax2, x, idomain, domains=names)
+        fig3, ax3 = plt.subplots(figsize=(6.4, 3.6))
+        ax3.set_title("t")
+        ax3.plot(x, np.sin(x))
+        plot_domains(ax3, x, idomain, domains={0: "a", 6: "b"}, labels=True, min_label_width=0.3)
+        # More rows, more pad: the crowded sheet pushes its title further up.
+        assert _title_lift(ax2) > _title_lift(ax3)
+        assert len(rows) >= 2
+
+    def test_hide_keeps_one_row_and_the_widest_names(self):
+        fig, ax, spans = self._draw(label_overlap="hide")
+        named = [span.name for span in spans if span.text is not None]
+        assert "Subsonic" in named and "Supersonic" in named
+        assert "Sonic" not in named
+        rows = {row for row in self._rows(ax, spans) if row is not None}
+        assert len(rows) == 1
+        # The dropped names are gone from the axes, not merely forgotten.
+        assert "Sonic" not in {text.get_text() for text in ax.texts}
+
+    def test_ignore_draws_every_name_in_one_row(self):
+        fig, ax, spans = self._draw(label_overlap="ignore")
+        assert all(span.text is not None for span in spans)
+        rows = {row for row in self._rows(ax, spans) if row is not None}
+        assert len(rows) == 1
+
+    def test_an_unknown_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="label_overlap"):
+            self._draw(label_overlap="shuffle")
+
+    def test_inside_rows_go_down(self):
+        fig, ax, spans = self._draw(label_loc="inside")
+        rows = self._rows(ax, spans)
+        by_name = {span.name: row for span, row in zip(spans, rows)}
+        assert by_name["Sonic"] < by_name["Subsonic"]
+
+    def test_names_that_fit_stay_where_they_were(self, sweep):
+        """Three wide regimes: one row, no leader, nothing moved."""
+        x, idomain = sweep
+        fig, ax = _axes(sweep)
+        spans = plot_domains(ax, x, idomain)
+        rows = {row for row in self._rows(ax, spans)}
+        assert len(rows) == 1
+        assert not [c for c in ax.get_children() if type(c).__name__ == "Annotation"]
+
+    def test_a_title_set_afterwards_still_clears_the_rows(self):
+        """ax.set_title resets its pad; cfd_plot.set_title reads the room left."""
+        from cfd_plot import set_title
+
+        x, idomain, names = self._crowded()
+        fig, ax = plt.subplots(figsize=(6.4, 3.6))
+        ax.plot(x, np.sin(x))
+        plot_domains(ax, x, idomain, domains=names)
+        set_title(ax, "after")
+        fig2, ax2 = plt.subplots(figsize=(6.4, 3.6))
+        set_title(ax2, "plain")
+        assert _title_lift(ax) > _title_lift(ax2)
+
+    def test_rows_are_offsets_in_points_not_axes_fraction(self):
+        """A further row is a fixed distance above the frame whatever the axes size."""
+        fig, ax = plt.subplots()
+        far = _label_transform(ax, "top", 2, 12.0).transform((0.0, 1.0))
+        near = _label_transform(ax, "top", 0, 12.0).transform((0.0, 1.0))
+        assert far[1] - near[1] == pytest.approx(24.0 * fig.dpi / 72.0)
 
 
 class DomainBands:

@@ -980,6 +980,11 @@ def set_title(ax, text: str, **kwargs) -> mpl.text.Text:
     Returns the ``Text`` object so you can keep tweaking.
     """
     kwargs.setdefault("fontfamily", TITLE_FONT)
+    # Room left by plot_domains for its rows of region names, when the title
+    # comes after them: ax.set_title resets its pad on every call.
+    extra = getattr(ax, "_cfd_plot_title_extra_pad", None)
+    if extra and "pad" not in kwargs:
+        kwargs["pad"] = float(mpl.rcParams["axes.titlepad"]) + float(extra)
     return ax.set_title(text, **kwargs)
 
 
