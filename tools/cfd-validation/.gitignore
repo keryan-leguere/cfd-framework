@@ -1,0 +1,21 @@
+# Environnements & caches
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Artefacts de compilation f2py
+*.so
+*.mod
+*.o
+
+# Sorties générées par l'exemple (régénérables via RUN_EXEMPLE.sh)
+src/cfd_validation/01_EXEMPLE/SORTIE/
+
+# Artefacts d'éditeur
+Untitled

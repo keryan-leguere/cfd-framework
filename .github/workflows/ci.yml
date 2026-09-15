@@ -35,7 +35,7 @@ jobs:
       # The packages are independent: one failing must not hide the others.
       fail-fast: false
       matrix:
-        package: [cfd-plot, cfd-perf, cfd-atm]
+        package: [cfd-plot, cfd-perf, cfd-atm, cfd-validation]
 
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +62,19 @@ jobs:
 
       - name: Install cfd-plot (optional dependency of the other packages)
         run: pip install -e tools/cfd-plot
+
+      # cfd-validation's whole suite runs without a compiler (its fake f2py
+      # module is the test double), and the nine tests that compile real
+      # Fortran skip themselves when the toolchain is missing. Installing
+      # gfortran plus f2py's meson backend here keeps those nine meaningful:
+      # they are the only ones that exercise what f2py *actually* produces
+      # (callable COMMON-block objects, lowercased names, Fortran-contiguous
+      # arrays), none of which can be guessed from the fake.
+      - name: Install gfortran and the f2py meson backend (cfd-validation)
+        if: matrix.package == 'cfd-validation'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gfortran
+          pip install -e "tools/cfd-validation[build]"
 
       - name: Install ${{ matrix.package }}
         run: pip install -e "tools/${{ matrix.package }}[dev]"

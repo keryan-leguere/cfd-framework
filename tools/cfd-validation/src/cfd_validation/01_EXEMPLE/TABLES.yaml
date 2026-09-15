@@ -1,0 +1,34 @@
+# La declaration des tables du modele d'exemple.
+#
+# Une entree par table. Chacune dit ou trouver le tableau dans le code
+# compile, comment nommer ses colonnes, et lesquelles sont les grandeurs
+# controlees (QOI).
+#
+# Voir 00_DOC/02_DECLARER_SES_TABLES.md pour le detail cle par cle.
+
+tables:
+
+  CN:
+    # Le COMMON block, tel que f2py l'expose : en minuscules.
+    bloc: tab_cn
+    # Le tableau dans ce bloc. Ici il porte le meme nom que le bloc, ce qui
+    # est frequent ; la cle peut alors etre omise.
+    tableau: tab_cn
+    # Une colonne par colonne du tableau, dans l'ordre. Les valeurs tabulees
+    # viennent en dernier, comme dans le Fortran.
+    colonnes: [mach, alpha, delta, CN]
+    qoi: [CN]
+    # Le tableau est dimensionne a 320 lignes mais n'en porte que 294 : sans
+    # cette cle, on comparerait le modele a 26 lignes de remplissage.
+    lignes: npt_cn
+    libelles: {mach: Mach, alpha: incidence, delta: braquage}
+    unites: {alpha: "°", delta: "°"}
+
+  CA:
+    bloc: tab_ca
+    tableau: tab_ca
+    colonnes: [mach, alpha, CA]
+    qoi: [CA]
+    lignes: npt_ca
+    libelles: {mach: Mach, alpha: incidence}
+    unites: {alpha: "°"}

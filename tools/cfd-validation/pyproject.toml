@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-validation"
+version = "1.0.0"
+description = "Envelopper un code Fortran/C, écrire des contrôles, les exécuter, en sortir un rapport."
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    # Le cœur : lecture des COMMON blocks, comparaison point à point, motifs.
+    "numpy>=1.26",
+    # Les tables et les sorties de modèle circulent en DataFrame ; c'est aussi
+    # la forme que `cfd_plot.batch_plot` consomme.
+    "pandas>=2.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pandas-stubs",
+]
+# Nécessaire seulement pour `cfd-validation construire`, et seulement avec
+# numpy >= 2 : f2py y délègue la compilation à meson. Voir wrap/toolchain.py.
+build = [
+    "meson>=1.1",
+    "ninja>=1.11",
+]
+
+[project.scripts]
+cfd-validation = "cfd_validation.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_validation = [
+    "01_EXEMPLE/*.py",
+    "01_EXEMPLE/*.sh",
+    "01_EXEMPLE/*.md",
+    "01_EXEMPLE/*.yaml",
+    "01_EXEMPLE/MODELE_FORTRAN/*.f90",
+    "01_EXEMPLE/MODELE_FORTRAN/*.sh",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# Les docs, le rapport et les libellés de figures sont en français et emploient
+# légitimement tirets demi-cadratins, signes moins, signes multiplié,
+# apostrophes courbes et espaces insécables ; ce ne sont pas des homoglyphes
+# fautifs. Les lettres grecques sont des symboles de mécanique du vol
+# (incidence, dérapage, braquage) ou de calcul (écart), pas des sosies.
+allowed-confusables = ["–", "−", "×", "’", " ", " ", "α", "β", "δ", "ε", "σ", "Δ"]
+
+[tool.ruff.lint.per-file-ignores]
+# L'idiome `valeur == pytest.approx(attendu)` se lit naturellement ; ne pas l'inverser.
+"tests/**" = ["SIM300"]
+# L'API publique est groupée par couche, avec des bandeaux de section. Ce
+# regroupement est de la documentation : ne pas l'alphabétiser.
+"src/cfd_validation/__init__.py" = ["I001", "RUF022"]
+# L'exemple est lu comme un mode d'emploi : les imports y suivent le récit.
+"src/cfd_validation/01_EXEMPLE/*.py" = ["I001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_validation"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+# Pas de python_version = "3.9" : mypy ne sait plus cibler 3.9. La compatibilité
+# 3.9 est tenue par le code et vérifiée en exécutant la suite de tests sous un
+# interpréteur 3.9 (ruff, lui, cible bien py39 et refuse la syntaxe trop récente).
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*"]
+ignore_missing_imports = true
+
+# cfd-plot est un paquet frère de ce dépôt (voir report/_plotting_lib.py), pas
+# une publication PyPI : il peut légitimement manquer de l'environnement.
+[[tool.mypy.overrides]]
+module = ["cfd_plot"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "compilateur: tests qui compilent réellement du Fortran (gfortran + backend f2py requis)",
+]
