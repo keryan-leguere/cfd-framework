@@ -1,0 +1,1 @@
+"""Terminal report and figures."""

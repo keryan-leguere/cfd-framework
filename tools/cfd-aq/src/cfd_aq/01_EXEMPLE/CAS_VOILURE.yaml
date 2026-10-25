@@ -1,0 +1,59 @@
+# Jonctions de panneaux sur l'extrados d'une voilure de transport, en croisière.
+#
+# Le point de vol est celui de la croisière, mais les conditions données ici
+# sont **locales** : sur l'extrados, à 40 % de corde, l'écoulement est plus
+# rapide que l'infini amont. Utiliser M∞ à la place sous-estime la traînée.
+#
+#   cfd-aq run CAS_VOILURE.yaml
+#   cfd-aq check CAS_VOILURE.yaml
+
+etude: "Jonctions de panneaux, extrados voilure, croisière FL360"
+
+ecoulement:
+  altitude: 11000     # m — géométrique par défaut
+  mach: 0.88          # Mach LOCAL au bord de couche limite, pas M∞
+
+  # Avec le paquet frère cfd-atm installé, trois libertés de plus :
+  #   type_altitude: pression            # ou geopotentielle
+  #   delta_isa: 15                      # journée chaude, ISA+15
+  #   vitesse_conventionnelle: 140.4     # Vc [m/s] au lieu du Mach
+  #   vitesse_vraie: 242.0               # TAS [m/s]
+  #   vitesse_equivalente: 132.1         # EAS [m/s]
+
+couche_limite:
+  distance_bord_attaque: 8.5   # m de parcours turbulent depuis le bord d'attaque
+  # Variantes possibles, une seule à la fois :
+  #   cf: 0.00155                # coefficient de frottement local mesuré ou calculé
+  #   cisaillement_paroi: 16.6   # τ_w [Pa] sorti d'un calcul RANS
+
+surface_reference: 122.6   # m² — surface de référence de l'avion, pour le ΔCx
+amplification: 1.0         # m_d de Nash-Bradshaw ; 1 = pas de gradient de pression
+
+asperites:
+  - nom: "Joint de panneau amont (marche montante)"
+    type: montante
+    hauteur: 0.0012
+    envergure: 11.0
+
+  - nom: "Joint de panneau aval (marche descendante)"
+    type: descendante
+    hauteur: 0.0012
+    envergure: 11.0
+
+  - nom: "Joint amont, arête cassée à 30°"
+    type: montante
+    hauteur: 0.0012
+    envergure: 11.0
+    angle_chanfrein: 30.0
+
+  - nom: "Couvre-joint rapporté (arête, t = 3h)"
+    type: arete
+    hauteur: 0.0008
+    envergure: 11.0
+    t_sur_h: 3.0
+
+  - nom: "Bord de trappe, en biais à 60°"
+    type: montante
+    hauteur: 0.0015
+    envergure: 0.9
+    angle_derapage: 60.0
