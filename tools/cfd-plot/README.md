@@ -587,6 +587,8 @@ save_figure(fig, "output/polar", formats=("png",), declassify="y")
 ```
 
 Override the stamp text with `declassify_label=`, its appearance with `declassify_stamp_kw=`.
+In a `batch_plot`, the same call goes in an `on_before_save` hook — see
+[Hooks](#hooks) for a ready-made one.
 
 ---
 
@@ -1116,6 +1118,50 @@ batch_plot(
 The chain (`cfd_plot.HookChain`) pickles whenever its hooks do, so module-level functions keep
 `n_jobs` on the pool; one `lambda` in the list costs it, exactly as a lone one would, with the
 same warning. An empty list means no hook.
+
+**A useful hook: declassified variants in a batch.** `batch_plot` has no `declassify=` of its
+own — it calls `save_figure` with `formats=` only. But the hook receives the finished figure
+and `context.output_path`, which is all [`save_figure(..., declassify=...)`](#declassified-variants)
+needs:
+
+```python
+from dataclasses import dataclass
+from cfd_plot import batch_plot, save_figure
+
+
+@dataclass(frozen=True)  # module-level class, not a lambda: pickles, so n_jobs stays on the pool
+class HookDeclassifie:
+    axes: str = "both"           # "x" | "y" | "both"
+    formats: tuple = ("svg",)    # same formats as batch_plot
+    label: str = "DECLASSIFIE"
+
+    def __call__(self, fig, ax, context):
+        save_figure(fig, context.output_path, formats=self.formats,
+                    declassify=self.axes, declassify_label=self.label)
+
+
+batch_plot(
+    ...,
+    formats=("svg",),
+    on_before_save=[
+        reference_lines,                       # everything that draws comes first…
+        HookDeclassifie(axes="y"),             # …the snapshot goes last
+    ],
+)
+# → ALPHA_POLAR/M_0.8/CN_vs_alpha.svg  and  ALPHA_POLAR/M_0.8/CN_vs_alpha_declass_y.svg
+```
+
+Know what you are buying:
+
+- **Put it last** in the list — it writes the figure as it stands, so anything a later hook adds
+  would be missing from the declassified copy.
+- `save_figure` writes the normal file too, and `batch_plot` then rewrites it, identically: the
+  normal export is paid twice.
+- The `_declass_*` files are invisible to the batch: not in the returned list, the `report=`
+  table, the `dry_run` listing or the `pdf_report`.
+- On [folded sheets](#folding-bonus-sheets-that-gather-siblings) and compare figures the hook
+  runs **once per panel** with the same `output_path`, and before the sheet's final layout pass —
+  skip them (`if context.panel_index is not None: return`) unless an approximate copy will do.
 
 ### Path helpers
 
