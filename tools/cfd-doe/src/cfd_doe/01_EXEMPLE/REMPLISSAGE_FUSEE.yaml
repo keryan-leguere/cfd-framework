@@ -4,6 +4,9 @@
 #   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --verbose   # détail de chaque plan
 #   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --retenu lhs
 #   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --repere polaire
+#   python reconstruire_tables.py                     # calculs factices → une table par coefficient
+#
+# D'autres cas (trajectoires, symétries, variables, paramètres) : CAS/.
 #
 # Méthodes, hypothèses et décomptes : 00_DOC/02_REMPLISSAGE.md.
 
@@ -40,7 +43,7 @@ niveaux:
 # --- Plans ---------------------------------------------------------------------
 # Autant de plans nommés qu'on veut : tous sont construits et comparés.
 # Types : factoriel, etoile, decomposition, composite_centre, box_behnken,
-#         grille_creuse, lhs, halton, adaptatif, multi_fidelite.
+#         grille_creuse, lhs, halton, sobol, krigeage, adaptatif, multi_fidelite.
 plans:
   complet:
     type: factoriel
@@ -84,6 +87,15 @@ plans:
     test: 0.15                       # points de test indépendants
     graine: 1
 
+  sobol:
+    type: sobol                      # suite à faible discrépance, extensible ; mêmes options que lhs
+    regle: 30
+
+  krigeage:
+    type: krigeage                   # chaque point où la variance du krigeage est la plus forte
+    regle: 20                        # (images par symétrie comprises) : moins de points pour
+    portee: 0.3                      # la même erreur ; portée a priori, en fraction du domaine
+
   adaptatif:
     type: adaptatif                  # lot initial (règle 10 · d) ; l'enrichissement suit les résultats
 
@@ -106,3 +118,4 @@ sortie:
   csv: doe.csv                       # séparé par des tabulations
   figures: true                      # demande cfd-plot : pip install -e ../cfd-plot
   tous_les_csv: false                # true : un doe_<plan>.csv par plan
+  formats: [png, pdf]                # figures : PNG 300 dpi, PDF vectoriel (svg aussi)

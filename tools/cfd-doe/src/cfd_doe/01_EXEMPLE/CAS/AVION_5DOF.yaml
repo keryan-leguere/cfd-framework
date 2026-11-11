@@ -1,0 +1,21 @@
+# Avion de transport régional : un seul plan de symétrie (vertical).
+#
+# 5DOF : α, β, δm, δn actifs ; δl à 0 (roulis non simulé).
+# Le miroir V (β, δn → −β, −δn) divise le domaine par deux ; α et δm ne sont
+# pas symétriques (aile cambrée, profondeur dissymétrique) : leurs plages ne le
+# sont pas non plus.
+
+etude:
+  nom: AVION_5DOF
+  description: Avion à plan de symétrie vertical, sans roulis
+
+trajectoire: 5DOF
+geometrie: plan_vertical
+repere: auto
+limite_braquage: carre
+
+variables:
+  alpha: [-4, 16]
+  beta: [-10, 10]
+  DM: [-20, 10]
+  DN: [-15, 15]

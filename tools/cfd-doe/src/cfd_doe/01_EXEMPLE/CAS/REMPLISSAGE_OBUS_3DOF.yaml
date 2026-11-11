@@ -1,0 +1,55 @@
+# Obus : (α, β) et un paramètre continu, la vitesse de rotation propre réduite.
+#
+#   cfd-doe remplir REMPLISSAGE_OBUS_3DOF.yaml
+#   cfd-doe remplir REMPLISSAGE_OBUS_3DOF.yaml --repere polaire   # αt seul
+#   python ../reconstruire_tables.py REMPLISSAGE_OBUS_3DOF.yaml
+#
+# Le spin est continu : les plans à métamodèle le traitent comme un facteur,
+# les plans sur grille prennent ses niveaux.
+
+nom: OBUS_3DOF_REMPLISSAGE
+etude: OBUS_3DOF.yaml
+repere: cartesien
+
+mach: [0.9, 1.1, 1.5, 2.5, 4.0]
+
+parametres:
+  spin: {niveaux: [0, 0.05, 0.1], nominal: 0}
+
+niveaux:
+  alpha: {pas: 2}
+  beta: {pas: 2}
+  # repère polaire
+  alphat: {pas: 2}
+
+plans:
+  complet:
+    type: factoriel
+
+  creuse:
+    type: grille_creuse
+    niveau: 3
+
+  halton:
+    type: halton
+    regle: 25
+
+  sobol:
+    type: sobol
+    points_par_mach: 16
+
+  krigeage:
+    type: krigeage
+    points_par_mach: 12
+
+  adaptatif:
+    type: adaptatif
+    points_par_mach: 8
+
+retenu: sobol
+
+exclure:
+  - mach >= 2.5 and abs(alpha) > 10 and abs(beta) > 10   # coin jamais atteint en vol
+
+sortie:
+  dossier: DOE_OBUS

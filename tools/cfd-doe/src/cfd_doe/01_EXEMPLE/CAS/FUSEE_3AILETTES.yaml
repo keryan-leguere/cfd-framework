@@ -1,0 +1,20 @@
+# Fusée à trois ailettes, simulée en 6DOF.
+#
+# Ordre de rotation 3 : en polaire (repere: auto), secteur de 60° et miroirs à
+# 0°, 60°, 120°. En cartésien, seul le miroir V s'exprime (N impair : ni
+# miroir H, ni rotation de 180°) : le domaine n'est divisé que par 2.
+
+etude:
+  nom: FUSEE_3AILETTES
+  description: Fusée à 3 ailettes pilotées
+
+trajectoire: 6DOF
+geometrie: {type: n_ailettes, n_ailettes: 3}
+repere: auto
+
+variables:
+  alpha: [-15, 15]
+  beta: [-10, 10]
+  DL: [-10, 10]
+  DM: [-15, 15]
+  DN: [-15, 15]

@@ -1,0 +1,40 @@
+# Drone : trois variables, régime d'hélice continu, deux Mach.
+#
+#   cfd-doe remplir REMPLISSAGE_DRONE_4DOF.yaml
+#   python ../reconstruire_tables.py REMPLISSAGE_DRONE_4DOF.yaml --lots 3
+
+nom: DRONE_4DOF_REMPLISSAGE
+etude: DRONE_4DOF.yaml
+
+mach: [0.1, 0.2]
+
+parametres:
+  helice: {niveaux: [0, 0.5, 1], nominal: 0.5}
+
+niveaux:
+  alpha: {pas: 3}
+  DM: {pas: 5}
+  DL: {pas: 5}
+
+plans:
+  ordre_1:
+    type: decomposition
+    primaires: [alpha]
+    increments: {helice: [alpha]}
+    controle: {fraction: 0.15}
+
+  composite:
+    type: composite_centre
+
+  lhs:
+    type: lhs
+    regle: 20
+
+  adaptatif:
+    type: adaptatif
+    regle: 8
+
+retenu: lhs
+
+sortie:
+  dossier: DOE_DRONE

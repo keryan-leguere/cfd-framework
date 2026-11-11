@@ -429,6 +429,27 @@ def figure_parametres() -> None:
         enregistrer(fig, "remplissage_06_parametres")
 
 
+def figures_reconstruction() -> None:
+    """Figures 7 et 8 : la chaîne réelle, DOE → CFD factice → tables, sur l'exemple."""
+    import shutil
+    import tempfile
+
+    exemple = ICI.parent / "src" / "cfd_doe" / "01_EXEMPLE"
+    sys.path.insert(0, str(exemple))
+    import reconstruire_tables as rt
+
+    with tempfile.TemporaryDirectory() as dossier:
+        rt.principal(
+            [str(exemple / "REMPLISSAGE_FUSEE.yaml"), "--sortie", dossier, "--tables", "aucun"]
+        )
+        for source, cible in (
+            ("precision_cout.png", "remplissage_07_precision.png"),
+            ("coupes_Cm.png", "remplissage_08_coupes.png"),
+        ):
+            shutil.copy(Path(dossier) / "FIGURES" / source, FIGURES / cible)
+            print(f"[ok] {(FIGURES / cible).relative_to(ICI.parent)}")
+
+
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     figure_symetries()
@@ -437,6 +458,8 @@ def main() -> None:
     figure_additivite()
     figure_decomptes()
     figure_parametres()
+    if "--sans-reconstruction" not in sys.argv:
+        figures_reconstruction()
 
 
 if __name__ == "__main__":

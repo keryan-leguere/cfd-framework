@@ -24,7 +24,8 @@ Forme (tout est facultatif sauf ``etude``) ::
     exclure:                         # points écartés de tous les plans
       - mach >= 2 and alpha > 10
 
-    sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false}
+    sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false,
+             formats: [png, pdf]}
 
 Toute clé inconnue est **refusée**, avec la liste des clés admises, comme pour
 le fichier d'étude : ``regles: 30`` ne doit pas retomber sur la valeur par
@@ -46,6 +47,7 @@ from cfd_doe.data.variables import VARIABLES_CARTESIENNES, VARIABLES_POLAIRES
 
 __all__ = [
     "CLES_ADMISES",
+    "FORMATS_FIGURES",
     "OPTIONS",
     "TYPES",
     "ErreurRemplissage",
@@ -98,11 +100,16 @@ OPTIONS: dict[str, tuple[str, ...]] = {
     "grille_creuse": ("niveau", "test", "graine"),
     "lhs": _TIRAGE,
     "halton": _TIRAGE,
+    "sobol": _TIRAGE,
+    "krigeage": (*_TIRAGE, "portee", "candidats"),
     "adaptatif": _TIRAGE,
     "multi_fidelite": (*_TIRAGE, "regle_hf", "points_hf_par_mach"),
 }
 TYPES: tuple[str, ...] = tuple(OPTIONS)
 _COMMUNES = ("type", "exclure", "description")
+
+#: Formats de figure admis.
+FORMATS_FIGURES: tuple[str, ...] = ("png", "pdf", "svg")
 
 #: Colonnes réservées du DOE : un paramètre ne peut pas porter ces noms.
 _RESERVES = frozenset(
@@ -151,6 +158,8 @@ class Sortie:
     csv: str = "doe.csv"
     figures: bool = True
     tous_les_csv: bool = False
+    #: Formats des figures : PNG (300 dpi) pour l'écran, PDF ou SVG vectoriels pour un rapport.
+    formats: tuple[str, ...] = ("png", "pdf")
 
 
 @dataclass(frozen=True)
@@ -324,12 +333,23 @@ def remplissage_depuis_dict(
     brute = donnees.get("sortie") or {}
     if not isinstance(brute, Mapping):
         raise ErreurRemplissage("« sortie » doit être un dictionnaire")
-    _refuser("sortie", brute, ("dossier", "csv", "figures", "tous_les_csv"))
+    _refuser("sortie", brute, ("dossier", "csv", "figures", "tous_les_csv", "formats"))
+    formats = brute.get("formats", ["png", "pdf"])
+    if isinstance(formats, str):
+        formats = [formats]
+    if not isinstance(formats, (list, tuple)) or not formats:
+        raise ErreurRemplissage("sortie.formats : une liste parmi png, pdf, svg")
+    inconnus = sorted({str(f) for f in formats} - set(FORMATS_FIGURES))
+    if inconnus:
+        raise ErreurRemplissage(
+            f"sortie.formats : {', '.join(inconnus)} inconnu(s) ; admis : {', '.join(FORMATS_FIGURES)}"
+        )
     sortie = Sortie(
         dossier=Path(str(brute.get("dossier", "DOE"))),
         csv=str(brute.get("csv", "doe.csv")),
         figures=bool(brute.get("figures", True)),
         tous_les_csv=bool(brute.get("tous_les_csv", False)),
+        formats=tuple(dict.fromkeys(str(f) for f in formats)),
     )
 
     return Remplissage(

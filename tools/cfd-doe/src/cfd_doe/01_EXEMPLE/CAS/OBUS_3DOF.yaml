@@ -1,0 +1,17 @@
+# Obus de révolution, masse ponctuelle : α et β actifs, aucune gouverne.
+#
+# Un corps de révolution a toutes les rotations pour symétries : en polaire
+# (repere: auto), le domaine se réduit à αt seul. Le fichier de remplissage
+# force le cartésien, où seuls les miroirs V et H s'expriment (quart de plan).
+
+etude:
+  nom: OBUS_3DOF
+  description: Obus de révolution, trajectoire de masse ponctuelle
+
+trajectoire: 3DOF_MASSE_PONCTUELLE
+geometrie: revolution
+repere: auto
+
+variables:
+  alpha: [-12, 12]
+  beta: [-12, 12]

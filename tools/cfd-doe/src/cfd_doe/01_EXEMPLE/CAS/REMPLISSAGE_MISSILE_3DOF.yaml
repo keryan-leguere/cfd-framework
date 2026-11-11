@@ -1,0 +1,55 @@
+# Missile en tangage : deux variables, un paramètre discret (coiffe larguée ou non).
+#
+#   cfd-doe remplir REMPLISSAGE_MISSILE_3DOF.yaml --verbose
+#   python ../reconstruire_tables.py REMPLISSAGE_MISSILE_3DOF.yaml
+#
+# Avec deux variables, le factoriel complet ne coûte presque rien : c'est le cas
+# où un métamodèle a le moins à offrir. Les plans le montrent.
+
+nom: MISSILE_3DOF_REMPLISSAGE
+etude: MISSILE_3DOF.yaml
+
+mach: [0.8, 1.2, 2.0, 3.0]
+
+parametres:
+  coiffe: {niveaux: [0, 1], nominal: 0, discret: true}   # 0 : en place, 1 : larguée
+
+niveaux:
+  alpha: {pas: 2.5}
+  DM: {pas: 5}
+
+plans:
+  complet:
+    type: factoriel
+
+  allege:
+    type: factoriel
+    niveaux:
+      alpha: {pas: 5}
+      DM: [-15, 0, 15]
+
+  ordre_1:
+    type: decomposition
+    primaires: [alpha]          # table de base en α
+    controle: {fraction: 0.2}
+
+  composite:
+    type: composite_centre
+
+  creuse:
+    type: grille_creuse
+    niveau: 3
+
+  sobol:
+    type: sobol
+    points_par_mach: 16         # par Mach et par position de coiffe ; puissance de 2
+
+  krigeage:
+    type: krigeage
+    points_par_mach: 12
+    portee: 0.35
+
+retenu: krigeage
+
+sortie:
+  dossier: DOE_MISSILE

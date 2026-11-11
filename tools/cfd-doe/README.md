@@ -6,9 +6,12 @@
    trajectoire et des symétries de l'engin, dire quels **sous-domaines** il faut réellement
    calculer.
 2. **Remplir les sous-domaines** *(disponible)* : `cfd-doe remplir` construit et compare les
-   plans (factoriel, décomposition, grilles creuses, LHS, adaptatif…), écrit le DOE prêt à
-   lancer et trace les figures. Méthodes, hypothèses et décomptes :
+   plans (factoriel, décomposition, grilles creuses, LHS, Sobol, krigeage, adaptatif…), écrit le
+   DOE prêt à lancer et trace les figures. Méthodes, hypothèses et décomptes :
    [`00_DOC/02_REMPLISSAGE.md`](00_DOC/02_REMPLISSAGE.md).
+3. **Reconstruire les tables** *(disponible, API Python)* : des résultats CFD du DOE à une table
+   carrée par coefficient, selon la méthode du plan (§9) ; démonstration complète, avec une CFD
+   factice, dans `01_EXEMPLE/reconstruire_tables.py`.
 
 La théorie est dans [`00_DOC/01_BASE_AERO.md`](00_DOC/01_BASE_AERO.md) : passage en
 (αt, φa), repère mixte, symétries, conséquences sur le DOE.
@@ -34,6 +37,8 @@ cfd-doe domaine ETUDE.yaml --verbose               # + la démarche : comment on
 cfd-doe domaine ETUDE.yaml --export SD.yaml        # pour la phase de remplissage (.yaml / .json)
 cfd-doe check ETUDE.yaml                           # validation seule
 cfd-doe remplir REMPLISSAGE.yaml                   # peupler les sous-domaines : doe.csv, figures
+python cfd-doe-exemple/reconstruire_tables.py      # DOE → calculs factices → une table par coefficient
+python cfd-doe-exemple/executer_exemples.py        # les six cas d'exemple, de bout en bout
 
 # Sans fichier :
 cfd-doe domaine --traj 6DOF --sym cruciforme \
@@ -218,7 +223,7 @@ plans:
 retenu: ordre_1
 exclure:
   - mach >= 2 and abs(alpha) > 15
-sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false}
+sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false, formats: [png, pdf]}
 ```
 
 | Type | Options | Ce que contient le DOE |
@@ -227,7 +232,8 @@ sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false}
 | `etoile` | `niveaux` | `calcul` : un balayage par facteur |
 | `decomposition` | `ordre`, `primaires`, `increments_fonction_de`, `increments`, `couplages`, `croiser`, `controle` | `calcul` : base + une table par effet ; `controle` : nœuds croisés |
 | `composite_centre`, `box_behnken`, `grille_creuse` | `fraction`, `niveau`, `test` | `calcul` : le plan ; `test` : points indépendants |
-| `lhs`, `halton` | `regle` ou `points_par_mach`, `part_plans`, `test`, `graine`, `decale_par_mach` | `calcul` + `test` |
+| `lhs`, `halton`, `sobol` | `regle` ou `points_par_mach`, `part_plans`, `test`, `graine`, `decale_par_mach` | `calcul` + `test` |
+| `krigeage` | comme `lhs` (règle 20·d), `portee`, `candidats` | `calcul` : chaque point là où la variance du krigeage est maximale, images comprises ; `test` |
 | `adaptatif` | comme `lhs` (règle 10·d) | `calcul` : le lot initial ; `test` |
 | `multi_fidelite` | comme `lhs`, `regle_hf` ou `points_hf_par_mach` | colonne `fidelite` : `BF`, et `HF` emboîté |
 
@@ -251,25 +257,112 @@ tiré l'est directement dedans, contraintes comprises (disque des braquages).
   compatible avec les symétries (`abs(alpha)`, pas `alpha`) ;
 - toute clé inconnue est refusée, avec la liste des clés admises.
 
-**Figures** (`DOE/FIGURES/`, avec `cfd-plot`) : `domaine.png` (ce que les symétries épargnent),
-`plan_<nom>.png` (chaque plan projeté sur tous les couples de facteurs, rôles en couleur),
-`comparaison_calculs.png` et `comparaison_plans.png`. Sans `cfd-plot`, le rapport et le DOE sont
-produits quand même.
+**Figures** (`DOE/FIGURES/`, avec `cfd-plot`, profil « paper ») : PNG 300 dpi et PDF vectoriel
+(`sortie.formats`, `svg` aussi). Sur **chaque panneau**, le fond dit d'où viendra la valeur :
+zone calculée (bleu), déduite par symétrie (gris hachuré, nommée par sa symétrie sur les coupes),
+hors domaine (croisillons) ; plans de symétrie en tireté, ceux qui sont des sous-domaines à eux
+seuls (β = 0…) en trait bleu épais.
 
-## 9. Organisation
+- `domaine` : coupes exactes — écoulement, braquages en un point générique, braquages sur un
+  plan de symétrie ; en polaire, le plan (φa, αt) en axes polaires ;
+- `plan_<nom>` : chaque plan projeté sur tous les couples de facteurs, à un Mach, rôles en
+  couleur, résumé et légende dans le triangle libre ;
+- `comparaison_calculs` (barres empilées par rôle) et `comparaison_plans` (même projection).
+
+Sans `cfd-plot`, le rapport et le DOE sont produits quand même. Le fond des figures est calculé
+par un classement vectorisé dont un test vérifie qu'il coïncide, nœud par nœud, avec ce que le
+moteur fait des points (`placer`, `replier`), dans les deux repères.
+
+## 9. Des calculs aux tables : une table par coefficient
+
+Le DOE calculé, `engine/reconstruction.py` produit **la table carrée que lit le simulateur**, une
+par coefficient, sur la grille de référence étendue au domaine complet (Mach × paramètres ×
+variables libres). Chaque plan se lit à sa façon :
+
+| Plan | Reconstruction |
+|---|---|
+| `factoriel` | lecture des nœuds et de leurs images ; interpolation multilinéaire si la grille du plan est plus lâche |
+| `etoile`, `decomposition` | somme de termes `± C(x restreint aux facteurs du terme)`, chacun lu (ou interpolé) dans sa table |
+| `composite_centre`, `box_behnken` | polynôme de degré 2, moindres carrés |
+| `grille_creuse` | polynôme de l'espace exact de la grille de Smolyak |
+| `lhs`, `halton`, `sobol`, `krigeage`, `adaptatif` | krigeage ordinaire (Matérn 5/2, portées au maximum de vraisemblance) |
+| `multi_fidelite` | co-krigeage : krigeage de la BF, plus krigeage de l'écart HF − BF |
+
+Les symétries entrent partout de la même façon : un calcul vaut aussi en ses images, au signe des
+coefficients près — les métamodèles les voient toutes, la table est exactement symétrique. Les
+nœuds écartés par `exclure` restent vides quelle que soit la méthode. Les points `controle` et
+`test` ne servent pas à l'ajustement : `Tables.ecarts` donne l'écart prédiction − calcul à ces
+points, c'est-à-dire la vérification de la démarche. Repère cartésien seulement (en polaire,
+`completer_table.py` complète les plans sur grille).
+
+```python
+from cfd_doe.engine.reconstruction import lire_mesures, reconstruire, ecrire_tables
+
+mesures = lire_mesures(
+    Path("doe_avec_resultats.csv"), contexte
+)  # doe.csv + une colonne par coefficient
+tables = reconstruire(resultat.retenu, contexte, mesures)
+ecrire_tables(tables, Path("TABLES"))  # CA.csv, CN.csv… (tabulations)
+lot = lot_suivant(plan, contexte, mesures, n=10)  # adaptatif : le lot suivant
+```
+
+**`01_EXEMPLE/reconstruire_tables.py`** fait tout le chemin avec un modèle aéro factice à la place
+de la CFD — exactement symétrique (moyenné sur le groupe de l'étude), avec des non-linéarités et
+des interactions choisies pour que les méthodes se distinguent. Pour chaque plan : calcul,
+`RESULTATS/<plan>.csv` écrit puis relu, reconstruction, `TABLES/<plan>/<COEF>.csv`, erreurs (aux
+points de vérification, comme en vrai, et sur toute la grille, ce que seule la vérité factice
+permet) ; le plan adaptatif est enrichi par lots simulés. Figures `precision_cout` (erreur contre
+nombre de calculs) et `coupes_<COEF>` (un panneau par plan, sur fond de zones, avec une bande
+d'écart sous chacun). Sur la fusée (81 000 nœuds par coefficient) :
+
+| plan | calculs | contrôle / test | erreur RMS (pire coefficient) |
+|---|---:|---:|---:|
+| factoriel complet | 19 548 | · | exacte |
+| décomposition ordre 1 | 688 | 6,9 % | 7,2 % |
+| décomposition ordre 2 | 2 048 | 1,1 % | 1,0 % |
+| composite centré | 188 | 7,7 % | 9,9 % |
+| hypercube latin | 392 | 0,17 % | 0,61 % |
+| krigeage (variance maximale) | 278 | 0,20 % | 0,44 % |
+| adaptatif, 3 lots | 302 | 0,20 % | 0,29 % |
+
+Les contrôles de l'ordre 1 révèlent l'erreur d'additivité que la table porte bel et bien ; le
+composite et la grille creuse souffrent de l'exclusion à Mach ≥ 2 (des points de leur plan
+manquent, le polynôme y est sous-déterminé — le script le signale).
+
+```bash
+python reconstruire_tables.py                               # la fusée, tous les plans
+python reconstruire_tables.py CAS/REMPLISSAGE_AVION_5DOF.yaml --tables tous
+python reconstruire_tables.py --rapide                      # krigeage à portées communes
+python executer_exemples.py                                 # tous les cas, remplir + reconstruction
+```
+
+**`01_EXEMPLE/CAS/`** : un cas par famille, chacun avec son étude et son fichier de remplissage.
+
+| Cas | Trajectoire | Géométrie, groupe cartésien | Ce qu'il montre |
+|---|---|---|---|
+| `MISSILE_3DOF` | 3DOF tangage | double symétrie, Z2 | deux variables, paramètre discret (coiffe) |
+| `AVION_5DOF` | 5DOF | plan vertical, Z2 | α et δm non symétriques, volets discrets croisés, ordre 2 |
+| `OBUS_3DOF` | 3DOF masse ponctuelle | révolution, D2 (cartésien forcé) | paramètre continu (spin), αt seul en polaire |
+| `DRONE_4DOF` | 4DOF | quelconque, trivial | aucune symétrie : tout est à calculer |
+| `FUSEE_3AILETTES` | 6DOF | 3 ailettes, Z2 | N impair : seul le miroir V en cartésien, secteur de 60° en polaire |
+
+## 10. Organisation
 
 ```
 00_DOC/              théorie (FR) : 01 base aéro et symétries, 02 méthodes de remplissage
                      (figures : generer_figures.py, avec cfd-plot ; décomptes : compter_remplissage.py)
 src/cfd_doe/
-  core/              calcul pur : intervalles, angles, groupes de signes, domaine fondamental
+  core/              calcul pur : intervalles, angles, groupes de signes, domaine fondamental,
+                     plans (Sobol, Halton, LHS, composites…), métamodèles (krigeage, polynômes)
   data/              variables, trajectoires, géométries, fichier d'étude
   engine/            reduire(etude) → Reduction ; vers_dict pour l'export ;
-                     remplir(remplissage) → plans, ecrire_csv
+                     remplir(remplissage) → plans, ecrire_csv ;
+                     reconstruire(plan, contexte, mesures) → une table par coefficient
   report/            rendu Rich (FR, sans gras ; CFD_DOE_GRAS=1 le rétablit)
   cli/               cfd-doe domaine | remplir | check | exemple
   01_EXEMPLE/        ETUDE_FUSEE.yaml, REMPLISSAGE_FUSEE.yaml, completer_table.py,
-                     exemple_completion.py (données de paquet)
+                     exemple_completion.py, reconstruire_tables.py, executer_exemples.py,
+                     CAS/ (cinq études) — données de paquet
 tests/               pytest ; test_architecture.py vérifie la règle de couches
 ```
 

@@ -6,7 +6,7 @@ Deux familles (00_DOC/02_REMPLISSAGE.md) :
   grille creuse de Smolyak. Tous sont symétriques par changement de signe de
   chaque facteur : une symétrie de l'engin envoie un point du plan sur un autre ;
 - plans à **remplissage d'espace**, sur ``[0, 1]^k`` : hypercube latin
-  (optimisé maximin) et suite de Halton.
+  (optimisé maximin), suites de Halton et de Sobol.
 
 Un point est un tuple de flottants ; l'appelant met à l'échelle.
 """
@@ -25,6 +25,7 @@ __all__ = [
     "grille_creuse",
     "halton",
     "hypercube_latin",
+    "sobol",
     "sous_ensemble_maximin",
 ]
 
@@ -139,6 +140,80 @@ def halton(n: int, k: int, depart: int = 1) -> list[Point]:
         return valeur
 
     return [tuple(radical(i, _PREMIERS[j]) for j in range(k)) for i in range(depart, depart + n)]
+
+
+#: Nombres directeurs de Sobol (Joe et Kuo, new-joe-kuo-6.21201), dimensions 2 à 16 :
+#: (degré s du polynôme primitif, ses coefficients a, les m_i initiaux).
+_SOBOL: tuple[tuple[int, int, tuple[int, ...]], ...] = (
+    (1, 0, (1,)),
+    (2, 1, (1, 3)),
+    (3, 1, (1, 3, 1)),
+    (3, 2, (1, 1, 1)),
+    (4, 1, (1, 1, 3, 3)),
+    (4, 4, (1, 3, 5, 13)),
+    (5, 2, (1, 1, 5, 5, 17)),
+    (5, 4, (1, 1, 5, 5, 5)),
+    (5, 7, (1, 1, 7, 11, 19)),
+    (5, 11, (1, 1, 5, 1, 1)),
+    (5, 13, (1, 1, 1, 3, 11)),
+    (5, 14, (1, 3, 5, 5, 31)),
+    (6, 1, (1, 3, 3, 9, 7, 49)),
+    (6, 13, (1, 1, 1, 15, 21, 21)),
+    (6, 16, (1, 3, 1, 13, 27, 49)),
+)
+_BITS = 32
+
+
+def _directions(dimension: int) -> list[int]:
+    """Les ``_BITS`` nombres directeurs d'une dimension (0 : la première, m_i = 1)."""
+    if dimension == 0:
+        return [1 << (_BITS - i) for i in range(1, _BITS + 1)]
+    s, a, m = _SOBOL[dimension - 1]
+    v = [m[i] << (_BITS - 1 - i) for i in range(s)]
+    for i in range(s, _BITS):
+        suivant = v[i - s] ^ (v[i - s] >> s)
+        for k in range(1, s):
+            if (a >> (s - 1 - k)) & 1:
+                suivant ^= v[i - k]
+        v.append(suivant)
+    return v
+
+
+def sobol(n: int, k: int, graine: int | None = 0, depart: int = 0) -> list[Point]:
+    """Les ``n`` points de la suite de Sobol en dimension ``k``, à partir du rang ``depart``.
+
+    Ordre de Gray (Antonov-Saleev), comme les implémentations de référence.
+    Chaque bloc de ``2^m`` points consécutifs alignés stratifie chaque axe en
+    ``2^m`` tranches égales : préférer des effectifs puissances de 2.
+    ``graine`` applique un **décalage digital** aléatoire (XOR par axe), qui
+    conserve cette propriété et retire le point (0, …, 0) ; ``None`` : suite brute.
+    """
+    if k > len(_SOBOL) + 1:
+        raise ValueError(f"suite de Sobol : au plus {len(_SOBOL) + 1} facteurs")
+    if n <= 0 or k <= 0:
+        return []
+    directions = [_directions(j) for j in range(k)]
+    decalage = (
+        [0] * k
+        if graine is None
+        else [int(x) for x in np.random.default_rng(graine).integers(0, 1 << _BITS, size=k)]
+    )
+    echelle = 1.0 / (1 << _BITS)
+    points: list[Point] = []
+    for i in range(depart, depart + n):
+        gray = i ^ (i >> 1)
+        point = []
+        for j in range(k):
+            x, bit = decalage[j], 0
+            g = gray
+            while g:
+                if g & 1:
+                    x ^= directions[j][bit]
+                g >>= 1
+                bit += 1
+            point.append(x * echelle)
+        points.append(tuple(point))
+    return points
 
 
 def sous_ensemble_maximin(points: Sequence[Sequence[float]], n: int) -> list[int]:

@@ -1,0 +1,19 @@
+# Missile de croisière à deux plans de symétrie, simulé dans le plan de tangage.
+#
+#   cfd-doe domaine MISSILE_3DOF.yaml
+#   cfd-doe remplir REMPLISSAGE_MISSILE_3DOF.yaml
+#
+# 3DOF_TANGAGE : seuls α et δm sont actifs ; β, δn, δl restent à 0.
+# Le miroir horizontal (α, δm → −α, −δm) divise le domaine par deux.
+
+etude:
+  nom: MISSILE_3DOF
+  description: Missile à double symétrie, plan de tangage seul
+
+trajectoire: 3DOF_TANGAGE
+geometrie: double_symetrie
+repere: auto
+
+variables:
+  alpha: [-25, 25]
+  DM: [-15, 15]

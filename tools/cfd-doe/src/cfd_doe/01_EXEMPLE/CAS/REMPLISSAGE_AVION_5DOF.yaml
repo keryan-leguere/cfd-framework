@@ -1,0 +1,54 @@
+# Avion : quatre variables, trois braquages de volets (paramètre discret), trois Mach.
+#
+#   cfd-doe remplir REMPLISSAGE_AVION_5DOF.yaml
+#   python ../reconstruire_tables.py REMPLISSAGE_AVION_5DOF.yaml
+#
+# Exemple de décomposition d'ordre 2 : les incréments de gouverne dépendent de
+# (α, β), et le couplage profondeur × direction est calculé à part.
+
+nom: AVION_5DOF_REMPLISSAGE
+etude: AVION_5DOF.yaml
+
+mach: [0.3, 0.5, 0.7]
+
+parametres:
+  volets: {niveaux: [0, 15, 30], nominal: 0, discret: true}
+
+niveaux:
+  alpha: {pas: 2}
+  beta: {pas: 2.5}
+  DM: {pas: 5}
+  DN: {pas: 5}
+
+plans:
+  etoile:
+    type: etoile
+
+  ordre_2:
+    type: decomposition
+    ordre: 2
+    primaires: [alpha, beta]
+    croiser: [volets]           # chaque table est faite pour chaque position de volets
+    couplages: [[DM, DN]]
+    controle: {fraction: 0.1}
+
+  box_behnken:
+    type: box_behnken
+
+  lhs:
+    type: lhs
+    regle: 25
+
+  krigeage:
+    type: krigeage
+    regle: 15
+
+  multi_fidelite:
+    type: multi_fidelite
+    regle: 25
+    regle_hf: 6
+
+retenu: ordre_2
+
+sortie:
+  dossier: DOE_AVION

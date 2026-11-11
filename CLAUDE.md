@@ -690,6 +690,42 @@ not part of the Bash framework's runtime:
       the disk. One file serves both frames: other-frame `niveaux` are ignored with a note,
       effect names are aliased (DM ↔ DMB), and `exclure` sees both frames' variables. Grid counts
       reproduce `00_DOC/02_REMPLISSAGE.md` exactly (`tests/test_remplissage.py`).
+      Plan types also include `sobol` (Joe–Kuo directions, Gray order, digital shift — prefer
+      powers of 2) and `krigeage`: each point placed where the *prior* kriging variance is
+      largest given the points already placed **and all their symmetry images** (fixed
+      `portee`, so buildable before any run; candidates filtered by `exclure` per condition).
+    - **Figures are paper-ready** (`report/figures.py`, cfd-plot `paper` profile, PNG 300 dpi
+      + PDF, `sortie.formats`): every panel carries the zone background — computed (blue),
+      deduced by symmetry (hatched, labelled with the symmetry on exact slices), out of domain
+      (cross-hatched), symmetry planes dashed, planes that are sub-domains on their own drawn
+      thick. Hatching is baked into an up-sampled raster, **not** `contourf(hatches=…)`, which
+      draws wrong polygons for holed masks (square minus disk). The zone raster is a vectorised
+      re-implementation of `Contexte.placer`/`replier` — same order (images, then the αt = 0
+      axis rule on each image) — and a test checks it node-for-node against the engine in both
+      frames.
+    - **`engine/reconstruction.py`** turns a plan's CFD results into **one square table per
+      coefficient** on the reference grid over the full (symmetric) domain: grid plans read
+      nodes + images (multilinear between coarser levels); star/decomposition sum anchored
+      terms `± C(x restricted to the term's factors)` stored in `PlanDOE.termes`
+      (cut-HDMR); composite/Box-Behnken a degree-2 Legendre LS; sparse grid the exact Smolyak
+      polynomial space; drawn plans ordinary kriging (`core/metamodeles.py`, Matérn 5/2,
+      anisotropic ML ranges, smallest nugget that factorises; `portees_communes=True` shares
+      ranges across coefficients, ~6× faster); multi-fidelity BF kriging + kriged HF − BF gap.
+      Every model sees each run's images (sign-flipped coefficients), so tables are exactly
+      symmetric; nodes removed by `exclure` stay NaN for every method. `controle`/`test`
+      points give `Tables.ecarts`, the only error measurable for real. `lot_suivant` proposes
+      the next adaptive batch (max variance, ranges re-estimated on results). Cartesian only.
+    - **`01_EXEMPLE/reconstruire_tables.py`** runs the whole chain with a fictitious CFD (an
+      aero model *averaged over the study's symmetry group*, so exactly symmetric whatever the
+      geometry): results file written and re-read, tables per plan, error at check points vs
+      true error on the grid, simulated adaptive batches, `precision_cout` and `coupes_<COEF>`
+      figures. `executer_exemples.py` runs it on the rocket and on `01_EXEMPLE/CAS/` (missile
+      3DOF pitch, aircraft 5DOF single plane, shell of revolution forced Cartesian, drone with
+      no symmetry, 3-fin rocket). Findings worth knowing: order-1 check points predict the
+      table error; metamodel test points are optimistic (×2–4, they avoid the borders);
+      structured plans break under `exclure` (rank-deficient polynomial, reported); the
+      kriging design beats LHS at ~70 % of the runs. `00_DOC/02_REMPLISSAGE.md` §11 reports
+      these numbers; `generer_figures.py` regenerates figures 7–8 through the script.
     - The **orbit test** (`tests/test_reduction.py`) is the guarantee: every grid point's full
       orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
       trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200

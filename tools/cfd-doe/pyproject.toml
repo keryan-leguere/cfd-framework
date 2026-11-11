@@ -38,7 +38,7 @@ cfd-doe = "cfd_doe.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cfd_doe = ["01_EXEMPLE/*.yaml", "01_EXEMPLE/*.md", "01_EXEMPLE/*.py"]
+cfd_doe = ["01_EXEMPLE/*.yaml", "01_EXEMPLE/*.md", "01_EXEMPLE/*.py", "01_EXEMPLE/CAS/*.yaml"]
 
 [tool.ruff]
 target-version = "py39"

@@ -1,0 +1,42 @@
+# Fusée à 3 ailettes : cinq variables, deux Mach, pas de paramètre.
+#
+#   cfd-doe remplir REMPLISSAGE_FUSEE_3AILETTES.yaml                     # cartésien
+#   cfd-doe remplir REMPLISSAGE_FUSEE_3AILETTES.yaml --repere polaire    # secteur de 60°
+#   python ../reconstruire_tables.py REMPLISSAGE_FUSEE_3AILETTES.yaml
+#
+# Le même fichier sert les deux repères : les niveaux de l'autre sont ignorés.
+
+nom: FUSEE_3AILETTES_REMPLISSAGE
+etude: FUSEE_3AILETTES.yaml
+repere: cartesien
+
+mach: [0.8, 1.5]
+
+niveaux:
+  alpha: {pas: 5}
+  beta: {pas: 5}
+  DM: {pas: 7.5}
+  DN: {pas: 7.5}
+  DL: {pas: 10}
+  alphat: {pas: 5}
+  phia: {pas: 20}
+  DMB: {pas: 7.5}
+  DNB: {pas: 7.5}
+
+plans:
+  ordre_1:
+    type: decomposition
+    controle: {fraction: 0.15}
+
+  sobol:
+    type: sobol
+    regle: 25
+
+  krigeage:
+    type: krigeage
+    regle: 15
+
+retenu: krigeage
+
+sortie:
+  dossier: DOE_FUSEE_3AILETTES

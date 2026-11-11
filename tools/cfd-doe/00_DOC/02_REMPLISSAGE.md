@@ -26,6 +26,7 @@ est forte. Chaque section la nomme, et dit comment la contrôler.
 8. [Plans adaptatifs et multi-fidélité](#8-plans-adaptatifs-et-multi-fidélité)
 9. [Synthèse et guide de choix](#9-synthèse-et-guide-de-choix)
 10. [Avec n paramètres indépendants](#10-avec-n-paramètres-indépendants)
+11. [Des calculs aux tables](#11-des-calculs-aux-tables)
 
 ---
 
@@ -425,6 +426,23 @@ budget, et **non selon la dimension** : c'est la rupture avec tout ce qui préc�
 - **Suites à faible discrépance (Sobol, Halton)** : déterministes, uniformes dans toutes les
   projections, et surtout **extensibles** — les N premiers points d'une suite de 2N forment déjà
   un bon plan. Un LHS ne s'étend pas sans être refait.
+  - **Sobol** (`type: sobol`) : nombres directeurs de Joe et Kuo, ordre de Gray. Tout bloc de
+    2^m points consécutifs stratifie chaque axe en 2^m tranches égales, et les deux premiers
+    axes en pavés élémentaires d'aire 1/2^m : préférer des effectifs **puissances de 2**
+    (`points_par_mach: 16`). La graine applique un *décalage digital* (un XOR par axe) qui garde
+    ces propriétés et retire le point (0, …, 0), un coin du domaine sans intérêt.
+  - **Halton** : bases premières, sans propriété de bloc ; se dégrade au-delà de 6 à 8 facteurs
+    (corrélations entre axes de grandes bases). Sobol est le choix par défaut.
+- **Plan du krigeage** (`type: krigeage`) : chaque point est placé, un à un, là où la **variance
+  de prédiction a priori** du krigeage est la plus forte, compte tenu des points déjà placés
+  **et de toutes leurs images par symétrie**. À portée fixée (`portee`, en fraction du domaine),
+  cette variance ne dépend que de l'emplacement des points, pas des résultats : le plan se
+  construit avant tout calcul. Il réunit les deux idées de ce chapitre — le remplissage d'espace
+  et le métamodèle qui le lira — et, parce qu'il voit les images, il ne gaspille pas de points
+  là où une image en apporte déjà. Hypothèse supplémentaire : la portée choisie est du bon ordre
+  de grandeur (0,2 à 0,4 du domaine pour des coefficients aérodynamiques). Les plans à variance
+  maximale chargent volontiers les bords du domaine : c'est là que la variance est la plus forte,
+  et là que la table extrapolerait sinon.
 - **Plans par tranches** (*sliced LHS*) : un LHS par Mach, construits ensemble de sorte que leur
   réunion soit aussi un bon plan. C'est la bonne réponse à la section 2.1 : une table par Mach,
   et des tranches qui ne répètent pas les mêmes points.
@@ -446,7 +464,12 @@ budget, et **non selon la dimension** : c'est la rupture avec tout ce qui préc�
 ### 7.3 Le métamodèle
 
 - **Krigeage** (processus gaussien) : le choix par défaut ; il interpole, et donne une variance
-  de prédiction — une barre d'erreur en tout point, utile à la section 8.
+  de prédiction — une barre d'erreur en tout point, utile à la section 8. Celui de cfd-doe
+  (`core/metamodeles.py`) : krigeage ordinaire (moyenne constante estimée), noyau de Matérn 5/2
+  anisotrope (une portée par facteur), portées au maximum de vraisemblance concentrée, pépite
+  la plus petite qui factorise (il interpole les calculs), un krigeage par coefficient — ou un
+  pour tous à portées communes (`portees_communes=True`), environ six fois plus rapide, un peu
+  moins précis quand les coefficients n'ont pas la même régularité.
 - **Fonctions de base radiales** : plus simples, sans barre d'erreur.
 - **Polynômes creux** (chaos polynomial) : donnent en prime les indices de sensibilité.
 
@@ -623,3 +646,77 @@ niveaux en tête du script).
 
 **Régénérer les figures** : `pip install -e ../cfd-plot` puis `python 00_DOC/generer_figures.py`.
 Elles sont tracées avec `cfd-plot` et lisent leurs nombres dans `compter_remplissage.py`.
+
+---
+
+## 11. Des calculs aux tables
+
+Le DOE calculé, il reste à produire ce que lit le simulateur : **une table carrée par
+coefficient**, sur la grille de référence étendue au domaine complet. Chaque famille de plans
+s'y prend à sa façon, et c'est là que son hypothèse se paie (`engine/reconstruction.py`) :
+
+| Plan | Comment la table est obtenue | Ce qui la rend fausse |
+|---|---|---|
+| Factoriel | lecture des nœuds et de leurs images ; interpolation multilinéaire entre niveaux allégés | non-linéarité entre deux niveaux |
+| Étoile, décomposition | C(x) = Σ ± C(x restreint aux facteurs d'un terme), chaque terme lu dans sa table | interaction absente des termes |
+| Composite, Box-Behnken | polynôme de degré 2, moindres carrés | ce qui n'est pas quadratique |
+| Grille creuse | polynôme de l'espace exact de la grille de Smolyak | dérivées croisées fortes |
+| LHS, Halton, Sobol, krigeage, adaptatif | krigeage, images comprises | irrégularité plus fine que la maille |
+| Multi-fidélité | krigeage de la BF, plus krigeage de l'écart HF − BF aux points HF | une BF qui ne suit pas la HF |
+
+Deux règles communes : un calcul vaut aussi en ses images, au signe des coefficients près, si
+bien que **toute table est exactement symétrique** ; et un nœud écarté par `exclure` reste vide,
+quelle que soit la méthode — un métamodèle y extrapolerait sans qu'aucun calcul ne le contrôle.
+
+Les points `controle` et `test` ne servent pas à construire la table : l'écart entre la table et
+ces calculs est **la seule erreur mesurable** en vrai. `01_EXEMPLE/reconstruire_tables.py` fait
+tout le chemin avec une CFD factice — un modèle aéro exactement symétrique, avec portance
+tourbillonnaire, gouvernes qui saturent et couplages δm × δn², β² × δn, moteur × δm — et compare
+cette erreur mesurée à l'erreur vraie, sur toute la grille. Sur l'exemple de ce document
+(exclusion à Mach ≥ 2 comprise, 81 000 nœuds par coefficient) :
+
+| Plan | Calculs | Contrôle / test | Erreur vraie (RMS, pire coefficient) |
+|---|---:|---:|---:|
+| Factoriel complet | 19 548 | · | exacte |
+| Factoriel à niveaux inégaux | 4 356 | · | 4,7 % |
+| Décomposition ordre 1 | 688 | 6,9 % | 7,2 % |
+| Décomposition ordre 2 | 2 048 | 1,1 % | 1,0 % |
+| Composite centré | 188 | 7,7 % | 9,9 % |
+| Hypercube latin 30·d | 392 | 0,17 % | 0,61 % |
+| Sobol 30·d | 392 | 0,15 % | 0,62 % |
+| Krigeage, variance maximale 20·d | 278 | 0,20 % | 0,44 % |
+| Adaptatif, lot initial + 3 lots | 302 | 0,20 % | 0,29 % |
+| Multi-fidélité 30·d / 8·d | 488 | 1,1 % | 1,9 % |
+
+![Précision contre coût](FIGURES/remplissage_07_precision.png)
+
+Ce que le tableau enseigne, pour ce modèle (un autre modèle donnerait d'autres chiffres, pas
+d'autres leçons) :
+
+- **Les contrôles disent la vérité.** L'écart aux points de contrôle de la décomposition d'ordre 1
+  (6,9 %) annonce l'erreur de toute la table (7,2 %) ; les couplages de l'ordre 2, choisis en
+  conséquence, la ramènent à 1 %, le reste venant d'un couplage moteur × δl non retenu. C'est
+  exactement la démarche de la section 4.4.
+- **Les points de test d'un métamodèle sont optimistes** : ils sont tirés dans le même domaine
+  que les calculs, loin des bords où le métamodèle extrapole. Compter un facteur 2 à 4 entre
+  l'écart aux tests et l'erreur de la table.
+- **Un plan structuré ne supporte pas les trous.** L'exclusion retire à Mach ≥ 2 tous les points
+  du composite à |α| = 20° : le polynôme n'a plus de quoi identifier ses termes en α, et la table
+  s'en ressent à l'intérieur même du domaine conservé. Les plans tirés et le plan du krigeage
+  n'ont pas ce défaut : ils se placent dans le domaine demandé.
+- **À précision égale, le plan du krigeage coûte 30 % de moins que le LHS**, et l'adaptatif fait
+  mieux encore, parce qu'il réestime les portées sur les résultats avant de placer ses lots.
+
+![Coupes : la table reconstruite, la vérité et l'écart](FIGURES/remplissage_08_coupes.png)
+
+Les coupes montrent où l'erreur se loge : sur fond de zones (calculée, déduite par symétrie), la
+table de chaque plan contre la vérité, et l'écart en bande sous chaque panneau.
+
+**D'autres engins, d'autres trajectoires** : `01_EXEMPLE/CAS/` contient un missile en tangage
+(3DOF, deux variables), un avion à un seul plan de symétrie (5DOF, α et δm non symétriques), un
+obus de révolution (masse ponctuelle, spin continu), un drone sans symétrie (4DOF) et une fusée à
+trois ailettes (6DOF, seul le miroir V en cartésien). `python 01_EXEMPLE/executer_exemples.py` les
+passe tous, de `cfd-doe remplir` aux tables.
+
+**Régénérer les figures 7 et 8** : `python 00_DOC/generer_figures.py` les obtient en lançant
+`reconstruire_tables.py` sur l'exemple (environ une minute et demie).

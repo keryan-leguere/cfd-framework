@@ -185,7 +185,7 @@ class TestFichier:
         ("modification", "motif"),
         [
             ({"plan": 1}, "clé\\(s\\) inconnue\\(s\\) plan"),
-            ({"plans": {"p": {"type": "sobol"}}}, "type « sobol » inconnu"),
+            ({"plans": {"p": {"type": "monte_carlo"}}}, "type « monte_carlo » inconnu"),
             ({"plans": {"p": {"type": "lhs", "regles": 30}}}, "regles"),
             ({"retenu": "absent"}, "n'est pas un des plans"),
             ({"parametres": {"mach": [0, 1]}}, "nom réservé"),
@@ -670,14 +670,16 @@ def test_figures(exemple: Path, capsys: pytest.CaptureFixture[str]) -> None:
     for repere in ("cartesien", "polaire"):
         assert main(["remplir", "R.yaml", "--repere", repere, "--sortie", repere]) == 0
         figures = sorted(p.name for p in (exemple / repere / "FIGURES").iterdir())
-        assert figures == [
-            "comparaison_calculs.png",
-            "comparaison_plans.png",
-            "domaine.png",
-            "plan_lhs.png",
-            "plan_mf.png",
-            "plan_ordre_1.png",
+        noms = [
+            "comparaison_calculs",
+            "comparaison_plans",
+            "domaine",
+            "plan_lhs",
+            "plan_mf",
+            "plan_ordre_1",
         ]
+        # PNG pour l'écran, PDF vectoriel pour un rapport.
+        assert figures == sorted(f"{n}.{ext}" for n in noms for ext in ("pdf", "png"))
         assert all((exemple / repere / "FIGURES" / f).stat().st_size > 10_000 for f in figures)
     assert "Glyph" not in capsys.readouterr().err
 

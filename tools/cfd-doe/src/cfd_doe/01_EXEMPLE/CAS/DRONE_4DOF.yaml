@@ -1,0 +1,19 @@
+# Drone à voilure fixe sans symétrie exploitable (hélice décalée, train dissymétrique).
+#
+# 4DOF : α, δm, δl actifs. Géométrie quelconque : aucune symétrie, tout le
+# domaine est à calculer. Les figures n'ont donc aucune zone déduite — c'est
+# l'étalon de ce que les symétries épargnent ailleurs.
+
+etude:
+  nom: DRONE_4DOF
+  description: Drone sans symétrie, tangage et roulis
+
+trajectoire: 4DOF
+geometrie: quelconque
+repere: auto
+limite_braquage: carre
+
+variables:
+  alpha: [-6, 18]
+  DM: [-25, 25]
+  DL: [-15, 15]

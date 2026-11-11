@@ -186,8 +186,9 @@ def cmd_remplir(args: argparse.Namespace, sortie: _Sortie) -> int:
                 ecrits.append((chemin, f"{n} calculs, plan « {plan.nom} »"))
     if remplissage.sortie.figures and not args.sans_figures:
         try:
-            for figure in tracer_figures(resultat, dossier / "FIGURES"):
-                ecrits.append((figure, "figure"))
+            formats = remplissage.sortie.formats
+            for figure in tracer_figures(resultat, dossier / "FIGURES", formats):
+                ecrits.append((figure, f"figure, {' + '.join(formats)}"))
         except FiguresIndisponibles as erreur:
             sortie.out.print(f"[{theme.ATTENTION}]! {erreur}[/]")
     if ecrits:
@@ -209,6 +210,14 @@ def cmd_exemple(args: argparse.Namespace, sortie: _Sortie) -> int:
     )
     sortie.out.print(
         f"[{theme.DISCRET}]puis :[/] cfd-doe remplir {destination / 'REMPLISSAGE_FUSEE.yaml'}"
+    )
+    sortie.out.print(
+        f"[{theme.DISCRET}]enfin :[/] python {destination / 'reconstruire_tables.py'}"
+        f"  [{theme.DISCRET}](DOE → calculs factices → une table par coefficient)[/]"
+    )
+    sortie.out.print(
+        f"[{theme.DISCRET}]autres cas :[/] {destination / 'CAS'}  "
+        f"[{theme.DISCRET}](missile 3DOF, avion 5DOF, obus, drone, fusée à 3 ailettes)[/]"
     )
     return EXIT_OK
 

@@ -40,6 +40,7 @@ from cfd_doe.core.angles import (
 from cfd_doe.core.domaine_fondamental import Disque
 from cfd_doe.core.expression import Condition, compiler
 from cfd_doe.core.intervalle import Intervalle
+from cfd_doe.core.metamodeles import plan_variance_maximale
 from cfd_doe.data.remplissage import (
     ErreurRemplissage,
     Parametre,
@@ -51,6 +52,7 @@ from cfd_doe.data.variables import SYMBOLES
 from cfd_doe.engine.reduction import Reduction, SousDomaine, reduire, symetries_exportees
 
 __all__ = [
+    "RECONSTRUCTIONS",
     "ROLES",
     "Bloc",
     "Contexte",
@@ -71,6 +73,19 @@ ROLES: tuple[str, ...] = (ROLE_CALCUL, ROLE_CONTROLE, ROLE_TEST)
 PART_PLANS = 0.25
 #: Part de points de test indépendants des plans à métamodèle (§7.3).
 PART_TEST = 0.15
+
+#: Comment les résultats d'un plan deviennent une table (engine/reconstruction.py).
+RECONSTRUCTIONS: dict[str, str] = {
+    "table": "lecture directe, interpolation multilinéaire entre niveaux",
+    "somme": "somme de tables (base et incréments), interpolées",
+    "polynome": "polynôme de degré 2, moindres carrés",
+    "smolyak": "polynôme de l'espace de la grille creuse",
+    "krigeage": "krigeage ordinaire, portées au maximum de vraisemblance",
+    "co-krigeage": "krigeage de la BF, plus krigeage de l'écart HF − BF",
+}
+
+#: Un terme de reconstruction par somme : (signe, facteurs conservés).
+Terme = tuple[int, tuple[str, ...]]
 
 
 @dataclass(frozen=True)
@@ -198,6 +213,13 @@ class PlanDOE:
     facteurs: tuple[str, ...] = ()
     #: Points écartés par les exclusions de l'utilisateur.
     exclus: int = 0
+    #: Clé de :data:`RECONSTRUCTIONS` : comment passer des calculs à la table.
+    reconstruction: str = "table"
+    #: Plans sur grille : les niveaux de chaque facteur (variables, paramètres).
+    niveaux: dict[str, tuple[float, ...]] | None = None
+    #: Plans par somme : C(x) = Σ signe · C(x restreint aux facteurs conservés,
+    #: les autres à la référence). Factoriel : un seul terme, tous les facteurs.
+    termes: tuple[Terme, ...] = ()
 
     @property
     def nom(self) -> str:
@@ -463,14 +485,19 @@ class _Chantier:
             ajoutes += self._inscrire({**params, **angles}, role, table, numero, fidelite)
         return ajoutes
 
+    def exclu(self, valeurs: Mapping[str, float]) -> bool:
+        """Le point (toutes colonnes) est-il écarté par une exclusion ?"""
+        if not self.exclusions:
+            return False
+        visibles = {**valeurs, **_derivees(self.c.reduction.repere, valeurs)}
+        return any(condition(visibles) for condition in self.exclusions)
+
     def _inscrire(
         self, valeurs: dict[str, float], role: str, table: str, numero: int, fidelite: str
     ) -> int:
-        if self.exclusions:
-            visibles = {**valeurs, **_derivees(self.c.reduction.repere, valeurs)}
-            if any(condition(visibles) for condition in self.exclusions):
-                self.exclus += 1
-                return 0
+        if self.exclu(valeurs):
+            self.exclus += 1
+            return 0
         cle = (fidelite, *(round(valeurs[col], 9) + 0.0 for col in self.c.colonnes))
         if cle in self.points:
             return 0
@@ -504,6 +531,10 @@ class _Chantier:
         table_directe: str,
         demarche: Sequence[str],
         facteurs: Sequence[str] = (),
+        *,
+        reconstruction: str = "krigeage",
+        niveaux: Mapping[str, tuple[float, ...]] | None = None,
+        termes: Sequence[Terme] = (),
     ) -> PlanDOE:
         if self.exclus:
             self.avertissements.append(f"{self.exclus} point(s) écarté(s) par « exclure »")
@@ -520,7 +551,26 @@ class _Chantier:
             avertissements=tuple(dict.fromkeys(self.avertissements)),
             facteurs=tuple(facteurs),
             exclus=self.exclus,
+            reconstruction=reconstruction,
+            niveaux=None if niveaux is None else dict(niveaux),
+            termes=_simplifier(termes),
         )
+
+
+def _simplifier(termes: Sequence[Terme]) -> tuple[Terme, ...]:
+    """Regroupe les termes de mêmes facteurs et retire ceux dont la somme des signes est nulle."""
+    sommes: dict[tuple[str, ...], int] = {}
+    for signe, facteurs in termes:
+        cle = tuple(sorted(set(facteurs)))
+        sommes[cle] = sommes.get(cle, 0) + signe
+    return tuple((s, f) for f, s in sommes.items() if s)
+
+
+def _niveaux_grille(
+    c: Contexte, niveaux: Mapping[str, tuple[float, ...]]
+) -> dict[str, tuple[float, ...]]:
+    """Les niveaux d'un plan sur grille : variables libres, puis paramètres."""
+    return {**{v: niveaux[v] for v in c.libres}, **{p.nom: p.niveaux for p in c.parametres}}
 
 
 def _liste(c: Contexte, noms: Iterable[str]) -> str:
@@ -566,6 +616,9 @@ def _factoriel(ch: _Chantier) -> PlanDOE:
                 else []
             ),
         ],
+        reconstruction="table",
+        niveaux=_niveaux_grille(c, niveaux),
+        termes=[(1, (*c.libres, *(p.nom for p in c.parametres)))],
     )
 
 
@@ -590,6 +643,16 @@ def _etoile(ch: _Chantier) -> PlanDOE:
             "Lire chaque balayage : quelles variables comptent, où sont les non-linéarités.",
             "Ne pas en tirer une base aéro : c'est un dégrossissage, qui sert à choisir les "
             "niveaux et les couplages d'un plan sérieux (décomposition, factoriel).",
+        ],
+        reconstruction="somme",
+        niveaux=_niveaux_grille(c, niveaux),
+        termes=[
+            (1, ()),
+            *(
+                terme
+                for f in (*c.libres, *(p.nom for p in c.parametres))
+                for terme in ((1, (f,)), (-1, ()))
+            ),
         ],
     )
 
@@ -751,7 +814,27 @@ def _decomposition(ch: _Chantier) -> PlanDOE:
         "Livrer les tables d'incréments (le simulateur fait la somme), ou la table carrée "
         "reconstruite par somme, avec une colonne d'origine."
     )
-    return ch.clore(f"Décomposition, ordre {ordre}", hypotheses, "oui, par somme", demarche)
+    termes: list[Terme] = [(1, (*primaires, *croises))]
+    for e in effets:
+        if non_reference(e):
+            termes += [(1, (*fonction_de[e], e, *croises)), (-1, (*fonction_de[e], *croises))]
+    for (a, b), dependances in paires:
+        if non_reference(a) and non_reference(b):
+            termes += [
+                (1, (*dependances, a, b, *croises)),
+                (-1, (*dependances, a, *croises)),
+                (-1, (*dependances, b, *croises)),
+                (1, (*dependances, *croises)),
+            ]
+    return ch.clore(
+        f"Décomposition, ordre {ordre}",
+        hypotheses,
+        "oui, par somme",
+        demarche,
+        reconstruction="somme",
+        niveaux=_niveaux_grille(c, niveaux),
+        termes=termes,
+    )
 
 
 def _controle_croise(
@@ -943,6 +1026,7 @@ def _composite_centre(ch: _Chantier) -> PlanDOE:
         "non",
         _demarche_modele(ch, f"un polynôme de degré 2 ({(k + 1) * (k + 2) // 2} termes)", n_test),
         facteurs,
+        reconstruction="polynome",
     )
 
 
@@ -960,6 +1044,7 @@ def _box_behnken(ch: _Chantier) -> PlanDOE:
         "non",
         _demarche_modele(ch, f"un polynôme de degré 2 ({(k + 1) * (k + 2) // 2} termes)", n_test),
         facteurs,
+        reconstruction="polynome",
     )
 
 
@@ -989,6 +1074,7 @@ def _grille_creuse(ch: _Chantier) -> PlanDOE:
         "non",
         demarche,
         facteurs,
+        reconstruction="smolyak",
     )
 
 
@@ -1039,6 +1125,8 @@ def _tirer_dans(
     for tentative in range(12):
         if methode == "halton":
             unites = generateurs.halton(m, k, depart)
+        elif methode == "sobol":
+            unites = generateurs.sobol(m, k, graine)
         else:
             unites = generateurs.hypercube_latin(m, k, graine + tentative, essais)
         gardes = []
@@ -1054,12 +1142,31 @@ def _tirer_dans(
                 }
                 gardes.append((angles, params))
         if len(gardes) >= n:
-            if len(gardes) == n or methode == "halton":
+            if len(gardes) == n or methode in ("halton", "sobol"):
                 return gardes[:n]
             cles = [tuple(a[v] for v in libres) + tuple(p.values()) for a, p in gardes]
             return [gardes[i] for i in sorted(generateurs.sous_ensemble_maximin(cles, n))]
         m = math.ceil(1.3 * m * n / max(len(gardes), 1)) + 1
     return gardes
+
+
+def _quotas(
+    c: Contexte, n: int, part_plans: float
+) -> tuple[list[tuple[SousDomaine, int]], int, int]:
+    """Répartit ``n`` tirages : sous-domaines principaux au volume, plans de symétrie à part.
+
+    Renvoie (quotas, nombre sur les plans, sous-domaines laissés de côté).
+    """
+    dimension = max(sd.dimension for sd in c.sous_domaines)
+    principaux = [sd for sd in c.sous_domaines if sd.dimension == dimension]
+    plans = [sd for sd in c.sous_domaines if sd.dimension == dimension - 1] if dimension > 0 else []
+    n_plans = round(part_plans * n) if plans else 0
+    quotas = [
+        *zip(principaux, _repartir(n - n_plans, [_volume(sd) for sd in principaux])),
+        *zip(plans, _repartir(n_plans, [_volume(sd) for sd in plans])),
+    ]
+    oublies = len(c.sous_domaines) - len(principaux) - (len(plans) if n_plans else 0)
+    return quotas, n_plans, oublies
 
 
 def _tirage(
@@ -1077,15 +1184,7 @@ def _tirage(
     c = ch.c
     _, continus, discrets = _facteurs(c)
     essais = ch.entier("essais", 50, minimum=1)
-    dimension = max(sd.dimension for sd in c.sous_domaines)
-    principaux = [sd for sd in c.sous_domaines if sd.dimension == dimension]
-    plans = [sd for sd in c.sous_domaines if sd.dimension == dimension - 1] if dimension > 0 else []
-    n_plans = round(part_plans * n) if plans else 0
-    quotas = [
-        *zip(principaux, _repartir(n - n_plans, [_volume(sd) for sd in principaux])),
-        *zip(plans, _repartir(n_plans, [_volume(sd) for sd in plans])),
-    ]
-    oublies = len(c.sous_domaines) - len(principaux) - (len(plans) if n_plans else 0)
+    quotas, n_plans, oublies = _quotas(c, n, part_plans)
     if oublies and role == ROLE_CALCUL:
         ch.avertissements.append(
             f"{oublies} sous-domaine(s) de petite dimension non échantillonné(s) par le tirage "
@@ -1131,6 +1230,13 @@ def _points_par_condition(
     return max(1, math.ceil(regle * len(facteurs) / c.ordre_groupe))
 
 
+_NOMS_TIRAGE = {
+    "lhs": ("Hypercube latin", "hypercube latin"),
+    "halton": ("Suite de Halton", "suite de Halton"),
+    "sobol": ("Suite de Sobol", "suite de Sobol"),
+}
+
+
 def _remplissage_espace(ch: _Chantier, methode: str) -> PlanDOE:
     facteurs, _, _ = _facteurs(ch.c)
     n = _points_par_condition(ch, 30.0)
@@ -1140,13 +1246,13 @@ def _remplissage_espace(ch: _Chantier, methode: str) -> PlanDOE:
         methode,
         ch.entier("graine", 0),
         ROLE_CALCUL,
-        "hypercube latin" if methode == "lhs" else "suite de Halton",
+        _NOMS_TIRAGE[methode][1],
         ch.reel("part_plans", PART_PLANS, 0.0, 1.0),
         bool(ch.option("decale_par_mach", True)),
     )
     n_test = _test(ch, facteurs)
     return ch.clore(
-        "Hypercube latin" if methode == "lhs" else "Suite de Halton",
+        _NOMS_TIRAGE[methode][0],
         "régularité à l'échelle de la distance entre points ; métamodèle validé",
         "non",
         _demarche_modele(ch, "un métamodèle (krigeage par défaut)", n_test),
@@ -1185,6 +1291,115 @@ def _adaptatif(ch: _Chantier) -> PlanDOE:
             "des résultats, ils se construisent hors de cfd-doe. Compter en général 1 à 2 fois "
             "le lot initial en plus.",
         ],
+        facteurs,
+    )
+
+
+def _normaliser(
+    valeurs: Mapping[str, float], facteurs: Sequence[str], plages: Mapping[str, Intervalle]
+) -> list[float]:
+    return [
+        (valeurs[f] - plages[f].bas) / plages[f].largeur if plages[f].largeur > 0 else 0.5
+        for f in facteurs
+    ]
+
+
+def _orbite(c: Contexte, angles: Mapping[str, float]) -> list[dict[str, float]]:
+    """Le point et ses images distinctes par les symétries."""
+    images: list[dict[str, float]] = [dict(angles)]
+    vus = {tuple(round(angles[v], 9) for v in c.variables)}
+    for s in c.symetries:
+        image = _image(s, angles)
+        cle = tuple(round(image[v], 9) for v in c.variables)
+        if cle not in vus:
+            vus.add(cle)
+            images.append(image)
+    return images
+
+
+def _choisir_variance_maximale(
+    ch: _Chantier,
+    n: int,
+    n_candidats: int,
+    portee: float,
+    graine: int,
+    condition: Mapping[str, float],
+) -> list[tuple[dict[str, float], dict[str, float]]]:
+    """``n`` points des sous-domaines choisis par variance maximale, parmi des candidats de Halton.
+
+    Les candidats qu'une exclusion écarte à cette ``condition`` (Mach,
+    paramètres discrets) sont retirés avant le choix : le plan se place dans
+    le domaine réellement demandé, au lieu de perdre ses points ensuite.
+    """
+    c = ch.c
+    facteurs, continus, _ = _facteurs(c)
+    plages = {**c.boite, **{p.nom: p.plage for p in continus}}
+    quotas, _, _ = _quotas(c, n_candidats, ch.reel("part_plans", PART_PLANS, 0.0, 1.0))
+    candidats: list[tuple[dict[str, float], dict[str, float]]] = []
+    for sd, quota in quotas:
+        candidats += _tirer_dans(c, sd, quota, continus, "halton", graine + sd.numero, 1)
+    if ch.exclusions:
+        nominaux = {p.nom: p.nominal for p in c.parametres}
+        candidats = [
+            (angles, params)
+            for angles, params in candidats
+            if not ch.exclu({**nominaux, **params, **condition, **angles})
+        ]
+    orbites = []
+    for angles, params in candidats:
+        orbites.append(
+            np.array(
+                [_normaliser({**image, **params}, facteurs, plages) for image in _orbite(c, angles)]
+            )
+        )
+    return [candidats[i] for i in plan_variance_maximale(orbites, n, portee)]
+
+
+def _krigeage(ch: _Chantier) -> PlanDOE:
+    c = ch.c
+    facteurs, _, discrets = _facteurs(c)
+    n = _points_par_condition(ch, 20.0)
+    portee = ch.reel("portee", 0.3, 0.02, 10.0)
+    n_candidats = ch.entier("candidats", min(3000, max(400, 25 * n)), minimum=n)
+    graine = ch.entier("graine", 0)
+    decale = bool(ch.option("decale_par_mach", True))
+    table = ch.bloc(
+        "variance maximale",
+        detail=f"{n} par condition, portée {portee:g}, parmi {n_candidats} candidats",
+    )
+    choix: dict[tuple[Any, ...], list[tuple[dict[str, float], dict[str, float]]]] = {}
+    rang = 0
+    for mach in ch.conditions():
+        for combinaison in _combinaisons_discretes(discrets):
+            decalage = rang if decale else 0
+            rang += 1
+            condition = {**({} if mach is None else {"mach": mach}), **combinaison}
+            # Sans exclusion, le plan ne dépend que du décalage : on le réutilise.
+            cle = (decalage, *(sorted(condition.items()) if ch.exclusions else ()))
+            if cle not in choix:
+                choix[cle] = _choisir_variance_maximale(
+                    ch, n, n_candidats, portee, graine + 101 * decalage, condition
+                )
+            for angles, params in choix[cle]:
+                ch.ajouter(
+                    angles,
+                    {**params, **combinaison},
+                    table=table,
+                    machs=None if mach is None else [mach],
+                )
+    n_test = _test(ch, facteurs)
+    demarche = _demarche_modele(ch, "le krigeage (portées réestimées sur les résultats)", n_test)
+    demarche.insert(
+        1,
+        "Ce plan est celui du krigeage : chaque point a été placé là où la variance de "
+        "prédiction a priori (portée fixée) était la plus forte, compte tenu des points "
+        "déjà placés et de toutes leurs images par symétrie.",
+    )
+    return ch.clore(
+        "Krigeage : variance maximale",
+        f"réponse régulière à l'échelle de la portée ({portee:g} du domaine) ; krigeage validé",
+        "non",
+        demarche,
         facteurs,
     )
 
@@ -1246,6 +1461,7 @@ def _multi_fidelite(ch: _Chantier) -> PlanDOE:
             "des points HF là où la variance est forte.",
         ],
         facteurs,
+        reconstruction="co-krigeage",
     )
 
 
@@ -1262,6 +1478,8 @@ _CONSTRUCTEURS = {
     "grille_creuse": _grille_creuse,
     "lhs": lambda ch: _remplissage_espace(ch, "lhs"),
     "halton": lambda ch: _remplissage_espace(ch, "halton"),
+    "sobol": lambda ch: _remplissage_espace(ch, "sobol"),
+    "krigeage": _krigeage,
     "adaptatif": _adaptatif,
     "multi_fidelite": _multi_fidelite,
 }
