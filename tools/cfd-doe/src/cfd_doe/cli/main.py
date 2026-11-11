@@ -7,6 +7,7 @@
     cfd-doe domaine --traj 6DOF --geometrie cruciforme \\
             --alpha -20 20 --beta -5 5 --dl -10 10 --dm -20 20 --dn -20 20
     cfd-doe check ETUDE.yaml                   le fichier tient-il debout ?
+    cfd-doe remplir REMPLISSAGE.yaml           peupler les sous-domaines : doe.csv, figures
     cfd-doe exemple [DEST]                     recopier l'exemple
 
 Les options priment sur le fichier : ``cfd-doe domaine ETUDE.yaml --repere
@@ -22,6 +23,7 @@ import json
 import shutil
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import NoReturn
 
@@ -39,11 +41,15 @@ from cfd_doe.data.etude import (
     lire_plage,
 )
 from cfd_doe.data.geometries import GEOMETRIES
+from cfd_doe.data.remplissage import ErreurRemplissage, charger_remplissage
 from cfd_doe.data.trajectoires import TRAJECTOIRES
 from cfd_doe.engine.reduction import reduire, vers_dict
+from cfd_doe.engine.remplissage import ecrire_csv, remplir
 from cfd_doe.paths import EXEMPLE_DIR
 from cfd_doe.report import theme
 from cfd_doe.report.console import panneau_erreur, rapport_reduction
+from cfd_doe.report.figures import FiguresIndisponibles, tracer_figures
+from cfd_doe.report.remplissage import rapport_remplissage
 
 __all__ = ["build_parser", "main"]
 
@@ -151,6 +157,46 @@ def cmd_check(args: argparse.Namespace, sortie: _Sortie) -> int:
     return EXIT_OK
 
 
+def cmd_remplir(args: argparse.Namespace, sortie: _Sortie) -> int:
+    """Remplit les sous-domaines : rapport, fichier DOE, figures."""
+    remplissage = charger_remplissage(args.remplissage)
+    if args.repere:
+        remplissage = replace(remplissage, etude=remplissage.etude.avec(repere=args.repere))
+    if args.retenu:
+        if args.retenu not in [p.nom for p in remplissage.plans]:
+            raise ErreurEtude(
+                f"--retenu : « {args.retenu} » n'est pas un des plans "
+                f"({', '.join(p.nom for p in remplissage.plans)})"
+            )
+        remplissage = replace(remplissage, retenu=args.retenu)
+    resultat = remplir(remplissage)
+    sortie.out.print(rapport_remplissage(resultat, verbeux=args.verbose))
+
+    dossier = Path(args.sortie) if args.sortie else remplissage.sortie.dossier
+    ecrits: list[tuple[Path, str]] = []
+    if not args.sans_csv:
+        chemin = dossier / remplissage.sortie.csv
+        n = ecrire_csv(resultat.retenu, resultat.contexte, chemin)
+        ecrits.append((chemin, f"{n} calculs, plan « {resultat.retenu.nom} », tabulations"))
+        if remplissage.sortie.tous_les_csv:
+            base = Path(remplissage.sortie.csv)
+            for plan in resultat.plans:
+                chemin = dossier / f"{base.stem}_{plan.nom}{base.suffix}"
+                n = ecrire_csv(plan, resultat.contexte, chemin)
+                ecrits.append((chemin, f"{n} calculs, plan « {plan.nom} »"))
+    if remplissage.sortie.figures and not args.sans_figures:
+        try:
+            for figure in tracer_figures(resultat, dossier / "FIGURES"):
+                ecrits.append((figure, "figure"))
+        except FiguresIndisponibles as erreur:
+            sortie.out.print(f"[{theme.ATTENTION}]! {erreur}[/]")
+    if ecrits:
+        sortie.out.print()
+        for chemin, quoi in ecrits:
+            sortie.out.print(f"[{theme.OK}]écrit :[/] {chemin} [{theme.DISCRET}]({quoi})[/]")
+    return EXIT_OK
+
+
 def cmd_exemple(args: argparse.Namespace, sortie: _Sortie) -> int:
     """Recopie l'exemple livré avec le paquet."""
     destination = Path(args.destination)
@@ -160,6 +206,9 @@ def cmd_exemple(args: argparse.Namespace, sortie: _Sortie) -> int:
     sortie.out.print(f"[{theme.OK}]exemple copié dans[/] {destination}")
     sortie.out.print(
         f"[{theme.DISCRET}]essayer :[/] cfd-doe domaine {destination / 'ETUDE_FUSEE.yaml'}"
+    )
+    sortie.out.print(
+        f"[{theme.DISCRET}]puis :[/] cfd-doe remplir {destination / 'REMPLISSAGE_FUSEE.yaml'}"
     )
     return EXIT_OK
 
@@ -224,6 +273,26 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("etude", type=Path)
     check.set_defaults(fonction=cmd_check)
 
+    remplir_ = sous.add_parser(
+        "remplir",
+        help="peupler les sous-domaines : fichier DOE et figures",
+        description="Construit les plans d'un fichier de remplissage, les compare, écrit le DOE "
+        "du plan retenu (séparé par des tabulations) et les figures.",
+    )
+    remplir_.add_argument("remplissage", type=Path, help="fichier de remplissage YAML")
+    remplir_.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="détailler chaque plan, par Mach et sous-domaine",
+    )
+    remplir_.add_argument("--retenu", metavar="PLAN", help="plan à écrire dans le DOE (prime)")
+    remplir_.add_argument("--repere", choices=REPERES, help="repère de travail (prime)")
+    remplir_.add_argument("--sortie", metavar="DOSSIER", help="dossier de sortie (prime)")
+    remplir_.add_argument("--sans-figures", action="store_true", help="ne pas tracer les figures")
+    remplir_.add_argument("--sans-csv", action="store_true", help="ne pas écrire le fichier DOE")
+    remplir_.set_defaults(fonction=cmd_remplir)
+
     exemple = sous.add_parser("exemple", help="recopier l'exemple livré")
     exemple.add_argument("destination", nargs="?", default="cfd-doe-exemple")
     exemple.set_defaults(fonction=cmd_exemple)
@@ -236,6 +305,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         code: int = args.fonction(args, sortie)
+    except ErreurRemplissage as erreur:
+        _echec(sortie, str(erreur), indice="Voir README.md, § « Remplir les sous-domaines ».")
     except ErreurEtude as erreur:
         _echec(sortie, str(erreur), indice="Voir README.md, § « Fichier d'étude ».")
     return code

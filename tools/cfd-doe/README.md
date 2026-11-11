@@ -5,8 +5,10 @@
 1. **Réduire le domaine** *(disponible)* : à partir des plages des variables, du type de
    trajectoire et des symétries de l'engin, dire quels **sous-domaines** il faut réellement
    calculer.
-2. **Remplir les sous-domaines** *(à venir)* : grilles, LHS, Sobol…, lues depuis l'export de
-   l'étape 1.
+2. **Remplir les sous-domaines** *(disponible)* : `cfd-doe remplir` construit et compare les
+   plans (factoriel, décomposition, grilles creuses, LHS, adaptatif…), écrit le DOE prêt à
+   lancer et trace les figures. Méthodes, hypothèses et décomptes :
+   [`00_DOC/02_REMPLISSAGE.md`](00_DOC/02_REMPLISSAGE.md).
 
 La théorie est dans [`00_DOC/01_BASE_AERO.md`](00_DOC/01_BASE_AERO.md) : passage en
 (αt, φa), repère mixte, symétries, conséquences sur le DOE.
@@ -31,6 +33,7 @@ cfd-doe domaine ETUDE.yaml --repere cartesien      # ce que coûterait de rester
 cfd-doe domaine ETUDE.yaml --verbose               # + la démarche : comment on obtient les sous-domaines
 cfd-doe domaine ETUDE.yaml --export SD.yaml        # pour la phase de remplissage (.yaml / .json)
 cfd-doe check ETUDE.yaml                           # validation seule
+cfd-doe remplir REMPLISSAGE.yaml                   # peupler les sous-domaines : doe.csv, figures
 
 # Sans fichier :
 cfd-doe domaine --traj 6DOF --sym cruciforme \
@@ -186,17 +189,87 @@ complet = completer_table(
 Hypothèses du document : CN = −CZ, CA = −CX ; en polaire, coefficients et braquages en repère
 mixte. Elles ne servent qu'au traitement de l'axe αt = 0.
 
-## 8. Organisation
+## 8. Remplir les sous-domaines
+
+`cfd-doe remplir REMPLISSAGE.yaml` lit un second fichier, qui dit **comment** peupler les
+sous-domaines de l'étude : conditions (Mach, paramètres indépendants), grille de référence, et
+autant de plans nommés qu'on veut comparer. Le plan `retenu` part dans le fichier DOE.
+
+```bash
+pip install -e ../cfd-plot                           # pour les figures (facultatif)
+cfd-doe remplir REMPLISSAGE_FUSEE.yaml               # rapport, DOE/doe.csv, DOE/FIGURES/
+cfd-doe remplir REMPLISSAGE_FUSEE.yaml --verbose     # détail de chaque plan, par Mach et sous-domaine
+cfd-doe remplir REMPLISSAGE_FUSEE.yaml --retenu lhs --repere polaire --sortie DOE_LHS
+```
+
+```yaml
+etude: ETUDE_FUSEE.yaml          # donne les sous-domaines
+repere: cartesien                # surcharge facultative
+mach: [0.6, 0.8, 0.95, 1.05, 1.2, 1.5, 2.0, 3.0]
+parametres:
+  moteur: {niveaux: [0, 0.5, 1], nominal: 0}        # discret: true → jamais facteur continu
+niveaux:                         # grille de référence : liste, {pas: p} ou {n: k}
+  alpha: {pas: 5}
+  DM: [-20, -10, 0, 10, 20]
+plans:
+  complet: {type: factoriel}
+  ordre_1: {type: decomposition, ordre: 1, controle: {fraction: 0.15}}
+  lhs: {type: lhs, regle: 30, part_plans: 0.25, test: 0.15}
+retenu: ordre_1
+exclure:
+  - mach >= 2 and abs(alpha) > 15
+sortie: {dossier: DOE, csv: doe.csv, figures: true, tous_les_csv: false}
+```
+
+| Type | Options | Ce que contient le DOE |
+|---|---|---|
+| `factoriel` | `niveaux` (surcharge → niveaux inégaux) | `calcul` : tous les nœuds |
+| `etoile` | `niveaux` | `calcul` : un balayage par facteur |
+| `decomposition` | `ordre`, `primaires`, `increments_fonction_de`, `increments`, `couplages`, `croiser`, `controle` | `calcul` : base + une table par effet ; `controle` : nœuds croisés |
+| `composite_centre`, `box_behnken`, `grille_creuse` | `fraction`, `niveau`, `test` | `calcul` : le plan ; `test` : points indépendants |
+| `lhs`, `halton` | `regle` ou `points_par_mach`, `part_plans`, `test`, `graine`, `decale_par_mach` | `calcul` + `test` |
+| `adaptatif` | comme `lhs` (règle 10·d) | `calcul` : le lot initial ; `test` |
+| `multi_fidelite` | comme `lhs`, `regle_hf` ou `points_hf_par_mach` | colonne `fidelite` : `BF`, et `HF` emboîté |
+
+**Le fichier DOE** (`doe.csv`, séparé par des tabulations) : une ligne par calcul, colonnes
+`id`, `role`, `table`, `sous_domaine`, (`fidelite`), `mach`, les paramètres, puis les variables du
+repère de travail. En polaire s'ajoutent `alpha`, `beta`, `DM`, `DN` : le point en repère engin,
+celui qu'on impose au solveur. `role` vaut `calcul`, `controle` ou `test` : le rapport donne, pour
+chaque plan, la **démarche** — quoi lancer, dans quel ordre, quoi comparer.
+
+**Ce qui est garanti** : chaque point est dans un sous-domaine, une seule fois. Un plan sur grille
+ne garde que les nœuds des sous-domaines (les autres sont leurs images) ; un plan structuré, dont
+l'image d'un point n'est pas toujours dans le plan, est **replié** sur les sous-domaines ; un plan
+tiré l'est directement dedans, contraintes comprises (disque des braquages).
+
+**Souplesse** :
+
+- un même fichier vaut pour les deux repères : les niveaux de l'autre repère sont ignorés, un
+  effet nommé `DM` désigne `DMB` en polaire, et une exclusion écrite en `alpha` reste valable ;
+- `exclure` accepte comparaisons, `and`/`or`/`not`, arithmétique, `abs`/`min`/`max` sur `mach`,
+  les paramètres et les variables — c'est ainsi qu'on fait dépendre le domaine du Mach. À garder
+  compatible avec les symétries (`abs(alpha)`, pas `alpha`) ;
+- toute clé inconnue est refusée, avec la liste des clés admises.
+
+**Figures** (`DOE/FIGURES/`, avec `cfd-plot`) : `domaine.png` (ce que les symétries épargnent),
+`plan_<nom>.png` (chaque plan projeté sur tous les couples de facteurs, rôles en couleur),
+`comparaison_calculs.png` et `comparaison_plans.png`. Sans `cfd-plot`, le rapport et le DOE sont
+produits quand même.
+
+## 9. Organisation
 
 ```
-00_DOC/              théorie (FR)
+00_DOC/              théorie (FR) : 01 base aéro et symétries, 02 méthodes de remplissage
+                     (figures : generer_figures.py, avec cfd-plot ; décomptes : compter_remplissage.py)
 src/cfd_doe/
   core/              calcul pur : intervalles, angles, groupes de signes, domaine fondamental
   data/              variables, trajectoires, géométries, fichier d'étude
-  engine/            reduire(etude) → Reduction ; vers_dict pour l'export
+  engine/            reduire(etude) → Reduction ; vers_dict pour l'export ;
+                     remplir(remplissage) → plans, ecrire_csv
   report/            rendu Rich (FR, sans gras ; CFD_DOE_GRAS=1 le rétablit)
-  cli/               cfd-doe domaine | check | exemple
-  01_EXEMPLE/        ETUDE_FUSEE.yaml, completer_table.py, exemple_completion.py (données de paquet)
+  cli/               cfd-doe domaine | remplir | check | exemple
+  01_EXEMPLE/        ETUDE_FUSEE.yaml, REMPLISSAGE_FUSEE.yaml, completer_table.py,
+                     exemple_completion.py (données de paquet)
 tests/               pytest ; test_architecture.py vérifie la règle de couches
 ```
 

@@ -1,0 +1,108 @@
+# Remplir les sous-domaines de la fusée étudiante.
+#
+#   cfd-doe remplir REMPLISSAGE_FUSEE.yaml             # rapport, DOE/doe.csv, DOE/FIGURES/
+#   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --verbose   # détail de chaque plan
+#   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --retenu lhs
+#   cfd-doe remplir REMPLISSAGE_FUSEE.yaml --repere polaire
+#
+# Méthodes, hypothèses et décomptes : 00_DOC/02_REMPLISSAGE.md.
+
+nom: FUSEE_REMPLISSAGE
+etude: ETUDE_FUSEE.yaml      # l'étude cfd-doe : c'est elle qui donne les sous-domaines
+repere: cartesien            # surcharge l'étude (auto → polaire pour un cruciforme)
+
+# --- Conditions --------------------------------------------------------------
+# Le Mach est traité par tranches : chaque plan est répété à chaque Mach.
+mach: [0.6, 0.8, 0.95, 1.05, 1.2, 1.5, 2.0, 3.0]
+
+# Paramètres indépendants, invariants par les symétries de l'engin.
+#   niveaux  : valeurs prises par les plans sur grille
+#   nominal  : la référence (décomposition, étoile) ; défaut : le premier niveau
+#   discret  : true → jamais traité en facteur continu (allumé/éteint, configuration)
+parametres:
+  moteur: {niveaux: [0, 0.5, 1], nominal: 0}
+
+# --- Grille de référence -------------------------------------------------------
+# Par variable du repère de travail : une liste, {pas: p} ou {n: k}.
+# Les niveaux des deux repères peuvent cohabiter : ceux de l'autre sont ignorés.
+niveaux:
+  alpha: {pas: 5}
+  beta: {pas: 2.5}
+  DM: [-20, -10, 0, 10, 20]
+  DN: [-20, -10, 0, 10, 20]
+  DL: [-10, 0, 10]
+  # repère polaire
+  alphat: {pas: 5}
+  phia: {pas: 15}
+  DMB: [-20, -10, 0, 10, 20]
+  DNB: [-20, -10, 0, 10, 20]
+
+# --- Plans ---------------------------------------------------------------------
+# Autant de plans nommés qu'on veut : tous sont construits et comparés.
+# Types : factoriel, etoile, decomposition, composite_centre, box_behnken,
+#         grille_creuse, lhs, halton, adaptatif, multi_fidelite.
+plans:
+  complet:
+    type: factoriel
+
+  niveaux_inegaux:
+    type: factoriel
+    niveaux:                         # surcharge de la grille, variable par variable
+      beta: [-5, 0, 5]
+      DM: [-20, 0, 20]
+      DN: [-20, 0, 20]
+
+  ordre_1:
+    type: decomposition
+    ordre: 1
+    # primaires: [alpha, beta]            # variables de la table de base
+    # increments_fonction_de: [alpha]     # de quoi dépendent les incréments de braquage
+    # increments: {moteur: [alpha, beta]} # … effet par effet
+    controle: {fraction: 0.15, minimum: 5, graine: 0}   # points croisés ; false pour aucun
+
+  ordre_2:
+    type: decomposition
+    ordre: 2                         # incréments fonctions de (α, β)
+    couplages:                       # « tous », ou les paires qu'on veut
+      - [DM, DN]
+      - {paire: [moteur, DM], fonction_de: [alpha]}
+    controle: {fraction: 0.10}
+
+  composite:
+    type: composite_centre           # fraction: 0 (complet) | 1 (demi) ; défaut selon k
+    test: 0.15
+
+  creuse:
+    type: grille_creuse
+    niveau: 2
+
+  lhs:
+    type: lhs
+    regle: 30                        # 30 · d points vus par le métamodèle, divisés par les symétries
+    # points_par_mach: 45            # … ou un nombre imposé
+    part_plans: 0.25                 # part du budget sur les plans de symétrie (β = 0…)
+    test: 0.15                       # points de test indépendants
+    graine: 1
+
+  adaptatif:
+    type: adaptatif                  # lot initial (règle 10 · d) ; l'enrichissement suit les résultats
+
+  multi_fidelite:
+    type: multi_fidelite
+    regle: 30                        # basse fidélité
+    regle_hf: 8                      # haute fidélité, emboîtée dans la basse
+
+retenu: ordre_1                      # le plan écrit dans le fichier DOE
+
+# --- Exclusions ------------------------------------------------------------------
+# Conditions sur mach, les paramètres et les variables : le point est écarté de
+# tous les plans. À garder compatibles avec les symétries (|alpha|, pas alpha).
+exclure:
+  - mach >= 2 and abs(alpha) > 15    # pas de grande incidence en supersonique élevé
+
+# --- Sorties ---------------------------------------------------------------------
+sortie:
+  dossier: DOE
+  csv: doe.csv                       # séparé par des tabulations
+  figures: true                      # demande cfd-plot : pip install -e ../cfd-plot
+  tous_les_csv: false                # true : un doe_<plan>.csv par plan

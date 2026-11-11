@@ -1,0 +1,164 @@
+"""Plans d'expériences sur un pavé normalisé, sans rien savoir de l'aérodynamique.
+
+Deux familles (00_DOC/02_REMPLISSAGE.md) :
+
+- plans **structurés**, sur ``[-1, 1]^k`` : composite centré, Box-Behnken,
+  grille creuse de Smolyak. Tous sont symétriques par changement de signe de
+  chaque facteur : une symétrie de l'engin envoie un point du plan sur un autre ;
+- plans à **remplissage d'espace**, sur ``[0, 1]^k`` : hypercube latin
+  (optimisé maximin) et suite de Halton.
+
+Un point est un tuple de flottants ; l'appelant met à l'échelle.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from itertools import product
+
+import numpy as np
+
+__all__ = [
+    "box_behnken",
+    "composite_centre",
+    "grille_creuse",
+    "halton",
+    "hypercube_latin",
+    "sous_ensemble_maximin",
+]
+
+Point = tuple[float, ...]
+
+#: Les premiers nombres premiers, bases de la suite de Halton.
+_PREMIERS = (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53)
+
+
+def composite_centre(k: int, fraction: int = 0) -> list[Point]:
+    """Plan composite centré à faces centrées : sommets, points axiaux, centre.
+
+    ``fraction = 0`` : les ``2^k`` sommets ; ``fraction = 1`` : la demi-fraction
+    ``2^(k-1)`` où le dernier facteur est le produit des autres (résolution V
+    dès ``k = 5`` : effets principaux et interactions doubles non confondus).
+    """
+    if k < 2:
+        raise ValueError("un plan composite centré demande au moins 2 facteurs")
+    if fraction not in (0, 1):
+        raise ValueError("fraction : 0 (complet) ou 1 (demi-fraction)")
+    sommets: list[Point] = list(product((-1.0, 1.0), repeat=k - fraction))
+    if fraction == 1:
+        sommets = [(*s, float(np.prod(s))) for s in sommets]
+    axiaux = [tuple(s if i == j else 0.0 for j in range(k)) for i in range(k) for s in (-1.0, 1.0)]
+    return [*sommets, *axiaux, tuple([0.0] * k)]
+
+
+def box_behnken(k: int) -> list[Point]:
+    """Box-Behnken « toutes les paires » : ±1 sur deux facteurs, 0 ailleurs, plus le centre.
+
+    Aucun sommet du pavé : jamais tous les facteurs à l'extrême ensemble.
+    """
+    if k < 3:
+        raise ValueError("un plan de Box-Behnken demande au moins 3 facteurs")
+    points: list[Point] = [tuple([0.0] * k)]
+    for i in range(k):
+        for j in range(i + 1, k):
+            for a, b in product((-1.0, 1.0), repeat=2):
+                p = [0.0] * k
+                p[i], p[j] = a, b
+                points.append(tuple(p))
+    return points
+
+
+def grille_creuse(k: int, niveau: int) -> list[Point]:
+    """Grille creuse de Smolyak, points de Clenshaw-Curtis emboîtés (1, 3, 5, 9… par axe).
+
+    Le niveau 1 est l'étoile ``2k + 1`` ; le niveau 2 lui ajoute les
+    croisements deux à deux (``2k² + 2k + 1`` points).
+    """
+    if k < 1 or niveau < 0:
+        raise ValueError("grille creuse : k ≥ 1 et niveau ≥ 0")
+
+    def axe(i: int) -> list[float]:
+        if i == 0:
+            return [0.0]
+        m = 2**i + 1
+        return [round(-math.cos(math.pi * j / (m - 1)), 12) + 0.0 for j in range(m)]
+
+    points: set[Point] = set()
+    for indices in product(range(niveau + 1), repeat=k):
+        if sum(indices) <= niveau:
+            points.update(product(*(axe(i) for i in indices)))
+    return sorted(points)
+
+
+def hypercube_latin(n: int, k: int, graine: int = 0, essais: int = 100) -> list[Point]:
+    """Hypercube latin de ``n`` points en dimension ``k``, le meilleur de ``essais`` (maximin).
+
+    Chaque axe est découpé en ``n`` tranches, chacune visitée une fois, le
+    point tiré au hasard dans sa tranche. Parmi ``essais`` tirages, on garde
+    celui dont la plus petite distance entre deux points est la plus grande.
+    """
+    if n < 1 or k < 1:
+        return []
+    rng = np.random.default_rng(graine)
+    meilleur: np.ndarray | None = None
+    distance = -1.0
+    for _ in range(max(1, essais if n > 1 else 1)):
+        plan = np.column_stack([(rng.permutation(n) + rng.random(n)) / n for _ in range(k)])
+        d = _distance_minimale(plan)
+        if d > distance:
+            meilleur, distance = plan, d
+    assert meilleur is not None
+    return [tuple(float(x) for x in ligne) for ligne in meilleur]
+
+
+def _distance_minimale(plan: np.ndarray) -> float:
+    if len(plan) < 2:
+        return math.inf
+    ecarts = plan[:, None, :] - plan[None, :, :]
+    carres = (ecarts**2).sum(-1)
+    return float(np.sqrt(carres[np.triu_indices(len(plan), 1)].min()))
+
+
+def halton(n: int, k: int, depart: int = 1) -> list[Point]:
+    """Les ``n`` points de la suite de Halton en dimension ``k``, à partir du rang ``depart``.
+
+    Déterministe et **extensible** : les ``n`` premiers points d'une suite plus
+    longue sont déjà bien répartis ; ``depart`` permet de continuer une suite,
+    ou d'en décaler une d'un Mach à l'autre.
+    """
+    if k > len(_PREMIERS):
+        raise ValueError(f"suite de Halton : au plus {len(_PREMIERS)} facteurs")
+
+    def radical(i: int, base: int) -> float:
+        valeur, facteur = 0.0, 1.0 / base
+        while i > 0:
+            valeur += facteur * (i % base)
+            i //= base
+            facteur /= base
+        return valeur
+
+    return [tuple(radical(i, _PREMIERS[j]) for j in range(k)) for i in range(depart, depart + n)]
+
+
+def sous_ensemble_maximin(points: Sequence[Sequence[float]], n: int) -> list[int]:
+    """Indices de ``n`` points bien répartis parmi ``points`` (glouton, maximin).
+
+    Sert à extraire d'un plan basse fidélité le sous-plan haute fidélité
+    emboîté. Part du point le plus central, puis ajoute à chaque pas le point le
+    plus éloigné de ceux déjà choisis.
+    """
+    if n >= len(points):
+        return list(range(len(points)))
+    if n <= 0:
+        return []
+    tableau = np.asarray(points, dtype=float)
+    etendue = np.ptp(tableau, axis=0)
+    tableau = (tableau - tableau.min(axis=0)) / np.where(etendue > 0, etendue, 1.0)
+    choisis = [int(np.argmin(((tableau - tableau.mean(axis=0)) ** 2).sum(-1)))]
+    distances = ((tableau - tableau[choisis[0]]) ** 2).sum(-1)
+    while len(choisis) < n:
+        suivant = int(np.argmax(distances))
+        choisis.append(suivant)
+        distances = np.minimum(distances, ((tableau - tableau[suivant]) ** 2).sum(-1))
+    return choisis

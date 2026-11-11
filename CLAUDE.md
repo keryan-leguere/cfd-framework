@@ -624,9 +624,8 @@ not part of the Bash framework's runtime:
       `${CFD_VALIDATION_PYTHON:-python3} -m`, never the console script.
 - **`tools/cfd-doe/`** — CFD design of experiments. Phase 1 (done): reduce the input domain
   (`alpha, beta, DL, DM, DN`, degrees) to the **sub-domains actually worth computing**, from the
-  trajectory type and the vehicle's symmetries; phase 2 (planned): fill them (grids, LHS…) by
-  reading the `--export` YAML/JSON. CLI `cfd-doe domaine ETUDE.yaml | --traj … --sym … --alpha
-  BAS HAUT … [--verbose]`, `check`, `exemple`. Theory in `00_DOC/01_BASE_AERO.md` (strict conversion of
+  trajectory type and the vehicle's symmetries; phase 2 (done): fill them — `cfd-doe remplir`. CLI `cfd-doe domaine ETUDE.yaml | --traj … --sym … --alpha
+  BAS HAUT … [--verbose]`, `remplir REMPLISSAGE.yaml`, `check`, `exemple`. Theory in `00_DOC/01_BASE_AERO.md` (strict conversion of
   `BASE.txt`, kept alongside). Layout `src/cfd_doe/{core,data,engine,report,cli}/`, layer rule
   enforced by `tests/test_architecture.py`; `01_EXEMPLE/` is package data. Rich FR, no bold
   (`CFD_DOE_GRAS=1`), table laid out to fit 80 columns. Key points:
@@ -662,6 +661,35 @@ not part of the Bash framework's runtime:
       `domaine=` widens the target beyond the sub-domains' envelope. `exemple_completion.py`
       builds a dummy DOE from a symmetric analytic model and validates every deduced row
       against it (`tests/test_completion.py`). Needs the `[table]` extra (pandas).
+    - **`00_DOC/02_REMPLISSAGE.md`** documents phase 2 before any code exists: filling methods
+      from full factorial to adaptive/multi-fidelity designs, each with its *hypothesis* and its
+      run count on one worked example (double symmetry, 5 angles, 8 Mach, one 3-level engine
+      parameter: 81 000 raw → 20 688 full factorial in the sub-domains → 624 order-1 build-up →
+      ~360 space-filling). Exact counts are **orbit counts** produced by
+      `00_DOC/compter_remplissage.py`, which asserts they equal the grid nodes falling in
+      cfd-doe's sub-domains; the space-filling/adaptive figures are flagged as rules of thumb.
+      Its six figures (`00_DOC/FIGURES/remplissage_*.png`) come from `00_DOC/generer_figures.py`,
+      drawn through `cfd_plot` (install it editable first — it is not a cfd-doe dependency) and
+      reading their numbers from `compter_remplissage.py`, never hard-coded.
+    - **`cfd-doe remplir REMPLISSAGE.yaml [-v] [--retenu P] [--repere R] [--sortie D]`** fills
+      the sub-domains. The file names any number of plans (`type:` factoriel, etoile,
+      decomposition, composite_centre, box_behnken, grille_creuse, lhs, halton, adaptatif,
+      multi_fidelite), all built and compared; `retenu` goes to `doe.csv` (**tab-separated**,
+      columns id/role/table/sous_domaine/[fidelite]/mach/params/variables, plus engine-frame
+      alpha/beta/DM/DN in polar). Layers: `core/plans.py` (pure generators on the unit box),
+      `core/expression.py` (AST-whitelisted `exclure` conditions, no `eval`),
+      `data/remplissage.py` (YAML → `Remplissage`, unknown keys refused), `engine/remplissage.py`
+      (`remplir` → `PlanDOE` with role calcul/controle/test, tables and the *démarche*),
+      `report/remplissage.py` (Rich) and `report/figures.py` (cfd-plot, optional: without it the
+      report and CSV are still written). Three placement rules, each tested: grid plans **filter**
+      nodes outside the sub-domains (their images are other grid nodes); structured plans **fold**
+      each point onto its representative (`Contexte.replier`) — a half-fraction composite design
+      is *not* closed under the vehicle's symmetries because the engine factor never flips, and
+      filtering it silently dropped a third of the design; drawn plans sample inside the strata
+      with rejection on the disk constraint. A structured plan's deflection box is inscribed in
+      the disk. One file serves both frames: other-frame `niveaux` are ignored with a note,
+      effect names are aliased (DM ↔ DMB), and `exclure` sees both frames' variables. Grid counts
+      reproduce `00_DOC/02_REMPLISSAGE.md` exactly (`tests/test_remplissage.py`).
     - The **orbit test** (`tests/test_reduction.py`) is the guarantee: every grid point's full
       orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
       trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200
