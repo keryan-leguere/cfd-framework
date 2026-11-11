@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-doe"
+version = "0.1.0"
+description = "Plan d'expériences CFD : réduction du domaine (trajectoire, symétries) puis remplissage."
+# 3.9 est l'interpréteur des bases RHEL 8 / Rocky 8 encore courantes sur les
+# calculateurs isolés : le paquet doit s'y installer sans backport.
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "numpy>=1.26",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Le script 01_EXEMPLE/completer_table.py (compléter une table de résultats par
+# symétrie) travaille sur un DataFrame ; le paquet lui-même n'en a pas besoin.
+table = ["pandas>=1.5"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pandas>=1.5",
+    "pandas-stubs",
+]
+
+[project.scripts]
+cfd-doe = "cfd_doe.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_doe = ["01_EXEMPLE/*.yaml", "01_EXEMPLE/*.md", "01_EXEMPLE/*.py"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+# Docs, rapport et messages sont en français : tirets, signe moins, signe
+# multiplié, apostrophes courbes et espaces insécables sont voulus. Les lettres
+# grecques sont les symboles de mécanique du vol (incidence, dérapage, roulis
+# aérodynamique, braquage), pas des sosies.
+allowed-confusables = ["–", "−", "×", "’", " ", " ", "α", "β", "δ", "φ", "ρ", "θ"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["SIM300"]
+"src/cfd_doe/__init__.py" = ["I001", "RUF022"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_doe"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+# mypy ne sait plus cibler 3.9 : la compatibilité est tenue par le code
+# (``from __future__ import annotations`` partout) et par ruff (py39).
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

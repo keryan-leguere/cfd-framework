@@ -1,0 +1,24 @@
+# Fusée étudiante cruciforme, simulée en 6DOF.
+#
+#   cfd-doe domaine ETUDE_FUSEE.yaml
+#   cfd-doe domaine ETUDE_FUSEE.yaml --repere cartesien   # ce que coûterait (α, β)
+#   cfd-doe domaine ETUDE_FUSEE.yaml --traj 3DOF_TANGAGE  # vol plan
+#
+# Angles en degrés. Conventions : 00_DOC/01_BASE_AERO.md §1.
+
+etude:
+  nom: FUSEE_ETUDIANTE
+  description: Cruciforme 4 ailettes pilotées, domaine de vol de la phase propulsée
+
+trajectoire: 6DOF            # 1DOF, 2DOF, 3DOF_MASSE_PONCTUELLE, 3DOF_TANGAGE, 4DOF, 5DOF, 6DOF
+geometrie: cruciforme        # quelconque, plan_vertical, double_symetrie, cruciforme,
+                             # revolution, ou {type: n_ailettes, n_ailettes: 3}
+repere: auto                 # auto, cartesien, polaire
+limite_braquage: disque      # disque : √(δm² + δn²) ≤ δmax ; carre : |δm|, |δn| ≤ δmax (§7.6)
+
+variables:
+  alpha: [-20, 20]
+  beta: [-5, 5]
+  DL: [-10, 10]
+  DM: [-20, 20]
+  DN: [-20, 20]

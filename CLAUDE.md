@@ -622,6 +622,50 @@ not part of the Bash framework's runtime:
     - CLI: `toolchain`, `construire`, `inspecter`, `check`, `valider`, `exemple`; exit `0`
       conforming, `1` input error, `2` gaps found. `RUN_EXEMPLE.sh` uses
       `${CFD_VALIDATION_PYTHON:-python3} -m`, never the console script.
+- **`tools/cfd-doe/`** — CFD design of experiments. Phase 1 (done): reduce the input domain
+  (`alpha, beta, DL, DM, DN`, degrees) to the **sub-domains actually worth computing**, from the
+  trajectory type and the vehicle's symmetries; phase 2 (planned): fill them (grids, LHS…) by
+  reading the `--export` YAML/JSON. CLI `cfd-doe domaine ETUDE.yaml | --traj … --sym … --alpha
+  BAS HAUT … [--verbose]`, `check`, `exemple`. Theory in `00_DOC/01_BASE_AERO.md` (strict conversion of
+  `BASE.txt`, kept alongside). Layout `src/cfd_doe/{core,data,engine,report,cli}/`, layer rule
+  enforced by `tests/test_architecture.py`; `01_EXEMPLE/` is package data. Rich FR, no bold
+  (`CFD_DOE_GRAS=1`), table laid out to fit 80 columns. Key points:
+    - **Trajectory types (Freeman)** in `data/trajectoires.py`: a variable is active iff the type
+      consumes the effort it drives (N←α, Y←β, m←δm, n←δn, l←δl); inactive ones pinned to 0.
+      `3DOF_MASSE_PONCTUELLE` and `3DOF_TANGAGE` are distinct types.
+    - **Frame choice** (`repere: auto`): polar (αt, φa) with mixed-frame deflections
+      (DMB, DNB) when the geometry has rotation order ≥ 3 or is a body of revolution and both
+      α, β are active; Cartesian otherwise (only V/H mirrors and 180° rotation are expressible
+      there, and a forced Cartesian cruciform reports what it loses).
+    - **Fundamental domain as strata** (`core/domaine_fondamental.py`): sign-flip groups split
+      recursively on the first flipped variable (`v > 0` with the sub-group, `v = 0` with the
+      whole group); in polar, φa arcs are folded into the D_N sector, mirror planes halve
+      (δl, δnB), and the αt = 0 axis gets D_N acting on body-frame deflections (a `Secteur`
+      constraint for N ≥ 3). Open bounds matter: `]0;20]` keeps plane points from being counted
+      twice. All cartesian sign conventions live in `data/geometries.py` — the one file to edit if
+      the user's deflection conventions differ.
+    - **`--verbose`** prints the *démarche* (trajectory → frame → group → stratification tree →
+      gluing) before the table, each leaf ending `→ #k`. It is written *during* `reduire`
+      (`engine/demarche.py`, `Reduction.demarche`) from the optional `journal=` of
+      `stratifier_signes` / `fusionner` — never recomputed — and `numeroteur` raises if a leaf
+      does not fall in exactly one sub-domain, so story and table cannot drift silently.
+    - **`01_EXEMPLE/completer_table.py`** (package data, copied by `cfd-doe exemple`) is a
+      *standalone* script — pandas/numpy/yaml/rich, **no `cfd_doe` import** (enforced in
+      `test_architecture.py`) — that fills a results DataFrame up to a full product grid
+      ("square" table) by symmetry: each missing node takes `s_g · C(g·x)` from a computed
+      image. The group and the coefficient signs come from the export's `symetries` key
+      (`engine/reduction.py::symetries_exportees`, signs in `data/geometries.py`:
+      `COEFFICIENT_DE`, `COEFFICIENTS_HORS_PAV`), so no sign convention is duplicated. Polar
+      αt = 0 is special: φa is a convention there, so nodes are brought back to φa = 0 by
+      rotating deflections and (CN, CY)/(Cm, Cn) (§3.2) and bilinearly — or, at the disk rim,
+      triangularly — interpolated when the image falls between nodes (flagged in `origine`).
+      `domaine=` widens the target beyond the sub-domains' envelope. `exemple_completion.py`
+      builds a dummy DOE from a symmetric analytic model and validates every deduced row
+      against it (`tests/test_completion.py`). Needs the `[table]` extra (pandas).
+    - The **orbit test** (`tests/test_reduction.py`) is the guarantee: every grid point's full
+      orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
+      trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200
+      §7.4) are reproduced.
 
 Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
 its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.9) with a `dev` extra

@@ -1,0 +1,821 @@
+# Base aéro : passage en (αt, φa), repère mixte et réduction du DOE
+
+*Cours académique pour projet de fusée étudiant — 8 novembre 2026*
+
+---
+
+## Sommaire
+
+- [1. Objet et conventions](#1-objet-et-conventions)
+- [1 bis. Rappel : les repères de la mécanique du vol](#1-bis-rappel--les-repères-de-la-mécanique-du-vol)
+- [2. Passage (α, β) → (αt, φa)](#2-passage-α-β--αt-φa)
+- [3. Le repère mixte](#3-le-repère-mixte)
+- [4. Les symétries en repère mixte](#4-les-symétries-en-repère-mixte)
+- [5. Conséquence sur le DOE, sans braquage](#5-conséquence-sur-le-doe-sans-braquage)
+- [6. La série de Fourier en φa](#6-la-série-de-fourier-en-φa)
+- [7. Extension aux braquages](#7-extension-aux-braquages)
+- [8. Synthèse et recommandations](#8-synthèse-et-recommandations)
+
+---
+
+## 1. Objet et conventions
+
+Pour un engin à symétrie de révolution, en double symétrie ou cruciforme, décrire le vent en
+(αt, φa) et les efforts en repère mixte divise le DOE CFD par 2 à 8, sans perte d'information. Ce
+rapport explique le passage, ses formules et ses conséquences sur le DOE, sans puis avec braquages.
+
+Conventions retenues (repère engin, convention aéronautique usuelle) :
+
+- x vers l'avant, y vers la droite, z vers le bas ; repère direct.
+- Vitesse de l'engin par rapport à l'air, en axes engin : (u, v, w), de norme V.
+- Incidence α = atan(w/u), dérapage β = asin(v/V).
+- Coefficients en repère engin : CX, CY, CZ (efforts), Cl, Cm, Cn (moments autour de x, y, z).
+- Braquages équivalents : δl (roulis), δm (tangage), δn (lacet).
+
+Toutes les formules ci-dessous supposent ces conventions. Si votre code utilise d'autres signes
+(CN = −CZ, CA = −CX, β défini par atan), seuls des signes changent : la logique est la même.
+
+### Le vecteur vitesse : ce qu'il représente
+
+V est la vitesse aérodynamique : la vitesse du centre de gravité (ou du point de référence) par
+rapport à la masse d'air, projetée sur le trièdre engin. C'est elle, et non la vitesse sol, qui
+crée les efforts aérodynamiques.
+
+- V = vitesse sol − vitesse du vent. Sans vent, les deux sont égales.
+- Ses composantes (u, v, w) sont ses projections sur x (avant), y (aile droite) et z (vers le bas).
+- Le vent relatif, celui que « voit » l'avion, est −V. C'est lui qu'on impose à l'infini amont en CFD.
+- α et β ne sont que la direction de V dans le trièdre engin. Ils ne disent rien de l'orientation
+  de l'avion par rapport au sol : en vol rectiligne, ailes à plat, sans vent, l'assiette vaut
+  θ = γ + α, avec γ la pente.
+
+### Le vecteur vitesse : comment on le calcule
+
+En simulation 6 degrés de liberté, on part de la vitesse de l'avion dans le repère terrestre
+(Nord, Est, Bas), on retranche le vent, puis on projette sur les axes engin avec la matrice de
+passage fonction des angles d'Euler (φ roulis, θ assiette, ψ cap) :
+
+$$
+\begin{pmatrix}u\\v\\w\end{pmatrix} = T_{b\leftarrow 0}(\varphi,\theta,\psi)\left[\begin{pmatrix}V_N\\V_E\\V_D\end{pmatrix} - \begin{pmatrix}W_N\\W_E\\W_D\end{pmatrix}\right]
+$$
+
+Dans la plupart des simulateurs, u, v, w sont d'ailleurs directement des états, intégrés par les
+équations de Newton écrites en axes engin. On en déduit ensuite V = √(u² + v² + w²), puis α, β (et
+αt, φa) par les formules de la section 2, et le Mach M = V / a(altitude).
+
+En CFD, on fait le chemin inverse : on part de (M, α, β), on calcule V = M · a(altitude), et on
+impose l'écoulement à l'infini égal à −V. En axes engin :
+
+$$
+\vec V_\infty = -V\left(\cos\alpha\cos\beta,\ \sin\beta,\ \sin\alpha\cos\beta\right)
+$$
+
+> **Piège fréquent** : le maillage CFD est souvent en axes « avion » (x vers l'arrière, y vers la
+> droite, z vers le haut), soit une rotation de 180° autour de y. Dans ces axes, l'écoulement amont
+> vaut V (cos α cos β, −sin β, sin α cos β) : il arrive de dessous pour α > 0 et de la droite pour
+> β > 0. Les efforts calculés doivent être ramenés en axes engin par la même rotation (CX et CZ
+> changent de signe).
+
+---
+
+## 1 bis. Rappel : les repères de la mécanique du vol
+
+Huit repères suffisent à décrire un vol et une base aéro ; tous sont reliés au repère engin par une
+ou plusieurs rotations, chacune nommée par un angle. Tous ont leur origine au centre de gravité,
+sauf le repère terrestre (point fixe au sol) et le repère de maillage CFD (référence géométrique).
+
+Le repère engin est le pivot : on y écrit les équations du mouvement et les tables aéro, et tous
+les autres s'y rattachent. La voie du haut (χ, γ, μ) décrit la trajectoire, la voie du milieu
+(α, β) le vent vu par l'avion.
+
+### Les repères
+
+| Repère | Axes | Sert à |
+|---|---|---|
+| Terrestre local R0 (NED) | x0 Nord, y0 Est, z0 vers le bas (verticale locale) | Position, navigation, gravité, vent |
+| Véhicule Rv | Parallèles à R0, origine au CG | Exprimer la vitesse sol et l'attitude |
+| Engin (avion) Rb | xb avant (axe fuselage), yb aile droite, zb vers le bas ; (xb, zb) = plan de symétrie | Équations du mouvement, efforts et moments, p q r, inerties, gouvernes |
+| Stabilité Rs | xs = projection de V dans le plan de symétrie, ys = yb | Linéarisation, dérivées de stabilité |
+| Aérodynamique Ra | xa selon V (vitesse air), za dans le plan de symétrie, ya complète le trièdre | Portance, traînée, force latérale |
+| Trajectoire Rk | xk selon la vitesse sol, zk dans le plan vertical | Pente γ, route χ, guidage |
+| Mixte (aérobalistique) Rm | x = xb, zB dans le PAV (plan d'incidence) | Bases aéro d'engins à symétrie (section 3) |
+| Maillage CFD | x vers l'arrière, y vers la droite, z vers le haut | Géométrie et calcul CFD |
+
+### Les passages entre repères
+
+| De → vers | Angles | Rotations, dans l'ordre |
+|---|---|---|
+| R0 (Rv) → Rb | ψ cap, θ assiette, φ gîte (angles d'Euler) | ψ autour de z0, puis θ autour du nouvel axe y, puis φ autour de xb |
+| Rb → Rs | α incidence | Autour de yb : xb tourne d'un angle α vers zb pour venir sur xs |
+| Rs → Ra | β dérapage | Autour de zs : xs tourne d'un angle β vers ys pour venir sur xa |
+| Rv → Rk | χ route, γ pente | χ autour de z0, puis γ autour du nouvel axe y (γ > 0 en montée) |
+| Rk → Ra | μ gîte aérodynamique | Autour de xk, confondu avec xa en l'absence de vent |
+| Rb → Rm | φa roulis aérodynamique | Autour de xb |
+| Rb → maillage CFD | aucun | 180° autour de yb (x et z changent de signe) |
+
+En l'absence de vent, Ra et Rk ont le même axe x : la vitesse air et la vitesse sol sont alignées.
+Avec du vent, elles diffèrent, et c'est Ra qui compte pour l'aérodynamique.
+
+L'assiette se mesure par rapport au sol, la pente aussi ; l'incidence, elle, se mesure entre la
+vitesse et l'avion. C'est la seule des trois qui pilote les efforts aérodynamiques, d'où sa place
+dans les tables.
+
+### Deux relations à connaître
+
+En vol symétrique (β = 0), ailes à plat et sans vent, les trois angles du plan vertical
+s'additionnent : θ = γ + α.
+
+Passage des efforts du repère engin au repère aérodynamique (traînée selon −xa, portance selon
+−za, force latérale selon ya) :
+
+$$
+\begin{aligned}
+C_D &= -\left(C_X\cos\alpha\cos\beta + C_Y\sin\beta + C_Z\sin\alpha\cos\beta\right)\\
+C_L &= C_X\sin\alpha - C_Z\cos\alpha\\
+C_{Y_a} &= -C_X\cos\alpha\sin\beta + C_Y\cos\beta - C_Z\sin\alpha\sin\beta
+\end{aligned}
+$$
+
+Ces formules viennent des axes aérodynamiques exprimés en axes engin :
+xa = (cos α cos β, sin β, sin α cos β), za = (−sin α, 0, cos α), ya = za × xa.
+
+### Zoom : repère terrestre R0, repère véhicule Rv et passage au repère engin
+
+R0 est fixe au sol, Rv est porté par l'avion mais garde l'orientation de R0 ; le repère engin
+s'obtient à partir de Rv par trois rotations successives : cap ψ, assiette θ, gîte φ.
+
+#### Le repère terrestre local R0
+
+- Origine : un point O fixe à la surface de la Terre (seuil de piste, point de lancement).
+- x0 vers le Nord géographique, y0 vers l'Est, z0 vers le bas selon la verticale locale (direction
+  du fil à plomb). D'où son nom NED (North, East, Down).
+- Le plan (x0, y0) est le plan horizontal local. L'altitude vaut h = −z0.
+- Hypothèse de Terre plate et non tournante : R0 est alors considéré comme galiléen, et on peut y
+  écrire directement la loi de Newton. C'est l'hypothèse standard pour l'avion civil et pour la
+  plupart des bases aéro.
+- Limite : pour de grandes distances (plusieurs centaines de km), de longues durées ou des
+  vitesses très élevées, il faut un repère géocentrique (ECEF ou inertiel) et les termes de
+  Coriolis et de rotondité.
+- Attention aux conventions : certains outils (SIG, robotique) utilisent ENU (x Est, y Nord,
+  z haut). Le passage NED ↔ ENU échange x et y et change le signe de z.
+
+Ce qu'on exprime dans R0 :
+
+| Grandeur | Composantes dans R0 |
+|---|---|
+| Position du CG | (x0, y0, z0), avec z0 = −h |
+| Vitesse sol | (VN, VE, VD), dérivée de la position ; VD < 0 en montée |
+| Gravité | (0, 0, g) |
+| Vent | (WN, WE, WD) |
+
+#### Le repère véhicule Rv
+
+- Origine au centre de gravité de l'avion : Rv se déplace avec lui.
+- Axes toujours parallèles à ceux de R0 : Rv ne tourne jamais avec l'avion.
+- Il sert à définir l'attitude : les angles d'Euler mesurent l'orientation du repère engin par
+  rapport à Rv, deux repères de même origine.
+- Comme R0 et Rv ont la même orientation, la matrice de passage vers le repère engin est la même
+  pour les deux. On écrit indifféremment T(b←0) ou T(b←v).
+
+R0 donne la position (le point O et les pointillés) ; Rv, porté par le CG avec les mêmes
+directions Nord, Est, Bas, sert de référence fixe pour mesurer l'orientation de l'avion.
+
+#### Passage Rv → Rb : les trois rotations
+
+On passe de Rv au repère engin par trois rotations, toujours dans cet ordre (séquence 3-2-1, ou
+ZYX) :
+
+1. **Cap ψ** autour de z0 : (x0, y0, z0) devient (x1, y1, z1 = z0). x1 est la direction du nez
+   projetée sur l'horizontale.
+2. **Assiette θ** autour de y1 : (x1, y1, z1) devient (xb, y2 = y1, z2). Le nez monte de θ
+   au-dessus de l'horizon.
+3. **Gîte φ** autour de xb : (xb, y2, z2) devient (xb, yb, zb). L'aile droite descend pour φ > 0.
+
+Plages : ψ de −180° à 180° (ou 0 à 360°), θ de −90° à 90°, φ de −180° à 180°. L'ordre compte :
+appliquer les rotations dans un autre ordre donne une autre orientation.
+
+Chaque rotation se fait autour d'un axe produit par la précédente : z0 (commun à R0 et au repère
+intermédiaire 1), puis y1, puis xb. C'est pour cela que l'ordre ne peut pas être changé.
+
+#### Matrices de passage
+
+Chaque rotation élémentaire donne les composantes d'un vecteur dans le nouveau repère à partir de
+ses composantes dans l'ancien :
+
+$$
+R_z(\psi)=\begin{pmatrix}\cos\psi&\sin\psi&0\\-\sin\psi&\cos\psi&0\\0&0&1\end{pmatrix},\quad R_y(\theta)=\begin{pmatrix}\cos\theta&0&-\sin\theta\\0&1&0\\\sin\theta&0&\cos\theta\end{pmatrix},\quad R_x(\varphi)=\begin{pmatrix}1&0&0\\0&\cos\varphi&\sin\varphi\\0&-\sin\varphi&\cos\varphi\end{pmatrix}
+$$
+
+La matrice complète s'obtient en les enchaînant, la dernière rotation à gauche :
+
+$$
+T_{b\leftarrow 0}=R_x(\varphi)\,R_y(\theta)\,R_z(\psi)=\begin{pmatrix}\cos\theta\cos\psi&\cos\theta\sin\psi&-\sin\theta\\ \sin\varphi\sin\theta\cos\psi-\cos\varphi\sin\psi&\sin\varphi\sin\theta\sin\psi+\cos\varphi\cos\psi&\sin\varphi\cos\theta\\ \cos\varphi\sin\theta\cos\psi+\sin\varphi\sin\psi&\cos\varphi\sin\theta\sin\psi-\sin\varphi\cos\psi&\cos\varphi\cos\theta\end{pmatrix}
+$$
+
+C'est une matrice de rotation : son inverse est sa transposée, T(0←b) = T(b←0)ᵀ.
+
+#### Utilisations directes
+
+- **Gravité en axes engin** : on applique T à (0, 0, g), soit g (−sin θ, sin φ cos θ, cos φ cos θ).
+  C'est elle qui apparaît dans les équations du mouvement écrites en axes engin.
+- **Vitesse aérodynamique** : (u, v, w) = T [(VN, VE, VD) − (WN, WE, WD)], comme vu en section 1.
+- **Trajectoire** : la vitesse sol dans R0 s'obtient par la transposée,
+  (VN, VE, VD) = Tᵀ (u, v, w) + vent, puis on intègre pour obtenir la position.
+- **Évolution de l'attitude**, à partir des vitesses angulaires (p, q, r) mesurées en axes engin :
+
+$$
+\dot\varphi = p + (q\sin\varphi + r\cos\varphi)\tan\theta,\qquad \dot\theta = q\cos\varphi - r\sin\varphi,\qquad \dot\psi = \frac{q\sin\varphi + r\cos\varphi}{\cos\theta}
+$$
+
+#### Exemple numérique
+
+Avion au cap ψ = 30°, assiette θ = 10°, ailes à plat (φ = 0), vitesse u = 100 m/s selon son axe
+(v = w = 0), sans vent. La première colonne de T donne la vitesse sol :
+
+- VN = 100 × cos 10° × cos 30° = 85,3 m/s
+- VE = 100 × cos 10° × sin 30° = 49,2 m/s
+- VD = −100 × sin 10° = −17,4 m/s, soit une montée de 17,4 m/s
+
+Ici α = 0 (la vitesse est dans l'axe), donc la pente vaut γ = θ = 10°, conformément à θ = γ + α.
+
+#### Le piège θ = ±90°
+
+À θ = ±90° (nez à la verticale), cap et gîte deviennent la même rotation : un degré de liberté se
+perd (blocage de cardan), et les formules de φ̇ et ψ̇ divisent par cos θ = 0. Les simulateurs qui
+doivent couvrir ce cas remplacent les angles d'Euler par des quaternions.
+
+---
+
+## 2. Passage (α, β) → (αt, φa)
+
+On remplace les coordonnées cartésiennes (α, β) par des coordonnées polaires : αt dit de combien
+l'engin est désaxé par rapport au vent, φa dit dans quelle direction.
+
+### 2.1 Définitions
+
+- **Incidence totale αt** : angle entre l'axe x et le vecteur vitesse. Plage : 0 à 180°.
+- **Roulis aérodynamique φa** : angle, autour de x, entre l'axe z et la projection de la vitesse
+  dans le plan transverse (y, z), compté positivement de z vers y. Plage : 0° à 360°.
+- Le **plan d'incidence**, ou PAV, est le plan qui contient l'axe x et le vecteur vitesse
+  aérodynamique. φa donne son orientation autour de x : tan φa = v/w.
+
+Les composantes de la vitesse s'écrivent :
+
+$$
+u = V\cos\alpha_t,\qquad v = V\sin\alpha_t\sin\varphi_a,\qquad w = V\sin\alpha_t\cos\varphi_a
+$$
+
+À gauche, φa oriente le vent transverse autour de l'axe x, compté depuis z vers y. À droite, dans
+le plan ainsi défini, αt est l'angle entre l'axe x et la vitesse.
+
+### 2.2 Formules de passage
+
+De (α, β) vers (αt, φa) :
+
+$$
+\cos\alpha_t = \cos\alpha\cos\beta,\qquad \varphi_a = \operatorname{atan2}\left(\sin\beta,\ \sin\alpha\cos\beta\right)
+$$
+
+De (αt, φa) vers (α, β) :
+
+$$
+\tan\alpha = \tan\alpha_t\cos\varphi_a,\qquad \sin\beta = \sin\alpha_t\sin\varphi_a
+$$
+
+**Convention retenue** : tan φa = v/w, soit φa = atan2(v, w) = atan2(sin β, sin α cos β). Utilisez
+toujours atan2 (et non atan) pour φa : c'est lui qui place correctement φa dans les quatre
+quadrants.
+
+φa est ramené dans [0°, 360°[ : si atan2 renvoie une valeur négative, on ajoute 360°. Le signe de
+v et de w donne directement le quadrant :
+
+| v | w | φa | Situation |
+|---|---|---|---|
+| ≥ 0 | > 0 | 0° à 90° | Incidence positive, dérapage positif |
+| > 0 | ≤ 0 | 90° à 180° | Incidence négative, dérapage positif |
+| ≤ 0 | < 0 | 180° à 270° | Incidence négative, dérapage négatif |
+| < 0 | ≥ 0 | 270° à 360° | Incidence positive, dérapage négatif |
+
+Comme w a le signe de α et v celui de β, le quadrant de φa se lit aussi sur les signes de α et β.
+
+#### Démonstration : projection de la vitesse
+
+Toutes les formules ci-dessus viennent d'un seul fait : on écrit le même vecteur V de deux façons,
+avec (α, β) puis avec (αt, φa), et on identifie les composantes u, v, w.
+
+**Étape 1 : composantes en fonction de (α, β).** Par définition, β est l'angle entre V et le plan
+(x, z), et α est l'angle, dans ce plan, entre l'axe x et la projection de V.
+
+- On projette d'abord V sur le plan (x, z) (figure, panneau 2). La projection Vxz a pour longueur
+  V cos β, et ce qui reste, perpendiculaire au plan, est la composante selon y : v = V sin β.
+- On projette ensuite Vxz sur les axes x et z (panneau 1). Elle fait l'angle α avec x :
+  u = V cos β cos α et w = V cos β sin α.
+
+$$
+u = V\cos\alpha\cos\beta,\qquad v = V\sin\beta,\qquad w = V\sin\alpha\cos\beta
+$$
+
+On retrouve les définitions : w/u = tan α et v/V = sin β.
+
+**Étape 2 : composantes en fonction de (αt, φa).** Par définition, αt est l'angle entre V et l'axe
+x, et φa l'orientation, autour de x, de la partie transverse de V.
+
+- Projeté sur x, V donne u = V cos αt. La partie transverse, dans le plan (y, z), a pour longueur
+  V⊥ = V sin αt.
+- Dans le plan transverse (panneau 3), V⊥ fait l'angle φa avec z : v = V⊥ sin φa et
+  w = V⊥ cos φa.
+
+$$
+u = V\cos\alpha_t,\qquad v = V\sin\alpha_t\sin\varphi_a,\qquad w = V\sin\alpha_t\cos\varphi_a
+$$
+
+**Étape 3 : identification.** C'est le même vecteur, donc les mêmes u, v, w :
+
+- u/V : cos αt = cos α cos β.
+- v/V : sin β = sin αt sin φa.
+- w/u : tan α = sin αt cos φa / cos αt = tan αt cos φa.
+- v/w : tan φa = sin β / (sin α cos β) = tan β / sin α, d'où φa = atan2(sin β, sin α cos β).
+
+**Contrôle utile** : v² + w² = V² sin² αt, soit sin² β + sin² α cos² β = sin² αt, ce qui est bien
+équivalent à cos αt = cos α cos β.
+
+> **Attention au piège classique** : αt n'est pas α + β, ni √(α² + β²) en général. Cette dernière
+> formule n'est qu'une approximation aux petits angles (à α = 20°, β = 20°, elle donne 28,3° au
+> lieu de 28,0° ; l'écart grandit avec les angles).
+
+### 2.3 Cas particuliers à retenir
+
+| Situation | α | β | αt | φa |
+|---|---|---|---|---|
+| Incidence pure positive | α | 0 | α | 0° |
+| Incidence pure négative | −α | 0 | α | 180° |
+| Dérapage pur positif | 0 | β | β | 90° |
+| Dérapage pur négatif | 0 | −β | β | 270° |
+| Vent dans l'axe | 0 | 0 | 0 | indéfini |
+
+Pour les petits angles, αt ≈ √(α² + β²) et φa ≈ atan2(β, α) : ce sont simplement le rayon et
+l'angle polaires dans le plan (α, β).
+
+Dans le plan (α, β), αt est la distance au centre (un cercle = un αt) et φa l'angle compté depuis
+l'axe α vers l'axe β. Les quatre points cardinaux A, B, C, D ne diffèrent que par φa.
+
+### 2.4 Exemple numérique
+
+Point α = 10°, β = 5° :
+
+- cos αt = cos 10° × cos 5° = 0,98481 × 0,99619 = 0,98106, donc αt = 11,17°.
+- φa = atan2(sin 5°, sin 10° × cos 5°) = atan2(0,08716 ; 0,17299) = 26,7°.
+
+Retour : tan α = tan 11,17° × cos 26,7° = 0,1975 × 0,8934 = 0,1764, donc α = 10,0° ;
+sin β = sin 11,17° × sin 26,7° = 0,1937 × 0,4493 = 0,0870, donc β = 5,0°.
+
+### 2.5 Le point singulier αt = 0
+
+À αt = 0, φa n'est pas défini : le vent est dans l'axe et il n'y a pas de plan d'incidence. En
+pratique, on fixe φa = 0 par convention. Comme les coefficients en repère mixte sont continus et
+que les termes qui dépendent de φa s'annulent à αt = 0 (section 6), cette convention ne crée aucune
+discontinuité dans les tables.
+
+---
+
+## 3. Le repère mixte
+
+Le repère mixte est le repère engin tourné de φa autour de x : dans ce repère, l'engin ne voit
+qu'une incidence αt et aucun dérapage. C'est ce qui rend les symétries triviales à écrire.
+
+### 3.1 Définition
+
+- xB = x (axe engin, inchangé).
+- zB est dans le PAV, orienté comme la composante transverse de la vitesse :
+  zB = sin φa · y + cos φa · z.
+- yB est perpendiculaire au PAV : yB = cos φa · y − sin φa · z. Le repère (x, yB, zB) reste direct.
+
+Dans ce repère, la vitesse vaut (V cos αt, 0, V sin αt) : incidence αt, dérapage nul. Pour φa = 0,
+repère mixte et repère engin sont confondus.
+
+### 3.2 Passage des efforts et des moments
+
+Notations : en repère mixte, les coefficients portent l'indice B. CAB est la force axiale (positive
+vers l'arrière, CAB = −CX), CYB la force latérale selon yB, CNB la force normale (positive vers
+−zB, c'est-à-dire à l'opposé du vent transverse), et ClB, CmB, CnB les moments autour de x, yB,
+zB. Les efforts et les moments se transforment par la même rotation autour de x ; CAB et ClB ne
+dépendent pas de φa (CAB = −CX, ClB = Cl).
+
+Du repère engin vers le repère mixte :
+
+$$
+\begin{aligned}
+C_{YB} &= \cos\varphi_a\,C_Y - \sin\varphi_a\,C_Z, & C_{NB} &= -\sin\varphi_a\,C_Y - \cos\varphi_a\,C_Z\\
+C_{mB} &= \cos\varphi_a\,C_m - \sin\varphi_a\,C_n, & C_{nB} &= \sin\varphi_a\,C_m + \cos\varphi_a\,C_n\\
+C_{AB} &= -C_X, & C_{lB} &= C_l
+\end{aligned}
+$$
+
+Du repère mixte vers le repère engin (c'est la formule qu'utilise le simulateur en sortie de
+table) :
+
+$$
+\begin{aligned}
+C_Y &= \cos\varphi_a\,C_{YB} - \sin\varphi_a\,C_{NB}, & C_Z &= -\sin\varphi_a\,C_{YB} - \cos\varphi_a\,C_{NB}\\
+C_m &= \cos\varphi_a\,C_{mB} + \sin\varphi_a\,C_{nB}, & C_n &= -\sin\varphi_a\,C_{mB} + \cos\varphi_a\,C_{nB}\\
+C_X &= -C_{AB}, & C_l &= C_{lB}
+\end{aligned}
+$$
+
+Les six coefficients en repère mixte se rangent en deux familles, qui joueront des rôles
+différents :
+
+| Famille | Coefficients | Sens physique |
+|---|---|---|
+| Dans le PAV | CAB, CNB, CmB | Force axiale, force normale, tangage dans le plan du vent |
+| Hors du PAV | CYB, ClB, CnB | Force latérale, roulis et lacet induits par l'asymétrie de l'engin |
+
+### 3.3 Exemple : un corps de révolution
+
+Pour un corps de révolution (sans ailettes), la force normale est toujours dans le PAV : CYB = 0 et
+CNB = CN(αt), quel que soit φa.
+
+En repère engin, au point α = 10°, β = 5° (αt = 11,17°, φa = 26,7°), avec CNB = 1 :
+
+- CY = sin 26,7° × (−1) = −0,449
+- CZ = cos 26,7° × (−1) = −0,893
+
+En repère engin, CY et CZ changent avec φa alors que la physique est la même. En repère mixte, une
+seule courbe CN(αt) suffit : la table 2D devient une table 1D. Le repère mixte isole ce qui dépend
+vraiment de l'orientation de l'engin.
+
+---
+
+## 4. Les symétries en repère mixte
+
+Toute symétrie géométrique de l'engin autour de l'axe x se réduit, en repère mixte, à deux règles :
+une rotation ne change aucun coefficient, un miroir change le signe des coefficients hors plan.
+
+### 4.1 Règle de la rotation
+
+Si l'engin est identique à lui-même après une rotation d'angle θ autour de x (θ = 90° pour un
+cruciforme), alors pour les six coefficients en repère mixte :
+
+$$
+C_B(\alpha_t,\ \varphi_a + \theta) = C_B(\alpha_t,\ \varphi_a)\qquad\text{pour } C_B \in \{C_{AB}, C_{YB}, C_{NB}, C_{lB}, C_{mB}, C_{nB}\}
+$$
+
+Raison : le repère mixte est attaché au vent, pas à l'engin. Tourner l'engin de θ revient à
+présenter exactement la même géométrie au même vent.
+
+### 4.2 Règle du miroir
+
+Si l'engin admet un plan de symétrie contenant x, orienté à l'angle φs (mesuré comme φa), alors φa
+devient 2φs − φa et :
+
+- CAB, CNB, CmB (dans le PAV) sont inchangés ;
+- CYB, ClB, CnB (hors du PAV) changent de signe.
+
+$$
+C_{B,\text{plan}}(\alpha_t,\ 2\varphi_s - \varphi_a) = C_{B,\text{plan}}(\alpha_t,\ \varphi_a),\qquad C_{B,\text{hors}}(\alpha_t,\ 2\varphi_s - \varphi_a) = -\,C_{B,\text{hors}}(\alpha_t,\ \varphi_a)
+$$
+
+Conséquence directe : quand le PAV coïncide avec un plan de symétrie (φa = φs), CYB, ClB et CnB
+sont nuls. C'est un contrôle gratuit de la qualité des calculs.
+
+### 4.3 Application par géométrie
+
+| Géométrie | Rotations | Plans de symétrie φs | Domaine de φa à calculer |
+|---|---|---|---|
+| Quelconque | aucune | aucun | 0° à 360° |
+| Plan vertical (avion classique) | aucune | 0° | 0° à 180° |
+| Vertical + horizontal | 180° | 0°, 90° | 0° à 90° |
+| Cruciforme (4 ailettes identiques) | 90° | 0°, 45°, 90°, 135° | 0° à 45° |
+| N ailettes identiques | 360°/N | tous les 180°/N | 0° à 180°/N |
+| Corps de révolution | toutes | tous | aucun : seul αt compte |
+
+Pour un cruciforme, les configurations en + et en × ont les mêmes plans de symétrie : ceux qui
+passent par les ailettes et ceux qui passent entre elles. La réduction est identique. Seule change
+la lecture de φa : il faut repérer φa par rapport à une ailette et le noter une fois pour toutes.
+
+### 4.4 Pourquoi (α, β) ne suffit pas pour le cruciforme
+
+En (α, β), les miroirs vertical et horizontal donnent β → −β et α → −α : ils envoient un nœud de
+grille sur un autre nœud. La double symétrie s'exploite donc très bien en cartésien.
+
+La rotation de 90° et le miroir à 45° échangent α et β, mais pas exactement. L'image du point
+(α = 10°, β = 5°) par le miroir à 45° est le point (α = 5,08°, β = 9,96°), et non (5°, 10°) : elle
+tombe entre les nœuds, et le calcul n'est pas réutilisable. En (αt, φa), la même image est
+simplement φa = 26,7° → 63,3°, à αt constant. Sur une grille polaire régulière en φa, c'est un
+nœud.
+
+En haut, chaque vue est la précédente tournée de 90° : l'ailette qui reçoit le vent change de nom,
+pas de position par rapport au vent. En bas, le plan entre deux ailettes renvoie φa = 20° sur 70°.
+Avec les deux, tout point se ramène à φa entre 0° et 45°.
+
+---
+
+## 5. Conséquence sur le DOE, sans braquage
+
+Pour un cruciforme, il suffit de calculer αt de 0 à αt,max et φa de 0° à 45° : avec un pas de 2°
+en αt et de 15° en φa, cela fait 45 calculs CFD au lieu de 265.
+
+### 5.1 Plage d'αt
+
+αt,max est l'incidence totale maximale du domaine de vol. Pour couvrir le domaine initial
+α ∈ [−20°, 20°], β ∈ [−5°, 5°], il faut αt,max = acos(cos 20° × cos 5°) = 20,6°, atteint aux coins.
+On retient ici αt ∈ {0, 2, 4, …, 22°} : 11 couronnes plus le point αt = 0.
+
+Le domaine calculé devient un disque αt ≤ 22°, et non plus un rectangle. Pour un cruciforme, c'est
+naturel : la rotation de 90° transforme un point à β = 20° en un point à α = 20°. On ne peut pas
+exploiter la symétrie sans couvrir le disque, mais le disque complet ne coûte que son secteur de
+45°.
+
+### 5.2 Plage de φa
+
+Le domaine de φa est celui du tableau de la section 4.3. Le pas de 15° donne 4 valeurs sur
+[0°, 45°] (0°, 15°, 30°, 45°). La section 6 montre pourquoi c'est un bon point de départ et
+comment savoir s'il faut l'affiner à 7,5°.
+
+### 5.3 Nombre de calculs
+
+Grille : αt de 0 à 22° par pas de 2°, φa par pas de 15°. Le point αt = 0 ne compte qu'une fois.
+
+| Géométrie | Domaine φa | Valeurs de φa | Calculs CFD |
+|---|---|---|---|
+| Quelconque | 0° à 360° | 24 | 1 + 11 × 24 = 265 |
+| Plan vertical | 0° à 180° | 13 | 1 + 11 × 13 = 144 |
+| Vertical + horizontal | 0° à 90° | 7 | 1 + 11 × 7 = 78 |
+| Cruciforme | 0° à 45° | 4 | 1 + 11 × 4 = 45 |
+
+### 5.4 Faut-il passer en polaire dans tous les cas ?
+
+Non. Le polaire couvre un disque, ce qui est un gaspillage si le domaine de vol est un rectangle
+allongé :
+
+- **Avion à plan de symétrie vertical**, β ∈ [−5°, 5°] : restez en (α, β) cartésien. Le
+  demi-rectangle coûte 21 × 3 = 63 calculs, contre 144 pour le demi-disque.
+- **Double symétrie**, même rectangle : le quadrant α ≥ 0, β ≥ 0 en cartésien coûte 11 × 3 = 33
+  calculs. Le polaire ne s'impose pas.
+- **Cruciforme** : le polaire s'impose. C'est le seul cas où la rotation et le miroir à 45°
+  deviennent exploitables, et le domaine utile est de toute façon un disque.
+
+### 5.5 Points de contrôle gratuits
+
+- Sur les plans de symétrie (φa = 0° et φa = 45° pour un cruciforme), CYB, ClB et CnB doivent être
+  nuls. Un écart signale un défaut de maillage ou de convergence.
+- Ces mêmes points peuvent être calculés sur un demi-modèle avec condition de symétrie, ce qui
+  divise le maillage par deux.
+- **Précaution** : à forte incidence, sur un corps élancé, les tourbillons d'avant-corps peuvent
+  devenir asymétriques même dans un plan de symétrie. Un demi-modèle interdit ce phénomène.
+  Vérifiez sur un modèle complet à αt,max.
+
+---
+
+## 6. La série de Fourier en φa
+
+À αt fixé, chaque coefficient en repère mixte est une fonction périodique de φa : on peut donc
+l'écrire en série de Fourier, et les symétries suppriment d'office la plupart des termes. Pour un
+cruciforme, il reste quatre nombres par couronne d'αt.
+
+### 6.1 D'où elle vient
+
+φa est un angle : faire un tour complet (φa + 360°) ramène au même point de vol. Toute fonction
+continue de φa s'écrit donc :
+
+$$
+C_B(\alpha_t,\varphi_a) = a_0(\alpha_t) + \sum_{n\ge 1}\left[a_n(\alpha_t)\cos n\varphi_a + b_n(\alpha_t)\sin n\varphi_a\right]
+$$
+
+Les deux règles de la section 4 tuent des termes :
+
+- **Miroir à φa = 0** : les coefficients dans le plan (CAB, CNB, CmB) sont pairs en φa, donc il ne
+  reste que des cosinus. Les coefficients hors plan (CYB, ClB, CnB) sont impairs, donc il ne reste
+  que des sinus.
+- **Rotation de 360°/N** : la fonction a une période de 360°/N, donc seuls subsistent les
+  harmoniques n multiples de N.
+
+### 6.2 Forme selon la géométrie
+
+| Géométrie | Dans le PAV (CAB, CNB, CmB) | Hors PAV (CYB, ClB, CnB) |
+|---|---|---|
+| Plan vertical | cos(nφa), n = 0, 1, 2, … | sin(nφa), n = 1, 2, … |
+| Vertical + horizontal | cos(2kφa), k = 0, 1, … | sin(2kφa), k = 1, 2, … |
+| Cruciforme | cos(4kφa), k = 0, 1, … | sin(4kφa), k = 1, 2, … |
+| Corps de révolution | a0 seul | nul |
+
+Pour un cruciforme :
+
+$$
+C_{B,\text{plan}} = a_0(\alpha_t) + a_1(\alpha_t)\cos 4\varphi_a + a_2(\alpha_t)\cos 8\varphi_a + a_3(\alpha_t)\cos 12\varphi_a,\qquad C_{B,\text{hors}} = b_1(\alpha_t)\sin 4\varphi_a + b_2(\alpha_t)\sin 8\varphi_a
+$$
+
+Le miroir à 45° est alors respecté automatiquement : cos(4k(90° − φa)) = cos(4kφa) et
+sin(4k(90° − φa)) = −sin(4kφa).
+
+### 6.3 Sens physique des termes
+
+- **a0** est la moyenne sur φa : l'engin « vu comme un corps de révolution équivalent ».
+- **a1** mesure l'écart entre le vent arrivant dans le plan des ailettes et le vent arrivant entre
+  elles (+ contre ×).
+- **a2, a3** décrivent des effets plus localisés en φa. Ils doivent être petits devant a1 ; sinon
+  le pas en φa est trop grossier.
+- À faible incidence, a1, a2, a3 et les bk tendent vers zéro : c'est le résultat classique selon
+  lequel la pente de force normale d'un cruciforme ne dépend pas du roulis. La dépendance en φa est
+  un effet non linéaire, qui croît avec αt.
+
+### 6.4 Utilisation pratique, pas à pas
+
+**Étape 1** : calculer en CFD, pour chaque couronne αt, les quatre points φa = 0°, 15°, 30°, 45°.
+On note f0, f15, f30, f45 les valeurs d'un coefficient dans le plan, et g15, g30 celles d'un
+coefficient hors plan (g0 et g45 sont nuls par symétrie).
+
+**Étape 2** : calculer les coefficients de Fourier. Avec ce choix de points, la résolution est
+explicite, sans moindres carrés :
+
+$$
+\begin{aligned}
+a_0 &= \tfrac{1}{6}\left(f_0 + 2f_{15} + 2f_{30} + f_{45}\right), & a_1 &= \tfrac{1}{3}\left(f_0 + f_{15} - f_{30} - f_{45}\right)\\
+a_2 &= \tfrac{1}{3}\left(f_0 - f_{15} - f_{30} + f_{45}\right), & a_3 &= \tfrac{1}{6}\left(f_0 - 2f_{15} + 2f_{30} - f_{45}\right)\\
+b_1 &= \tfrac{1}{\sqrt{3}}\left(g_{15} + g_{30}\right), & b_2 &= \tfrac{1}{\sqrt{3}}\left(g_{15} - g_{30}\right)
+\end{aligned}
+$$
+
+Ces formules reproduisent exactement les points calculés : la série passe par les quatre valeurs.
+
+**Étape 3** : stocker, au lieu d'une table 2D en (αt, φa), une table 1D en αt de quelques
+coefficients : a0, a1, a2, a3 (dans le plan) et b1, b2 (hors plan), pour chacun des six
+coefficients aéro.
+
+**Étape 4** : en simulation, pour un point (α, β) quelconque :
+
+1. Calculer αt et φa (section 2.2).
+2. Interpoler les ak et bk en αt (linéaire ou spline).
+3. Évaluer la série directement avec φa, sans ramener φa dans [0°, 45°] : les cosinus et sinus font
+   le repliement tout seuls.
+4. Repasser en repère engin (section 3.2).
+
+### 6.5 Exemple numérique
+
+À αt = 16°, on calcule en CFD la force normale CNB : f0 = 6,0 ; f15 = 6,2 ; f30 = 6,5 ; f45 = 6,6.
+
+- a0 = (6,0 + 12,4 + 13,0 + 6,6) / 6 = 6,333
+- a1 = (6,0 + 6,2 − 6,5 − 6,6) / 3 = −0,300
+- a2 = (6,0 − 6,2 − 6,5 + 6,6) / 3 = −0,033
+- a3 = (6,0 − 12,4 + 13,0 − 6,6) / 6 = 0,000
+
+Donc CNB(16°, φa) ≈ 6,333 − 0,300 cos 4φa − 0,033 cos 8φa.
+
+À φa = 100° : 4φa = 400° ≡ 40° et 8φa = 800° ≡ 80°, d'où
+CNB = 6,333 − 0,300 × 0,766 − 0,033 × 0,174 = 6,098. C'est bien la valeur à φa = 10°, équivalent à
+100° par rotation de 90°.
+
+### 6.6 Diagnostic du pas en φa
+
+- |a3| petit devant |a1| (moins de 10 % environ) : 4 points en φa suffisent.
+- |a3| comparable à |a1| : la fonction varie trop vite, passez à un pas de 7,5° (7 points sur
+  [0°, 45°], harmoniques jusqu'à cos 24φa).
+- Le diagnostic se fait couronne par couronne : on peut ne raffiner que les αt élevés.
+
+Utiliser la série ou interpoler directement dans une table (αt, φa) repliée sur [0°, 45°] donne
+des résultats proches. La série est plus lisse, n'exige aucune logique de repliement et fournit ce
+diagnostic gratuitement.
+
+---
+
+## 7. Extension aux braquages
+
+Les symétries restent exploitables avec les braquages, à condition d'exprimer aussi les braquages
+en repère mixte. Pour un cruciforme, le domaine de φa reste [0°, 45°] et le gain reste proche
+de 8.
+
+### 7.1 Le principe
+
+Une symétrie agit sur la configuration entière : le point de vol et les gouvernes. Tourner un
+cruciforme de 90° fait passer chaque ailette à la place de sa voisine. En braquages équivalents,
+cela fait passer le tangage sur le lacet. Si on garde les braquages en repère engin, la symétrie
+mélange δm et δn, et la table ne se réduit plus simplement.
+
+La solution est la même que pour les efforts : on exprime (δm, δn) dans le repère mixte. Ils se
+comportent comme les moments qu'ils créent (Cm, Cn) et tournent donc de φa ; δl est inchangé.
+
+$$
+\delta_{mB} = \cos\varphi_a\,\delta_m - \sin\varphi_a\,\delta_n,\qquad \delta_{nB} = \sin\varphi_a\,\delta_m + \cos\varphi_a\,\delta_n,\qquad \delta_{lB} = \delta_l
+$$
+
+> **Condition préalable** : vos conventions de braquage doivent être cohérentes avec la rotation,
+> c'est-à-dire qu'une rotation de l'engin de 90° doit transformer exactement δm en δn (au signe
+> près, fixé une fois pour toutes). Vérifiez-le sur votre matrice de mixage avant tout calcul.
+
+### 7.2 Les symétries avec braquages
+
+En repère mixte, les coefficients dépendent de (αt, φa, δl, δmB, δnB).
+
+- **Rotation de 90°** : rien ne change, ni les coefficients ni les braquages mixtes.
+  CB(αt, φa + 90°, δl, δmB, δnB) = CB(αt, φa, δl, δmB, δnB).
+- **Miroir à φs** : φa devient 2φs − φa ; δl et δnB changent de signe (ils sont hors du PAV, comme
+  ClB et CnB) ; δmB est inchangé (dans le PAV, comme CmB). Les coefficients suivent la règle de la
+  section 4.2.
+
+### 7.3 Ce que ça change sur le DOE
+
+- Le domaine de φa reste [0°, 45°].
+- Pour 0° < φa < 45° (ici 15° et 30°), il faut toute la grille (δl, δmB, δnB).
+- Sur les plans de symétrie (φa = 0° et 45°), le miroir relie (δl, δmB, δnB) à (−δl, δmB, −δnB) :
+  on ne calcule que la moitié des combinaisons.
+- À αt = 0, la rotation et les miroirs agissent sur les braquages seuls : on divise environ par 8.
+
+### 7.4 Décompte, factoriel complet
+
+Hypothèses : αt de 0 à 22° par pas de 2° (11 couronnes plus αt = 0), φa ∈ {0°, 15°, 30°, 45°},
+δl, δmB, δnB ∈ {−20°, −10°, 0°, 10°, 20°}, soit 125 combinaisons.
+
+| Bloc | Calcul | Calculs CFD |
+|---|---|---|
+| φa = 15° et 30° | 11 × 2 × 125 | 2 750 |
+| φa = 0° et 45° | 11 × 2 × 65 | 1 430 |
+| αt = 0 | orbites sous les 8 symétries | 20 |
+| **Total cruciforme** | | **4 200** |
+| Sans symétrie, même grille | 265 × 125 | 33 125 |
+
+Le gain est de 7,9. Les 65 combinaisons sur les plans de symétrie viennent de : 5 valeurs de δmB ×
+13 couples (δl, δnB) distincts au signe près. Les 20 calculs à αt = 0 se comptent par le lemme de
+Burnside sur les 125 combinaisons.
+
+### 7.5 Décompte avec la décomposition (build-up)
+
+En braquant un seul axe à la fois (base sans braquage plus trois tables d'incréments), avec les
+mêmes grilles :
+
+- Base : 45 calculs (section 5.3).
+- δmB seul (4 valeurs non nulles) : aucun gain sur les plans de symétrie, 11 × 4 × 4 = 176.
+- δnB seul et δl seul : le miroir divise par deux sur φa = 0° et 45°, 11 × (2 × 4 + 2 × 2) = 132
+  chacun.
+- αt = 0 : 4 calculs.
+
+Total : environ 490 calculs, contre 4 200 en factoriel complet. On ajoute ensuite quelques calculs
+croisés là où une interaction est attendue.
+
+> **Question ouverte**
+>
+> Je veux une démarche pratique pour faire mes calculs CFD en gros pour delta m B si je fais −20
+> −10 0 10 20, je reconvertit d'abord en braquage équivalent en repere engin puis en braquage
+> physique pour avoir la bonne CAO?
+
+### 7.6 Le domaine des braquages
+
+Votre limite est de ±20° sur chaque braquage équivalent, en repère engin : c'est un carré en
+(δm, δn). En repère mixte, ce carré tourne de φa, et il n'est plus aligné avec la grille
+(δmB, δnB). Deux options :
+
+- **Redéfinir la limite comme un disque**, √(δm² + δn²) ≤ 20°. Il est invariant par rotation, donc
+  identique en repère mixte pour tout φa, et la grille 5 × 5 en (δmB, δnB) le couvre entièrement.
+  C'est l'option la plus simple et la plus naturelle pour un cruciforme.
+- **Garder le carré** : il faut alors couvrir le disque de rayon 28,3° qui le contient, avec une
+  grille plus large (par exemple 7 niveaux de −30° à 30°) et des points hors débattement.
+
+### 7.7 Série de Fourier avec braquages
+
+À braquage mixte fixé, chaque coefficient reste périodique de 90° en φa, mais il n'est plus pair
+ou impair : le miroir change aussi le braquage. La série contient alors cosinus et sinus :
+
+$$
+C_B(\alpha_t,\varphi_a,\boldsymbol{\delta}_B) = \sum_{k\ge 0}\left[a_k(\alpha_t,\boldsymbol{\delta}_B)\cos 4k\varphi_a + b_k(\alpha_t,\boldsymbol{\delta}_B)\sin 4k\varphi_a\right]
+$$
+
+Avec, pour les coefficients dans le plan, ak pair et bk impair vis-à-vis de
+(δl, δnB) → (−δl, −δnB) ; l'inverse pour les coefficients hors plan. En pratique, les calculs sur
+[0°, 45°] pour δB et pour son image donnent ensemble la période complète [0°, 90°] pour chacun.
+
+### 7.8 Et p, q, r
+
+Les vitesses angulaires se traitent comme les braquages : p est inchangé (il est selon x), (q, r)
+tournent de φa en (qB, rB). Les mêmes règles de symétrie s'appliquent : p et rB sont hors du PAV,
+qB est dans le PAV.
+
+---
+
+## 8. Synthèse et recommandations
+
+Pour un cruciforme, la chaîne (αt, φa), repère mixte, φa ∈ [0°, 45°] et série de Fourier ramène la
+base à environ 45 calculs sans braquage et 490 avec braquages en décomposition.
+
+| Étape | Ce qu'on fait | Référence |
+|---|---|---|
+| 1 | Convertir chaque point de vol (α, β) en (αt, φa) | Section 2.2 |
+| 2 | Exprimer efforts, moments, braquages et p, q, r en repère mixte | Sections 3.2, 7.1, 7.8 |
+| 3 | Calculer en CFD αt ∈ [0, αt,max] et φa sur le domaine fondamental | Sections 4.3, 5 |
+| 4 | Contrôler CYB = ClB = CnB = 0 sur les plans de symétrie | Section 5.5 |
+| 5 | Calculer les coefficients de Fourier par couronne, vérifier \|a3\| ≪ \|a1\| | Sections 6.4, 6.6 |
+| 6 | En simulation : (α, β) → (αt, φa), interpolation en αt, série, retour en repère engin | Section 6.4 |
+
+**Recommandations :**
+
+- **Cruciforme** : passez en (αt, φa) et en repère mixte. C'est le seul moyen d'exploiter la
+  symétrie d'ordre 8.
+- **Plan vertical seul ou double symétrie**, avec un domaine en β étroit : restez en (α, β)
+  cartésien, en repère engin.
+- Redéfinissez la limite de braquage transverse comme un disque, √(δm² + δn²) ≤ δmax, si votre
+  cahier des charges le permet.
+- Vérifiez sur votre matrice de mixage que la rotation de 90° transforme bien δm en δn avant de
+  lancer le DOE.
+
+**Points ouverts :**
+
+- Signes exacts selon vos conventions (CN, CA, sens de δm et δn) : à valider sur un cas test, par
+  exemple un même point calculé à φa = 10° et à φa = 100°.
+- Validité du RANS stationnaire aux αt les plus élevés (asymétries tourbillonnaires).
