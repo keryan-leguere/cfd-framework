@@ -564,64 +564,46 @@ not part of the Bash framework's runtime:
       `Path.with_suffix`: a base name as ordinary as `CN_Mach0.85` loses its `.85`, and a whole
       series of flight points silently overwrites one file. It appends a dummy suffix first.
 
-- **`tools/cfd-validation/`** — validate a Fortran/C code from Python: wrap it (f2py), write
-  controls, run them, report. First control shipped: **does the model read its own tables
-  back?** A table interpolated at its own nodes must return the tabulated value exactly, so any
-  gap is a read bug — and those are invisible on a curve. Layout mirrors cfd-traj with an
-  AST-enforced layer rule (`tests/test_architecture.py`): `core/` (NumPy only: `ecart.py`
-  comparison, `motifs.py` the eight failure-pattern detectors), `data/` (`spec.py` the `TABLES`
-  dict validated into `SpecTable`, `entrees.py`), `wrap/` (`bloc.py` COMMON-block reading,
-  `toolchain.py`, `construire.py` f2py build, `factice.py`), `engine/` (`tables.py`
-  `valider_tables`, `controle.py`/`suite.py` the `Controle` protocol + aggregation),
-  `report/` (Rich FR no-bold via `theme.py`/`CFD_VALIDATION_GRAS`, `figures.py` drives
-  `cfd_plot.batch_plot`), `cli/`, and `01_EXEMPLE/` as package data (five scripts +
-  `MODELE_FORTRAN/aero.f`). FR docs in `00_DOC/01`–`05`. 405 tests, mypy strict.
-    - **Tables are "long" 2-D arrays** `TAB(NROWS, NCOLS)`, one row per point, `colonnes`
-      naming them 1:1, `qoi` defaulting to the last column. Orientation is inferred from which
-      dimension equals `len(colonnes)`; a square array **requires** `orientation=`. `lignes`
-      (an int or the name of an integer in the same block) trims the never-written tail of a
-      max-dimensioned Fortran array — its absence is not guessed (a zero row may be real) but
-      the `queue_non_renseignee` detector catches it and names the key. Unknown keys are
-      **refused** listing the admitted ones (`rtl:` would silently keep the default tolerance).
-    - **The model never receives the QOI** (`data/entrees.py`) — that removal is what makes it
-      a test. The independent columns the model returns are ignored for comparison and
-      plotting (the frames are rebuilt on the *table's* columns so both sides share abscissae
-      bit-for-bit — `batch_plot` filters by strict equality), but they are checked for
-      **row reordering**, which is refused as a contract break rather than reported as a gap.
-    - **Eight detectors** (`core/motifs.py`), all reported, ranked by the share of failing
-      points each explains, ties broken by specificity (`ORDRE_SPECIFICITE`): `queue_non_renseignee`,
-      `ecretage` (index saturated at a border), `axes_transposes`, `axe_ignore`, `decalage_indice`,
-      `facteur_echelle` (names π/180, 0.3048… when recognised), `decalage_constant`, `diffus`.
-      Five are *constructive*: they look up in the table itself the value the model *would*
-      have returned under the hypothesis, using the control's own `Contexte.tolere` — never a
-      private threshold. No layer recognises a column by name (`test_genericite.py`).
-    - **`wrap/factice.py` is a product, not a test stub**: a pure-Python fake f2py module
-      (`module_factice()`) plus `ModeleFactice(bug=…)` reproducing every failure (`BUGS` maps
-      bug → expected motif). It exists because the whole suite must run **without a
-      compiler** — same philosophy as the bash framework's `mock` adapter.
-    - **Real f2py facts, verified against compiled Fortran** (`tests/test_fortran.py`, marker
-      `compilateur`, self-skipping): COMMON-block objects are **callable** (same type as
-      routines — `blocs_exposes` tells them apart by whether they carry ndarrays), names are
-      lowercased, arrays arrive Fortran-contiguous, a block integer arrives as a 0-d array.
-      f2py reads the source as **ASCII** (an accent fails with a codec message).
-    - **`f2py -c` needs meson+ninja on NumPy ≥ 2, `numpy.distutils` on ≤ 1.26** — neither
-      is a NumPy dependency, and they were absent on this machine. `wrap/toolchain.py`
-      names what's missing *before* trying; `construire()` refuses rather than dumping the
-      trace. It detects the venv-not-activated trap (tools installed next to
-      `sys.executable` but not on `PATH` → f2py's `FileNotFoundError: 'meson'`) via
-      `sysconfig.get_path("scripts")` — **not** `Path(sys.executable).resolve()`, which
-      follows the venv symlink to `/usr/bin`. `[build]` extra installs meson+ninja.
-    - **Figures** (`report/figures.py`): one `batch_plot` per table, configurations
-      `{TABLE, MODELE}` overlaid, one polar per independent variable; pinned variables are
-      declared in *both* `sweep_dict` and `flight_point_dict` so `values` restricts the
-      pin directories (sampled to `max_valeurs=5`, bounds kept, values taken *from* the
-      data) while the abscissa still shows every point. `HookEcarts` (frozen module-level
-      dataclass, picklable) re-slices its failing-points frame with `batch_plot`'s own
-      strict-equality filter and marks them in red. `literal_name` is left empty on purpose
-      (cfd-plot composes "literal, symbol (unit)" → "CN, CN (-)" otherwise).
-    - CLI: `toolchain`, `construire`, `inspecter`, `check`, `valider`, `exemple`; exit `0`
-      conforming, `1` input error, `2` gaps found. `RUN_EXEMPLE.sh` uses
-      `${CFD_VALIDATION_PYTHON:-python3} -m`, never the console script.
+- **`tools/cfd-validation/`** — code-verification helpers (Fortran 77 / C) whose output is
+  *traceable evidence*, not just "tests pass": Rich FR terminal report (no bold,
+  `CFD_VALIDATION_GRAS=1`), full text log, CSV/JSON, `cfd-plot` paper figures. Restarted from
+  scratch on 2026-11-14 (the former f2py table-readback package is gone from the working tree,
+  still in git at `ffa03b60`). Report rigour targets DO-178C / ECSS-E-ST-40C & Q-ST-80C /
+  NASA-STD-7009A / IEEE 29119-3; `00_DOC/01_PRINCIPE.md` maps each requirement to the piece that
+  answers it (section numbers only where certain — DO-178C §11.13–11.16). Layers `core` (NumPy
+  only) → `data` → `engine` → `report` → `cli`, AST-enforced (`tests/test_architecture.py`);
+  `integration.py` is the façade outside the layers. mypy strict. First control:
+    - **Integration test** — `valider_integration(reference, test, entrees=, sorties=, …)` /
+      `cfd-validation integration REF TEST --config X.yaml` (exit 0 conform, 1 input error,
+      2 non-conform). Rows are paired **on input values** by default (order may differ;
+      missing/extra rows reported; duplicated keys paired in order and flagged), or by position
+      with inputs *checked* (diverging pairs are not compared). Criterion
+      `|t − r| ≤ atol + rtol·|r|`, reference is the oracle; NaN==NaN is identical, NaN vs number
+      is `NON_FINI` with **infinite margin**. Per value: Δ, rel, **ULP** (`core/ecarts.py` maps
+      floats to `2⁶³ ± magnitude` so −0/+0 share a key), **margin = Δ/tolerance**. Every
+      tolerance carries origin (default/declared) + justification; defaults are flagged as
+      unjustified. **Attribution**: per input, failure rate per level (≤ 12 distinct values, else
+      8 quantile bins) + Cramér's V; rows missing from the test count as failures (a crash is the
+      most localised failure). Pieces: `integration.log` (complete, written last with SHA-256 of
+      every other piece, trailing spaces stripped), `resume.json`, `lignes.csv`, `ecarts.csv`,
+      `FIGURES/` (`01_synthese_sorties` one row per output, `02` 12 panels/page, `03` CDF 7
+      curves/page, `04_marges_<k>_<sortie>` only for failing outputs by default — `<k>` is the
+      output rank so CN/Cn don't collide on case-insensitive disks —, `05`/`06` inputs sorted by
+      `ResultatIntegration.entrees_par_pertinence()`; margin on symlog axis linear in [−1, 1];
+      tick labels are *pure* mathtext
+      because TeX Gyre Termes lacks Unicode superscripts — tests run figures with
+      `UserWarning` as error to catch missing glyphs — deprecations excluded, since
+      pyparsing ≥ 3.3's `PyparsingDeprecationWarning` is *also* a `UserWarning` and matplotlib 3.9,
+      the last on Python 3.9, raises it on every mathtext render). Scales to 10 inputs × 15 outputs
+      (`tests/test_grande_table.py`): the terminal row table keeps the inputs that fit, most
+      failure-linked first, and names the hidden ones; the log widens itself
+      (`largeur_journal`) so nothing is cropped. Content SHA-256 of both tables via
+      `pd.util.hash_pandas_object`. CSV read back exactly (`float_precision="round_trip"`
+      before pandas 3, default after). Example: `01_EXEMPLE/01_test_integration.py` (dummy aero
+      model, 462 cases, scenarios identique / arrondi / regression), `02_grande_table.py`
+      (10 inputs × 15 outputs incl. CN/Cn and CM/Cm, 3 000 cases, regression tied to
+      `braquage_profondeur ≥ 15`), `INTEGRATION.yaml`,
+      `RUN_EXEMPLE.sh` (uses `python -m cfd_validation`).
 - **`tools/cfd-doe/`** — CFD design of experiments. Phase 1 (done): reduce the input domain
   (`alpha, beta, DL, DM, DN`, degrees) to the **sub-domains actually worth computing**, from the
   trajectory type and the vehicle's symmetries; phase 2 (done): fill them — `cfd-doe remplir`. CLI `cfd-doe domaine ETUDE.yaml | --traj … --sym … --alpha

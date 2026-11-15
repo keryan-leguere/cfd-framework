@@ -1,100 +1,45 @@
-# Exemple cfd-validation — prêt à tourner
+# Exemple — test d'intégration sur des tables factices
 
-Un modèle aérodynamique à deux tables, et le contrôle qui vérifie qu'il les
-relit correctement. Tout tourne **sans compilateur** ; le script `05` compile du
-vrai Fortran quand la machine le permet, et le dit proprement sinon.
+Un « modèle aéro » analytique tient lieu de code Fortran. On l'exécute une fois
+pour obtenir la **référence**, puis on fabrique trois **tests** qui imitent le
+même code exécuté ailleurs.
 
-```bash
-bash RUN_EXEMPLE.sh
-```
+| Scénario     | Ce qui change                                          | Verdict attendu                   |
+|--------------|--------------------------------------------------------|-----------------------------------|
+| `identique`  | les cas reviennent dans le désordre                    | CONFORME — identique bit pour bit |
+| `arrondi`    | quelques ULP sur chaque sortie (autre compilateur)     | CONFORME — dans les tolérances    |
+| `regression` | Cm faux de 0.2 % pour Mach ≥ 1.2, 3 cas plantés, 1 NaN | NON CONFORME, attribué à Mach     |
 
----
+Et sur une table à l'échelle d'une vraie base aéro (`02_grande_table.py`) :
 
-## Les fichiers
+| Scénario       | Ce qui change                                                                  | Verdict attendu                                     |
+|----------------|--------------------------------------------------------------------------------|-----------------------------------------------------|
+| `grande_table` | 10 entrées × 15 sorties, 3 000 cas : 1 ULP partout, Cm et Cm_alpha faux de 0.1 % pour `braquage_profondeur ≥ 15`, 20 cas plantés | NON CONFORME, attribué à `braquage_profondeur ∈ {15, 20}` |
 
-| | |
-|:--|:--|
-| `TABLES.yaml` | la déclaration des deux tables, commentée clé par clé |
-| `aero_factice.py` | le modèle enveloppé, sous la forme où un module f2py se présente |
-| `mon_modele.py` | **ce que vous écrivez** : la fonction qui appelle votre modèle |
-| `MODELE_FORTRAN/aero.f` | le jumeau Fortran réel, avec ses COMMON blocks |
-| `SORTIE/` | tout ce que l'exemple écrit (régénérable, ignoré par git) |
-
-## Ce que chacun montre
-
-### `01_lire_table.py` — voir ce que le paquet voit
-
-Liste les COMMON blocks que le module expose, valide la déclaration, et affiche
-les tables lues. Finit par la démonstration que la clé `lignes` sert : sans
-elle, la table CN emporte les 26 lignes de remplissage que le Fortran n'a jamais
-écrites.
-
-C'est le premier réflexe devant un module inconnu, et la première cause d'échec.
-
-### `02_valider.py` — le contrôle, en trois lignes
-
-```python
-rapport = valider_tables(aero_factice, charger_fichier("TABLES.yaml"), modele=mon_modele.appeler)
-sys.exit(imprimer_rapport(rapport))
-```
-
-Sort en **0**. Le modèle relit exactement ses tables : c'est ce qu'un code juste
-fait, puisqu'une interpolation vaut la valeur tabulée à chacun de ses nœuds.
-
-### `03_diagnostics.py` — une panne, un motif
-
-Rejoue les sept pannes que le paquet sait injecter, plus la huitième qui est
-dans la *déclaration* (oublier `lignes`), et montre que le diagnostic nomme à
-chaque fois la bonne. Finit par le rapport complet d'une de ces pannes.
-
-C'est la démonstration que les détecteurs font ce qu'ils annoncent — sur des
-cas, pas sur un raisonnement.
-
-### `04_figures_batch_plot.py` — les planches
-
-Un appel de `cfd_plot.batch_plot` par table. Deux configurations, `TABLE` et
-`MODELE`, superposées ; une polaire par variable indépendante ; les points hors
-tolérance entourés de rouge et reliés à leur valeur tabulée.
+C'est l'exemple à lancer pour voir comment le rapport se tient quand tout ne
+rentre pas à l'écran : le terminal garde les entrées les plus liées aux échecs
+et nomme les autres, le journal a toutes les colonnes, la synthèse
+(`01_synthese_sorties`) met les 15 sorties sur une page et les figures « par
+entrée » ne sont tracées que pour les deux sorties en échec.
 
 ```bash
-python3 04_figures_batch_plot.py --a-blanc          # énumère sans écrire
-python3 04_figures_batch_plot.py --juste            # le modèle juste
-python3 04_figures_batch_plot.py --toutes-valeurs   # sans échantillonner
+bash RUN_EXEMPLE.sh                          # tout : API Python puis ligne de commande
+python 01_test_integration.py regression     # un seul scénario
+python 01_test_integration.py --sans-figures # plus rapide
+python 02_grande_table.py                    # 10 entrées × 15 sorties
+python 02_grande_table.py --figures-entrees toutes   # figure par entrée pour les 15 sorties
 ```
 
-Nécessite `cfd-plot` : `pip install -e ../../cfd-plot`.
+Fichiers :
 
-### `05_fortran_reel.py` — le même contrôle, sur du Fortran compilé
+- `01_test_integration.py` : le modèle factice, le plan de calcul
+  (7 Mach × 11 α × 3 β × 2 configurations = 462 cas), les trois scénarios et
+  l'appel à `valider_integration` — **le bloc à recopier pour vos tables** ;
+- `02_grande_table.py` : même déroulé sur 10 entrées × 15 sorties (dont
+  `CN`/`Cn` et `CM`/`Cm`, qui ne diffèrent que par la casse) ;
+- `INTEGRATION.yaml` : la spécification de `01_test_integration.py` pour la ligne de commande ;
+- `RUN_EXEMPLE.sh` : enchaîne les deux scripts, puis la ligne de commande.
 
-Compile `MODELE_FORTRAN/aero.f` par f2py, charge le module, et lui fait subir le
-contrôle des scripts précédents. Le Fortran porte un interrupteur
-`regler_bug(mode)` qui injecte une **vraie** erreur de lecture dans le code
-compilé.
-
-Demande gfortran et le moteur de compilation de f2py ; `cfd-validation
-toolchain` dit ce qui manque. Sans cela, le script le dit et sort en 0.
-
----
-
-## Le contrat de votre modèle, en trois lignes
-
-`mon_modele.py` est la seule pièce que cfd-validation ne peut pas fournir.
-
-* elle reçoit un `DataFrame` portant les colonnes **indépendantes** de la table
-  et les constantes déclarées — jamais les QOI, sans quoi le contrôle ne
-  prouverait rien ;
-* elle rend un `DataFrame` de **même longueur**, **dans le même ordre**, portant
-  les QOI ;
-* elle ne trie rien et ne regroupe rien.
-
-Avec un vrai module f2py, elle tient en une ligne :
-
-```python
-rendu["CN"] = aero.eval_cn(df["mach"].to_numpy(), df["alpha"].to_numpy(), df["delta"].to_numpy())
-```
-
-Voir `00_DOC/03_BRANCHER_SON_MODELE.md`.
-
-## Sans cfd-plot
-
-Les scripts `01`, `02`, `03` et `05` n'en ont pas besoin. Seul `04` trace.
+Les pièces sont écrites dans `SORTIE_INTEGRATION/<scénario>/` : `integration.log`
+(le rapport complet), `resume.json`, `lignes.csv`, `ecarts.csv` et `FIGURES/`.
+Les tables factices sont dans `SORTIE_INTEGRATION/DONNEES/`.

@@ -1,10 +1,7 @@
-"""Point d'entrée ``python -m cfd_validation``.
+"""Point d'entrée ``python -m cfd_validation``, équivalent strict de la commande ``cfd-validation``.
 
-Équivalent strict de la commande ``cfd-validation``. Il existe pour les
-installations où aucun script console n'est utilisable — sources simplement
-posées sur le disque et atteintes par ``PYTHONPATH``, ou interpréteur servi
-depuis une image Apptainer, où le shebang gravé par pip pointe un chemin
-interne à l'image.
+Utile là où le script console est inutilisable (interpréteur servi depuis une
+image Apptainer, venv déplacé).
 """
 
 from __future__ import annotations

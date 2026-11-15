@@ -1,21 +1,12 @@
-# Environnements & caches
 .venv/
 __pycache__/
-*.py[cod]
 *.egg-info/
-.mypy_cache/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
 .coverage
-htmlcov/
-
-# Artefacts de compilation f2py
-*.so
-*.mod
-*.o
-
-# Sorties générées par l'exemple (régénérables via RUN_EXEMPLE.sh)
-src/cfd_validation/01_EXEMPLE/SORTIE/
-
-# Artefacts d'éditeur
-Untitled
+# Sorties de l'exemple (régénérées par 01_EXEMPLE/01_test_integration.py)
+SORTIE_INTEGRATION/
+VALIDATION_INTEGRATION/
+# Copie de l’exemple faite par « cfd-validation exemple » (destination par défaut)
+01_EXEMPLE_VALIDATION/

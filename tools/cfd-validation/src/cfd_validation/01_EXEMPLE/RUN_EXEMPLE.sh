@@ -1,46 +1,33 @@
 #!/usr/bin/env bash
-# Déroule l'exemple complet, dans l'ordre.
+# Exemple complet : tables factices, trois scénarios en Python, puis la ligne de commande.
 #
-# On appelle `python3 -m` plutôt que le script console `cfd-validation` :
-# pip grave `sys.executable` dans le shebang du script console, et ce chemin
-# est faux partout où l'interpréteur n'est pas là où pip croyait — Python servi
-# depuis une image Apptainer, environnement virtuel déplacé, chemin plus long
-# que les 127 octets que le noyau accepte dans un `#!`.
+#   bash RUN_EXEMPLE.sh
 #
-#   CFD_VALIDATION_PYTHON=/chemin/vers/python bash RUN_EXEMPLE.sh
+# L'interpréteur se choisit par CFD_VALIDATION_PYTHON (défaut python3). On passe par
+# « python -m cfd_validation », jamais par le script console : il survit à un venv
+# déplacé ou à un Python servi depuis une image Apptainer.
 set -euo pipefail
 
+ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY="${CFD_VALIDATION_PYTHON:-python3}"
-cd "$(dirname "$0")"
+cd "$ICI"
 
-titre() { printf '\n\033[36m=== %s ===\033[0m\n' "$1"; }
+echo "== 1. API Python : trois scénarios (identique, arrondi, regression)"
+"$PY" 01_test_integration.py
 
-titre "1. Lire les tables dans les COMMON blocks"
-"$PY" 01_lire_table.py
+echo
+echo "== 2. Grande table : 10 entrées, 15 sorties, 3 000 cas"
+"$PY" 02_grande_table.py
 
-titre "2. Contrôler un modèle juste"
-"$PY" 02_valider.py
-
-titre "3. Rejouer chaque panne, et nommer son motif"
-"$PY" 03_diagnostics.py
-
-titre "4. Tracer les planches (nécessite cfd-plot)"
-if "$PY" -c "import cfd_plot" 2>/dev/null; then
-    "$PY" 04_figures_batch_plot.py
-else
-    echo "cfd-plot absent : pip install -e ../../cfd-plot — on passe."
-fi
-
-titre "5. Le même contrôle sur du Fortran réellement compilé"
-"$PY" 05_fortran_reel.py
-
-titre "6. La même chose en ligne de commande"
-"$PY" -m cfd_validation toolchain || true
-"$PY" -m cfd_validation check --tables TABLES.yaml
-"$PY" -m cfd_validation inspecter --module aero_factice
-"$PY" -m cfd_validation valider \
-    --tables TABLES.yaml \
-    --module aero_factice \
-    --modele mon_modele:appeler
-
-printf '\n\033[32mExemple déroulé.\033[0m Les sorties sont dans SORTIE/.\n'
+echo
+echo "== 3. Ligne de commande, sur les tables écrites par l'étape 1"
+set +e
+"$PY" -m cfd_validation integration \
+    SORTIE_INTEGRATION/DONNEES/reference.csv \
+    SORTIE_INTEGRATION/DONNEES/test_regression.csv \
+    --config INTEGRATION.yaml \
+    --sortie SORTIE_INTEGRATION/cli_regression --sans-figures --lignes 10
+code=$?
+set -e
+echo
+echo "Code de retour : $code (0 conforme, 1 erreur d'entrée, 2 non conforme — 2 attendu ici)"

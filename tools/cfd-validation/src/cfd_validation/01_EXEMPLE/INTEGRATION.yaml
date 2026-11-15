@@ -1,0 +1,40 @@
+# Spécification du test d'intégration de l'exemple, pour la ligne de commande :
+#
+#   cfd-validation integration SORTIE_INTEGRATION/DONNEES/reference.csv \
+#       SORTIE_INTEGRATION/DONNEES/test_regression.csv --config INTEGRATION.yaml
+#
+# Les options de la commande (--rtol, --entrees…) priment sur ce fichier.
+# Une clé inconnue est refusée : « rtl: » ne garderait pas en silence la valeur par défaut.
+# Écrire les petits nombres avec un point (1.0e-9) : YAML 1.1 lit « 1e-9 » comme du texte
+# (cfd-validation l'accepte quand même).
+
+identifiant: INT-01
+description: >
+  Le modèle aéro intégré au workflow restitue, cas par cas, les coefficients
+  du modèle de référence dans les tolérances déclarées.
+
+entrees: [Mach, alpha, beta, configuration]
+sorties: [CN, CA, Cm, CY, regime]
+
+# entrees : apparier les lignes sur leurs entrées (l'ordre peut différer)
+# position : la i-ème ligne contre la i-ème ligne, entrées vérifiées
+alignement: entrees
+
+tolerances:
+  defaut:
+    rtol: 1.0e-9
+    atol: 1.0e-12
+    justification: "Changement de compilateur ou d'options : quelques ULP attendus, 1e-9 laisse un facteur 10⁶"
+  sorties:
+    Cm:
+      rtol: 1.0e-8
+      justification: "Cm somme des moments de bras opposés : perte de chiffres par compensation"
+    CY:
+      atol: 1.0e-14
+      justification: "CY nul par symétrie à β = 0 : seul l'écart absolu a un sens"
+
+# Ce qui identifie le code testé : repris en tête du rapport et dans resume.json.
+metadonnees:
+  code: modele_aero (factice)
+  version: "1.0"
+  compilateur: "gfortran 13.2 -O2"
