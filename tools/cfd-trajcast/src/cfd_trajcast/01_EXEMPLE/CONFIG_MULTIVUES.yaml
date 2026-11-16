@@ -1,0 +1,81 @@
+# Exemple multi-vues : poursuite + caméra au sol + caméra embarquée + télémétrie,
+# avec enchaînement de dispositions, titre, bandeaux d'événements et logo.
+# Vérifier : cfd-trajcast check CONFIG_MULTIVUES.yaml
+# Aperçu   : cfd-trajcast rendre CONFIG_MULTIVUES.yaml --apercu
+etude:
+  titre: "Vol de référence — AIM-9"
+  sous_titre: "Trajectoire analytique, rendu cfd-trajcast"
+
+trajectoire:
+  source: csv
+  fichier: vol_reference.csv
+  repere: ENU                      # x Est, y Nord, z Haut ; origine à la rampe
+  unites: { temps: s, longueur: m }
+  colonnes: { t: t, x: x, y: y, z: z }
+  attitude:
+    type: quaternion
+    colonnes: [qw, qx, qy, qz]
+    ordre: wxyz                    # scalaire en tête
+    sens: corps_vers_reference     # v_ENU = q ⊗ v_corps ⊗ q*
+    corps: FRD                     # x nez, y droite, z bas
+  evenements:
+    - { t: 3.744,  nom: "Mach 1" }
+    - { t: 4.0,    nom: "Fin de propulsion" }
+    - { t: 40.565, nom: "Apogée" }
+
+maquette:
+  fichier: MAQUETTE/Aim9.stl
+  unite: mm                        # un STL n'a pas d'unité : la déclarer
+  axe_nez: "-X"                    # le dôme est en x = 0, le culot en x = 38,1
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]           # point suivi par la trajectoire (unité du fichier)
+  longueur_imposee: 2.87           # le modèle fait 38,1 mm ; l'AIM-9 réel 2,87 m
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0
+  codec: { crf: 18, preset: medium }
+
+vues:
+  poursuite:
+    mode: poursuite
+    azimut: 60
+    elevation: 10
+  sol:
+    mode: sol
+    position: [1440, 90, 2]        # ENU (m) : 1,2 km à droite du plan de tir, à 2 m du sol
+    champ: auto                    # zoom : la fusée occupe `cadrage` de la hauteur
+    cadrage: 0.25
+  embarquee:
+    mode: embarquee
+    position_corps: [-0.9, 0.0, -0.16]   # FRD (m) : en arrière du CG, au-dessus du corps
+    visee: [1.0, 0.0, 0.06]              # vers le nez, légèrement plongeante
+    champ: 70
+
+disposition:                       # disposition par défaut
+  type: incrustation
+  principale: poursuite
+  incrustations:
+    - { vue: embarquee, coin: haut_droite, largeur: 0.24 }
+    - { vue: sol,       coin: bas_droite,  largeur: 0.24 }
+  telemetrie: droite
+
+sequence:                          # `de` en secondes de vol
+  - { de: 0.0,  disposition: { type: unique, principale: sol, telemetrie: droite } }
+  - { de: 2.5,  disposition: defaut, transition: fondu }
+  - { de: 36.0, disposition: { type: grille, cases: [[poursuite, sol], [embarquee, telemetrie]] },
+      transition: fondu }
+
+telemetrie:
+  grandeurs: [altitude, vitesse, mach, acceleration]
+  unites: { altitude: m, vitesse: m/s, acceleration: g }
+
+montage:
+  logo: { fichier: logo.png, coin: bas_gauche, hauteur: 0.05 }
+  titre_debut: 3.0
+  generique_fin: 3.0
+  bandeaux_evenements: true
+  duree_bandeau: 3.0
+  fondu: 0.6
+  etiquettes_vues: true

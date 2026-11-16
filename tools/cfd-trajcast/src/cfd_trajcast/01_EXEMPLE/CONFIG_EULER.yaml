@@ -1,0 +1,22 @@
+# Le même vol, lu autrement : CAO en STEP (extra [step]), trajectoire en NED avec
+# angles d'Euler. `check` doit donner les mêmes constats que CONFIG.yaml.
+etude:
+  titre: "Vol de référence — AIM-9 (STEP, Euler NED)"
+
+trajectoire:
+  fichier: vol_reference_euler.csv
+  repere: NED                      # colonnes x, y, z = Nord, Est, Bas
+  unites: { temps: s, longueur: m, angle: deg }
+  colonnes: { t: t, x: n, y: e, z: d }
+  attitude:
+    type: euler
+    sequence: ZYX                  # intrinsèque : lacet, puis tangage, puis roulis
+    colonnes: [lacet, tangage, roulis]
+    corps: FRD
+
+maquette:
+  fichier: MAQUETTE/Aim9.stp       # le STEP déclare des mm : pas besoin de `unite`
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87

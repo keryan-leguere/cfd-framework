@@ -1,0 +1,78 @@
+# Le vol de FUSEE_BI_ETAGE.yaml, de nuit, rendu par Blender (bpy, EEVEE) : ombres,
+# matériaux physiques, flammes émissives. Demande `pip install bpy` (bpy 5.x : Python
+# 3.13) ; environ 4 s par image en 1080p sur un GPU intégré — d'où la vidéo limitée aux
+# 8 premières secondes de vol (allumage, étage 1, séparation, étage 2).
+#   cfd-trajcast rendre FUSEE_NUIT_BLENDER.yaml
+etude:
+  titre: "Fusée à deux étages — rendu Blender"
+  sous_titre: "Scénario synthétique — cfd-trajcast"
+
+trajectoire:
+  fichier: fusee_bi_etage.csv
+  repere: ENU
+  attitude: { type: quaternion, colonnes: [qw, qx, qy, qz] }
+  evenements: fusee_bi_etage_evenements.csv      # CSV t,nom écrit par generer_scenarios.py
+
+maquette:
+  fichier: ../MAQUETTE/Aim9.stl
+  unite: mm
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87
+
+propulsion:
+  rayon_tuyere: 0.08                 # m ; tuyère au centre du culot (défaut)
+  phases:
+    - { de: "Allumage étage 1", a: "Séparation", jet: fusee_poudre }
+    - { de: "Allumage étage 2", a: "Fin de propulsion",
+        jet: { base: fusee_liquide, flamme: { longueur: 9 } } }
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0
+  a: 8.0                             # Blender est lent : le début du vol seulement
+  ralentis:
+    - { de: 2.5, a: 5.5, vitesse: 0.25 }    # fin d'étage 1, séparation, allumage d'étage 2
+  codec: { crf: 18, preset: medium }
+
+vues:
+  cinema:
+    mode: images_cles
+    cadrage: 0.3
+    cles:
+      - { t: 0.0,  azimut: 150, elevation: 5 }
+      - { t: 3.0,  azimut: 70,  elevation: 5 }
+      - { t: 6.0,  azimut: 25,  elevation: 12 }
+      - { t: 14.0, azimut: 90,  elevation: 8 }
+      - { t: 58.0, azimut: 100, elevation: 0 }
+  ensemble: { mode: ensemble }
+  sol: { mode: sol, position: [800, -300, 2], cadrage: 0.2 }
+
+disposition:
+  type: incrustation
+  principale: cinema
+  incrustations:
+    - { vue: ensemble, coin: haut_droite, largeur: 0.24 }
+    - { vue: sol,      coin: bas_droite,  largeur: 0.22 }
+  telemetrie: droite
+
+telemetrie:
+  grandeurs:
+    - { grandeur: altitude, unite: km }
+    - mach
+    - { grandeur: facteur_de_charge, libelle: "Facteur de charge" }
+    - { grandeur: pente, libelle: "Pente" }
+
+style:
+  preset: nuit
+
+montage:
+  logo: { fichier: ../logo.png, coin: bas_gauche, hauteur: 0.05 }
+  coin_bandeaux: haut_gauche
+
+moteur:
+  type: blender                      # pyvista (défaut) | blender
+  rendu: eevee                       # eevee (GPU) | cycles (lancer de rayons, CPU)
+  echantillons: 16

@@ -1,0 +1,88 @@
+# Jalon J4 : vol à virage (route +70° entre 6 et 20 s), style « conférence »
+# (ciel, terrain, traînée, soleil), caméra à images clés, orbite, ralentis.
+# Aperçu : cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu
+etude:
+  titre: "Vol à virage — AIM-9"
+  sous_titre: "Trajectoire synthétique, rendu cfd-trajcast"
+
+trajectoire:
+  fichier: vol_virage.csv
+  repere: ENU
+  colonnes: { t: t, x: x, y: y, z: z }
+  attitude:
+    type: quaternion
+    colonnes: [qw, qx, qy, qz]
+    ordre: wxyz
+    sens: corps_vers_reference
+    corps: FRD
+  evenements:
+    - { t: 3.744,  nom: "Mach 1" }
+    - { t: 4.0,    nom: "Fin de propulsion" }
+    - { t: 6.0,    nom: "Début du virage" }
+    - { t: 20.0,   nom: "Fin du virage" }
+    - { t: 40.565, nom: "Apogée" }
+
+maquette:
+  fichier: MAQUETTE/Aim9.stl
+  unite: mm
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0                     # temps réel hors des ralentis
+  ralentis:                        # en secondes de vol ; rampes de transition_ralenti s
+    - { de: 3.4,  a: 4.6,  vitesse: 0.25 }   # Mach 1 et fin de propulsion, ×4
+    - { de: 39.5, a: 41.5, vitesse: 0.5 }    # apogée, ×2
+  transition_ralenti: 0.5
+  codec: { crf: 18, preset: medium }
+
+vues:
+  cinema:
+    mode: images_cles              # repérée sur la route, comme poursuite ; réglages par clés
+    cadrage: 0.35
+    cles:                          # t en s de vol ; azimut : 0 = derrière, 90 = à droite, 180 = devant
+      - { t: 0.0,  azimut: 160, elevation: 3,  champ: 35 }
+      - { t: 4.0,  azimut: 60,  elevation: 8 }
+      - { t: 14.0, azimut: 100, elevation: 25 }
+      - { t: 30.0, azimut: 30,  elevation: 8 }
+      - { t: 40.5, azimut: 90,  elevation: 0 }
+      - { t: 55.0, azimut: 140, elevation: -12 }
+  orbite:
+    mode: orbite                   # fait le tour de la fusée, 20 °/s de vidéo
+    elevation: 15
+    vitesse_angulaire: 20
+  ensemble:
+    mode: ensemble
+
+disposition:
+  type: incrustation
+  principale: cinema
+  incrustations:
+    - { vue: ensemble, coin: haut_droite, largeur: 0.24 }
+    - { vue: orbite,   coin: bas_droite,  largeur: 0.22 }
+  telemetrie: droite
+
+telemetrie:
+  grandeurs:
+    - { grandeur: altitude, unite: km }
+    - mach
+    - { colonne: route, libelle: "Route", unite: "°", decimales: 0 }
+    - { colonne: q0, libelle: "Pression dynamique q₀", unite: kPa, facteur: 0.001, decimales: 1 }
+
+propulsion:                        # tuyère au centre du culot par défaut
+  rayon_tuyere: 0.08
+  phases:
+    - { de: 0, a: "Fin de propulsion", jet: fusee_poudre }   # instant (s) ou nom d'événement
+
+style:
+  preset: conference               # sobre | conference ; les clés ci-dessous le surchargent
+
+montage:
+  logo: { fichier: logo.png, coin: bas_gauche, hauteur: 0.05 }
+  titre_debut: 3.0
+  generique_fin: 3.0
+  coin_bandeaux: haut_gauche

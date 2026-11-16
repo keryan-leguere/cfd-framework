@@ -1,0 +1,45 @@
+# Contexte
+Je développe un package Python open source.
+Il transforme une simulation de vol de fusée en vidéo de présentation
+prête pour une conférence.
+
+# Objectif du package
+Pipeline complet :
+1. Entrée : un modèle CAO (.step/.stl) + une trajectoire (CSV/dataframe : temps,
+   position x/y/z, et attitude en quaternion (pas encore trouvé), OU une simulation RocketPy.
+2. Rendu 3D : la fusée animée le long de sa trajectoire, avec une caméra
+   qui la suit, un sol, un ciel, une traînée et un éclairage soigné.
+3. Panneau de télémétrie animé (altitude, vitesse, Mach, accélération).
+4. Montage final : rendu 3D + télémétrie + titres + logo → MP4 1080p/4K.
+
+# Contraintes
+- 100 % open source, installable uniquement avec pip.
+- Pas de logiciel externe (pas de Blender en application).
+- Stack envisagée : trimesh + cascadio (STEP), PyVista (rendu),
+  matplotlib (télémétrie), moviepy + imageio-ffmpeg (montage),
+  RocketPy (optionnel). bpy en option pour un rendu haute qualité.
+- Python ≥ 3.9, compatible Windows / Linux / macOS.
+
+# Ce que j'attends
+Ne code rien pour l'instant. Commence par me poser les questions
+nécessaires pour lever les ambiguïtés, puis propose un plan complet
+avec :
+1. L'architecture : modules, responsabilités, flux de données
+   (avec un schéma).
+2. L'API publique : un exemple d'usage en 5 lignes, plus une CLI
+   (ex. `envol render config.yaml`).
+3. Le format de configuration (YAML) : caméra, style, résolution, durée.
+4. Les conventions de repères et d'unités (ENU/NED, body frame,
+   quaternions) et leur validation.
+5. Les dépendances : obligatoires vs optionnelles (extras pip).
+6. La stratégie de tests, y compris des tests de rendu sur une
+   trajectoire de référence.
+7. La structure du dépôt, le packaging (pyproject.toml), la doc
+   et le CI.
+8. Une feuille de route par jalons, du MVP (STEP + CSV → MP4 simple)
+   jusqu'à la version « conférence ».
+9. Les risques techniques (performance, rendu hors écran sans GPU,
+   conversion STEP) et comment les atténuer.
+
+Pour chaque choix structurant, justifie-le brièvement et cite
+une alternative.

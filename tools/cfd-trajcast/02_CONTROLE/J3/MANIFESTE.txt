@@ -1,0 +1,28 @@
+Jalon J3 — multi-vues, télémétrie, montage (CONFIG_MULTIVUES.yaml)
+
+Fichiers
+  vol_multivues_1080p.mp4   tout le vol en temps réel, 1080p, 30 ips
+  planche_J3.png            6 instants : chaque étape de la séquence et ses fondus
+  1_t1.5.png          départ — vue sol seule + titre
+  2_t2.65.png          fondu vers la disposition par défaut
+  3_t4.2.png          médaillons + bandeaux Mach 1 / fin de propulsion
+  4_t20.png          montée balistique
+  5_t36.3.png          fondu vers la grille
+  6_t45.png          grille, après l'apogée
+
+À regarder
+  - séquence : vue sol seule (0 → 2,5 s), puis poursuite + médaillons, puis grille à 36 s
+  - fondus de 0,6 s entre dispositions (pas de saut d'image)
+  - caméra sol : zoom qui garde la fusée à taille constante malgré l'éloignement
+  - caméra embarquée : roule avec la fusée (voulu) ; le corps occupe le bas de l'image
+  - télémétrie : valeurs en français (virgule, espace fine), courbe qui se remplit,
+    accélération cinématique ≈ 9,2 g en propulsion puis 1 g (chute libre)
+  - bandeaux Mach 1 (3,7 s) et fin de propulsion (4,0 s) empilés au-dessus du logo
+  - titre au début, générique (assombri + titre) sur les 3 dernières secondes
+
+Vidéo contrôlée par ffmpeg
+  1920×1080, 30 ips, 1666 images, 55.53 s, h264 yuv420p
+  rendu en 90.6 s (54 ms/image, un seul processus)
+
+Généré le 2026-11-15 17:50 en 96.7 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

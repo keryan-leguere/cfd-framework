@@ -1,0 +1,26 @@
+Jalon J5 — RocketPy, cache, rendu parallèle par tronçons
+
+RocketPy — 01_EXEMPLE/ROCKETPY/CONFIG_ROCKETPY.yaml (fusée-sonde générique, maquette Aim9)
+  simulation RocketPy : 1.95 s ; relue du cache : 0.01 s
+  1345 échantillons, 336.1 s de vol ; événements : Sortie de rampe (0.32 s), Fin de propulsion (3.90 s), Apogée (26.34 s), Parachute « Extracteur » (26.34 s), Parachute « Principal » (187.04 s), Impact (336.15 s)
+  planche_ROCKETPY.png, ROCKETPY_1080p.mp4 : 1920×1080, 1468 images, 48.9 s ; rendu en 49 s (33 ms/image, 6 processus, 24 tronçons)
+
+Débit — AVION_MANOEUVRES 1080p, vol 40 → 80 s (4 vues + télémétrie, préréglage conférence)
+  machine : 8 cœurs, x86_64
+  1 processus, x264 medium   : 801 images en  54.0 s →  14.8 images/s (67 ms/image), 5.1 Mo
+  4 processus, x264 medium   : 801 images en  37.1 s →  21.6 images/s (46 ms/image), 5.9 Mo
+  6 processus, x264 medium   : 801 images en  36.2 s →  22.1 images/s (45 ms/image), 6.5 Mo
+  6 processus, x264 veryfast : 801 images en  30.3 s →  26.4 images/s (38 ms/image), 5.4 Mo
+
+AVION_MANOEUVRES (Aim9) : planche_AVION_MANOEUVRES.png, AVION_MANOEUVRES_1080p.mp4 — 4260 images en 171 s (40 ms/image, 6 processus)
+AVION_PANNE (Aim9) : planche_AVION_PANNE.png, AVION_PANNE_1080p.mp4 — 3355 images en 128 s (38 ms/image, 6 processus)
+
+À regarder
+  - ROCKETPY : bandeaux d'événements venus de RocketPy (rampe, fin de propulsion, apogée,
+    extracteur), télémétrie lue dans le Flight (Mach, pression dynamique, incidence, marge
+    statique), nez dans l'axe de la vitesse pendant la propulsion
+  - vidéos rendues en parallèle : aucune saute ni image dupliquée aux raccords de tronçons
+  - scénarios d'avion avec la CAO Aim9 : cadrages, caméra embarquée, roulage au-dessus du sol
+
+Généré le 2026-11-15 22:33 en 524.5 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

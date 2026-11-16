@@ -105,6 +105,73 @@ jobs:
         working-directory: tools/${{ matrix.package }}
         run: mypy src
 
+  # cfd-trajcast has its own job: it supports Python 3.9 (the other packages start at
+  # 3.12), it renders 3D offscreen (OpenGL through EGL, Mesa llvmpipe on a runner with
+  # no GPU), and its example video is the useful artefact of a run.
+  cfd-trajcast:
+    name: cfd-trajcast (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    defaults:
+      run:
+        working-directory: tools/cfd-trajcast
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: tools/cfd-trajcast/pyproject.toml
+
+      # Mesa gives EGL a software device (llvmpipe); xvfb is the documented fallback
+      # (00_DOC/04_RENDU_HORS_ECRAN.md) when the EGL path is not available.
+      - name: Install Mesa (EGL, llvmpipe) and xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libegl-mesa0 libgl1-mesa-dri libglx-mesa0 xvfb
+
+      # [rocketpy] is marker-gated (RocketPy needs Python >= 3.10): on 3.9 the
+      # RocketPy tests skip themselves, on 3.12 they run a real simulation.
+      - name: Install cfd-trajcast
+        run: pip install -e ".[dev,step,rocketpy]"
+
+      # The suite's rendering tests skip when no offscreen window works, which would
+      # turn a broken runner into a quietly green build. `diagnostic` exits 2 when
+      # nothing renders: EGL first, then the same commands under xvfb.
+      - name: Offscreen rendering (EGL, else xvfb)
+        id: rendu
+        run: |
+          if cfd-trajcast diagnostic; then echo "lanceur=" >> "$GITHUB_OUTPUT"
+          else xvfb-run -a cfd-trajcast diagnostic && echo "lanceur=xvfb-run -a" >> "$GITHUB_OUTPUT"; fi
+
+      - name: pytest
+        run: ${{ steps.rendu.outputs.lanceur }} pytest
+
+      - name: ruff check
+        if: always()
+        run: ruff check .
+
+      # The NumPy stubs of the oldest supported NumPy disagree with the newest on four
+      # pre-existing lines; mypy strict is the gate on the newest interpreter only.
+      - name: mypy
+        if: always() && matrix.python == '3.12'
+        run: mypy src
+
+      - name: Example video (preview)
+        if: matrix.python == '3.12'
+        run: |
+          cfd-trajcast exemple ex
+          cd ex && ${{ steps.rendu.outputs.lanceur }} cfd-trajcast rendre CONFIG_MULTIVUES.yaml --apercu
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12'
+        with:
+          name: cfd-trajcast-apercu
+          path: tools/cfd-trajcast/ex/CONFIG_MULTIVUES_apercu.mp4
+          if-no-files-found: error
+
 # A job for the Bash framework (tests/test_sprint1_2.sh with CFD_ADAPTATEUR=mock)
 # is intentionally NOT here yet: that suite currently aborts on its first `h1`
 # call. lib/format.sh uses `((sec++))`, which returns exit status 1 when the

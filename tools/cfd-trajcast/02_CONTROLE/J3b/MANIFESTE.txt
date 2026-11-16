@@ -1,0 +1,22 @@
+Jalon J3b — retours sur J3 (CONFIG_ENSEMBLE.yaml)
+
+Fichiers
+  vol_ensemble_1080p.mp4    tout le vol en temps réel, 1080p, 30 ips
+  planche_J3b.png           5 instants
+
+À regarder
+  - titre en haut de l'image : il ne cache plus la fusée
+  - vue d'ensemble (principale) : repère NED gradué en mètres (Nord, Est, Bas — le Bas est
+    négatif au-dessus du sol), trajectoire complète en gris, partie parcourue en orange,
+    trace au sol, événements nommés, fusée agrandie (facteur affiché en bas à droite)
+    qui avance et s'oriente ; caméra fixe, cadrage ajusté aux 8 coins de la boîte
+  - colonne haute à gauche : ce vol fait 7,3 km de haut pour 2,2 km de portée
+  - zooms au milieu : embarquée, poursuite, sol ; télémétrie à droite, logo au-dessus
+  - bandeaux d'événements en haut à gauche de la vue d'ensemble
+
+Vidéo contrôlée par ffmpeg
+  1920×1080, 30 ips, 1666 images, 55.53 s, h264 yuv420p
+  rendu en 88.9 s (53 ms/image, un seul processus)
+
+Généré le 2026-11-15 18:11 en 94.1 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

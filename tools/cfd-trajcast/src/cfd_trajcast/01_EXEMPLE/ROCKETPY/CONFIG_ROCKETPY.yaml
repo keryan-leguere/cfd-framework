@@ -1,0 +1,66 @@
+# Vol simulé par RocketPy (vol_rocketpy.py), rendu avec la CAO de l'exemple.
+# La trajectoire n'est pas un CSV : cfd-trajcast exécute le script, lit le Flight
+# (conventions de RocketPy : ENU depuis la rampe, quaternion corps → inertiel) et en tire
+# les événements — sortie de rampe, fin de propulsion, apogée, parachutes, impact.
+# RocketPy exige Python ≥ 3.10 : pip install 'cfd-trajcast[rocketpy]'.
+# Aperçu : cfd-trajcast rendre CONFIG_ROCKETPY.yaml --apercu
+etude:
+  titre: "Vol simulé par RocketPy"
+  sous_titre: "Fusée-sonde de l'exemple — cfd-trajcast"
+
+trajectoire:
+  source: rocketpy
+  script: vol_rocketpy.py          # exécuté depuis son dossier
+  fonction: simuler                # appelée sans argument, rend un rocketpy.Flight
+  cache: true                      # vol gardé sur disque : un second rendu ne le recalcule pas
+  # grandeurs: [mach_number, dynamic_pressure, ...]   # échantillonnées dans le Flight (défaut : une sélection)
+
+maquette:
+  fichier: ../MAQUETTE/Aim9.stl
+  unite: mm
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87
+
+propulsion:
+  rayon_tuyere: 0.06
+  phases:
+    - { de: 0, a: "Fin de propulsion", jet: fusee_poudre }
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0
+  a: 45.0                          # la descente sous parachute (5 min) n'est pas montrée
+  ralentis:
+    - { de: 0.0, a: 1.5, vitesse: 0.3 }     # sortie de rampe
+  codec: { crf: 18, preset: medium }
+
+vues:
+  ensemble: { mode: ensemble, elevation: 20 }
+  poursuite: { mode: poursuite, azimut: 50, elevation: 10, cadrage: 0.3 }
+  sol: { mode: sol, position: [350, -250, 2], cadrage: 0.25 }
+
+disposition:
+  type: libre
+  cases:
+    - { vue: ensemble,   rect: [0.0,  0.0, 0.44, 1.0] }
+    - { vue: poursuite,  rect: [0.44, 0.0, 0.30, 0.5] }
+    - { vue: sol,        rect: [0.44, 0.5, 0.30, 0.5] }
+    - { vue: telemetrie, rect: [0.74, 0.1, 0.26, 0.9] }
+
+telemetrie:
+  grandeurs:
+    - { grandeur: altitude, unite: km }
+    - { colonne: mach_number, libelle: "Mach", decimales: 2 }
+    - { colonne: dynamic_pressure, libelle: "Pression dynamique", unite: kPa, facteur: 0.001, decimales: 1 }
+    - { colonne: angle_of_attack, libelle: "Incidence", unite: "°", decimales: 1, plage: [-5, 30] }
+    - { colonne: stability_margin, libelle: "Marge statique", unite: "cal", decimales: 2 }
+
+style:
+  preset: conference
+
+montage:
+  logo: { fichier: ../logo.png, coin: haut_droite, hauteur: 0.05 }
+  coin_bandeaux: haut_gauche

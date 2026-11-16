@@ -1,0 +1,46 @@
+# Exemple : AIM-9 (STL) sur le vol de référence, quaternions en ENU.
+# Vérifier : cfd-trajcast check CONFIG.yaml
+etude:
+  titre: "Vol de référence — AIM-9"
+  sous_titre: "Trajectoire analytique, cfd-trajcast"
+
+trajectoire:
+  source: csv
+  fichier: vol_reference.csv
+  repere: ENU                      # x Est, y Nord, z Haut ; origine à la rampe
+  unites: { temps: s, longueur: m }
+  colonnes: { t: t, x: x, y: y, z: z }
+  attitude:
+    type: quaternion
+    colonnes: [qw, qx, qy, qz]
+    ordre: wxyz                    # scalaire en tête
+    sens: corps_vers_reference     # v_ENU = q ⊗ v_corps ⊗ q*
+    corps: FRD                     # x nez, y droite, z bas
+  evenements:
+    - { t: 3.744,  nom: "Mach 1" }
+    - { t: 4.0,    nom: "Fin de propulsion" }
+    - { t: 40.565, nom: "Apogée" }
+
+maquette:
+  fichier: MAQUETTE/Aim9.stl
+  unite: mm                        # un STL n'a pas d'unité : la déclarer
+  axe_nez: "-X"                    # le dôme est en x = 0, le culot en x = 38,1
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]           # point suivi par la trajectoire (unité du fichier)
+  longueur_imposee: 2.87           # le modèle fait 38,1 mm ; l'AIM-9 réel 2,87 m
+
+video:
+  resolution: 1080p                # 540p | 720p | 1080p | 1440p | 4K | [largeur, hauteur]
+  ips: 30
+  vitesse: 1.0                     # s de vol par s de vidéo ; ou duree: 12 (s de vidéo)
+  codec: { crf: 18, preset: medium }
+
+vues:
+  poursuite:
+    mode: poursuite
+    distance: auto                 # la fusée occupe `cadrage` de la hauteur d'image
+    cadrage: 0.35
+    azimut: 60                     # ° : 0 = derrière, 90 = à droite de la route
+    elevation: 10                  # ° au-dessus de l'horizontale
+    lissage: 0.8                   # s : constante de temps de la caméra
+    champ: 30                      # ° : angle de vue vertical

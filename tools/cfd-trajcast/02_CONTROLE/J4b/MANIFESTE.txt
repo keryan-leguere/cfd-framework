@@ -1,0 +1,25 @@
+Jalon J4b — jets par phases, scénarios génériques (01_EXEMPLE/SCENARIOS)
+
+AVION_MANOEUVRES
+  planche_AVION_MANOEUVRES.png, AVION_MANOEUVRES_1080p.mp4
+  1920×1080, 30 ips, 4260 images, 142.0 s, h264 yuv420p ; rendu en 285 s (67 ms/image)
+
+AVION_PANNE
+  planche_AVION_PANNE.png, AVION_PANNE_1080p.mp4
+  1920×1080, 30 ips, 3355 images, 111.8 s, h264 yuv420p ; rendu en 292 s (87 ms/image)
+
+FUSEE_BI_ETAGE
+  planche_FUSEE_BI_ETAGE.png, FUSEE_BI_ETAGE_1080p.mp4
+  1920×1080, 30 ips, 2547 images, 84.9 s, h264 yuv420p ; rendu en 157 s (62 ms/image)
+
+À regarder
+  - flammes : évasées, cœur blanc, dégradé de couleur, scintillement ; disques de Mach (étage 2,
+    postcombustion) ; fumée qui s'ouvre en cône derrière la flamme et dérive en vieillissant
+  - phases : postcombustion ↔ réacteur sec (avion), poudre → liquide (fusée), réacteur → panne
+    (feu vacillant, fumée noire) — chaque fumée garde la couleur de sa phase d'émission
+  - généricité : avion au roulage (sol abaissé de 1,6 m), boucle, tonneau, spirale ; vue
+    d'ensemble « maquette agrandie » ; télémétrie avion (kt, ft, g, inclinaison, pente, cap)
+  - anticrénelage SSAA (préréglage conférence) : bords d'ailes et de fumée lisses
+
+Généré le 2026-11-15 19:38 en 763.6 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

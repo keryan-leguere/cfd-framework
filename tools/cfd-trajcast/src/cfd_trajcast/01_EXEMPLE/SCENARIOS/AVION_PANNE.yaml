@@ -1,0 +1,79 @@
+# Cas de panne fictif (trajectoire d'avion, maquette : l'AIM-9 fourni) : croisière à
+# 4 000 m, panne moteur (feu et fumée noire), plané, grand virage, perte de contrôle et
+# spirale jusqu'à 150 m.
+# Vue d'ensemble NED en principale ; poursuite et cockpit à droite ; l'orbite
+# remplace le cockpit au début de la spirale.
+# Aperçu : cfd-trajcast rendre AVION_PANNE.yaml --apercu
+etude:
+  titre: "Panne moteur et départ en spirale"
+  sous_titre: "Scénario fictif — cfd-trajcast"
+
+trajectoire:
+  fichier: avion_panne.csv
+  repere: ENU
+  attitude: { type: quaternion, colonnes: [qw, qx, qy, qz] }
+  evenements: avion_panne_evenements.csv
+
+maquette:
+  fichier: ../MAQUETTE/Aim9.stl      # la CAO fournie, aussi pour les trajectoires d'avion
+  unite: mm
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87
+
+propulsion:
+  rayon_tuyere: 0.08                 # m ; une tuyère au centre du culot (défaut)
+  phases:
+    - { de: "Croisière", a: "Panne moteur", jet: reacteur }
+    - { de: "Panne moteur", jet: panne }        # feu vacillant + fumée noire, jusqu'à la fin
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0
+  ralentis:
+    - { de: 14.0, a: 18.0, vitesse: 0.5 }      # la panne
+  codec: { crf: 18, preset: medium }
+
+vues:
+  ensemble: { mode: ensemble, elevation: 20 }
+  poursuite: { mode: poursuite, azimut: 40, elevation: 12, cadrage: 0.3 }
+  cockpit:
+    mode: embarquee
+    position_corps: [-0.9, 0.0, -0.16]  # FRD : au-dessus du corps, en arrière, regard vers le nez
+    visee: [1.0, 0.0, 0.06]
+    champ: 70
+  orbite: { mode: orbite, elevation: 20, vitesse_angulaire: 25, cadrage: 0.3 }
+
+disposition:
+  type: libre
+  cases:
+    - { vue: ensemble,   rect: [0.0,  0.0, 0.48, 1.0] }
+    - { vue: poursuite,  rect: [0.48, 0.0, 0.26, 0.5] }
+    - { vue: cockpit,    rect: [0.48, 0.5, 0.26, 0.5] }
+    - { vue: telemetrie, rect: [0.74, 0.1, 0.26, 0.9] }
+
+sequence:
+  - { de: "Spirale", disposition:
+      { type: libre, cases: [ { vue: ensemble,   rect: [0.0,  0.0, 0.48, 1.0] },
+                              { vue: poursuite,  rect: [0.48, 0.0, 0.26, 0.5] },
+                              { vue: orbite,     rect: [0.48, 0.5, 0.26, 0.5] },
+                              { vue: telemetrie, rect: [0.74, 0.1, 0.26, 0.9] } ] },
+      transition: fondu }
+
+telemetrie:
+  grandeurs:
+    - { grandeur: altitude, unite: ft }
+    - { grandeur: vitesse, unite: kt }
+    - { grandeur: pente }
+    - { colonne: inclinaison, libelle: "Inclinaison", unite: "°", decimales: 0 }
+    - { grandeur: facteur_de_charge, libelle: "Facteur de charge" }
+    - { grandeur: cap, plage: [0, 360] }
+
+style:
+  preset: conference
+
+montage:
+  logo: { fichier: ../logo.png, coin: haut_droite, hauteur: 0.05 }
+  coin_bandeaux: haut_gauche

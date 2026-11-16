@@ -1,0 +1,27 @@
+Jalon J2 — premier MP4 (caméra de poursuite, fond uni)
+
+Fichiers
+  vol_complet_10s_1080p.mp4  tout le vol (55,5 s) en 10 s de vidéo, 1080p, 30 ips
+  planche_J2.png             4 instants rendus par `cfd-trajcast image`, réduits
+  1_rampe.png
+  2_Mach_1.png
+  3_montée_balistique.png
+  4_apogée.png
+
+À regarder
+  - la fusée reste centrée, à taille constante (distance auto, cadrage 35 %)
+  - la caméra est à 60° à droite de la route, 10° au-dessus : on voit la fusée de 3/4 arrière
+  - aucun tressautement de caméra, y compris au départ quasi vertical et à l'apogée
+  - le roulis (90 °/s) se voit sur les ailettes ; la caméra, elle, ne roule pas
+  - le tracé gris du vol passe par la fusée ; le quadrillage au sol défile au départ
+  - pas de sol ni de ciel : ils arrivent au J4 (en altitude, seul le tracé donne le mouvement)
+
+Vidéo contrôlée par ffmpeg
+  1920×1080, 30 ips, 300 images, 10.00 s, h264 yuv420p
+  rendu en 6.0 s (20 ms/image, un seul processus)
+  plus grand pivotement de la caméra d'une image à la suivante : 0.00°
+  (le vol de référence garde un cap constant : le lissage de la route n'y est pas
+  sollicité ; il l'est par tests/test_camera.py, et le sera par un vol à virage au J4)
+
+Généré le 2026-11-15 17:30 en 8.3 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

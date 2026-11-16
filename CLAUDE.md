@@ -730,6 +730,133 @@ not part of the Bash framework's runtime:
       orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
       trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200
       §7.4) are reproduced.
+- **`tools/cfd-trajcast/`** — rocket flight simulation (trajectory + attitude) + CAD → conference
+  video (3D render with chase camera, animated telemetry, titles, MP4). **Linux only**, pip only
+  (no Blender app), Python ≥ 3.9 (verified on 3.9, 3.12 and 3.13 + bpy). Built milestone by milestone (J0–J6, all done);
+  **each milestone ends with a qualitative review**: `python 02_CONTROLE/generer_controle.py
+  --jalon Jn` writes images to `02_CONTROLE/Jn/` (git-ignored except `MANIFESTE.txt`). Done: J0
+  (offscreen spike, `00_DOC/04_RENDU_HORS_ECRAN.md`), J1 (conventions, reading, `check`), J2
+  (first MP4: `Film`, chase camera, `rendre`/`image`/`diagnostic`) and J3 (multi-view layouts and
+  sequence, `sol`/`embarquee` cameras, telemetry panel, titles/banners/logo —
+  `00_DOC/03_CAMERA_ET_VIDEO.md`, example `01_EXEMPLE/CONFIG_MULTIVUES.yaml`).
+  Layers `core` (NumPy only) → `data` → `engine` → `report` → `cli`, AST-enforced; heavy libs
+  confined to one module each (`tests/test_architecture.py`: pyvista → `engine/rendu/pyvista_.py`,
+  matplotlib → `engine/telemetrie.py`, trimesh/cascadio → `data/maquette.py`, imageio_ffmpeg/PIL →
+  `engine/encodage.py`, PIL also → `engine/montage.py`). mypy strict. Key points:
+    - **One internal convention, applied at read time**: ENU local (m), body FRD, Hamilton
+      quaternion `(w,x,y,z)` body→ENU. Inputs *declare* theirs (`repere` ENU/NED, quaternion
+      `ordre`/`sens`, Euler `sequence` — upper = intrinsic, lower = extrinsic, all 12 —, body
+      FRD/FLU, units). **Attitude is mandatory** (quaternion or Euler): no attitude →
+      `ErreurAttitude`; it is never derived from velocity (user decision).
+    - **Default checks assume no flight profile** (user decision: some trajectories have no
+      ascent) — no "it must climb", no ground. The nose/velocity coherence check is **opt-in**
+      (`check --coherence`, `verifier(..., coherence=True)`): median nose/velocity angle on the
+      ascent > 20° → alert, and the conversion is *replayed* under the other conventions
+      (`convertir(brut, decl)`) to name the one that would make the flight coherent.
+    - `core/vol_reference.py` is an **analytic** flight (straight powered line, then ballistic;
+      nose along velocity, 90°/s roll) — the example ships it as ENU+quaternion and NED+Euler,
+      and every reader must land on the exact values.
+    - **CAD** (`data/maquette.py`): STEP via cascadio (extra `[step]`), which converts to metres
+      — `unite` is then only a check against the STEP's own `LENGTH_UNIT`; meshes need `unite`.
+      `axe_nez`/`axe_haut` map CAD axes to FRD; `origine` (base, centre_volume, or a point in the
+      file's unit) is the point the trajectory tracks. `longueur_imposee` scales a reduced model
+      (the shipped `01_EXEMPLE/MAQUETTE/Aim9.stp` is 38.1 mm long, nose at x = 0 → `axe_nez: "-X"`).
+    - **Rendering** (`engine/`): `planifier` turns trajectory + `ConfigVideo` + view into a
+      `Plan` (one row per frame: flight time, pose, camera); `Scene` holds what doesn't change;
+      a `Moteur` (Protocol; `MoteurPyVista` today, bpy later) only draws. **Floating origin**:
+      every frame is translated so the rocket sits at (0,0,0) — a camera is just an offset.
+      The chase camera follows the *route* (smoothed horizontal velocity), never the attitude,
+      so roll doesn't spin the image. `Film.image(t)` plans from t0 to t because the camera
+      smoothing depends on history. The geometric test (`tests/test_rendu.py`) compares the
+      rendered silhouette bbox with the pinhole projection of the vertices (±2.5 px, GPU or
+      llvmpipe alike) — it fails on a conjugated quaternion.
+    - **Multi-view** (J3): `core/disposition.py` turns a `Disposition` (unique / incrustation /
+      grille / libre, plus a `telemetrie` strip) into ordered pixel `Case`s with even sizes; each
+      view is rendered at its case size (`MoteurPyVista` keeps one Plotter per size). The `Plan`
+      carries one camera track per view, one layout per `sequence` step and per-frame crossfade
+      weights; `_Atelier` (engine/pipeline.py) composes: views → telemetry → paste → blend →
+      `Habillage` overlays (Pillow text drawn once as RGBA layers, opacity varied per frame).
+      `Film.image(t)` must use the **full** video's duration and flight range for overlays and
+      the panel axis, and `recaler` recomputes camera tracks after snapping the last frame to t.
+      Telemetry acceleration is *kinematic* (1 g in free fall), documented as such. The panel
+      shows **any** quantity (`data/configuration.Grandeur`, 1–8 rows): a computed one
+      (`CALCULEES`: altitude, vitesse, mach, acceleration, incidence_totale) or any numeric column
+      of the trajectory (`Trajectoire.donnees` keeps *all* of them, attitude included) with
+      label/unit text/factor/decimals/colour/axis range. Labels are shown verbatim and shrunk to
+      the space the widest value of their row leaves.
+    - **`ensemble` view** (user request): a fixed-camera "macro" view of the whole flight in a
+      graduated **NED** box (Nord/Est/Bas, Bas negative above ground) — grey full path, orange
+      flown path, ground track, named events, and the rocket **enlarged** (factor printed in the
+      view, `echelle_ensemble`). It does not use the floating origin (absolute NED coords; no
+      `PisteCamera`, `Plan.ensembles` instead). `cadre_ensemble` fits the 8 corners of the
+      *rounded* tick box exactly, not a bounding sphere. True proportions are kept: a near-
+      vertical flight gets a tall cell (`01_EXEMPLE/CONFIG_ENSEMBLE.yaml`), never stretched axes.
+      Title defaults to the **top** (`montage.position_titre`) — centred, it hid the rocket —
+      and is centred on the main view, not on the whole frame.
+    - **J4**: `style` section with presets (`sobre` = the J2–J3 look and the default, so old
+      files render unchanged; `conference` = sky gradient, procedural seamless terrain texture
+      (`engine/textures.py`, FFT-filtered noise), sun light, PBR-ish rocket, smoke trail). The
+      trail is a tube from the nozzle whose last point is the *current* instant (the path is
+      sampled at 60 Hz, i.e. metres behind at 300 m/s), widening and fading with age;
+      `trainee.jusqu_a` takes a time or an **event name**. Depth peeling is enabled with a trail:
+      PBR + translucency otherwise leaves ghost fins. Cameras `orbite` (world-frame azimuth,
+      °/s of video) and `images_cles` (route-frame, smoothstep between keys, shortest-arc azimuth).
+      Slow motion (`video.ralentis`, `core/temps.py`): playback speed per *flight* interval with
+      linear ramps, flight time integrated frame by frame. `01_EXEMPLE/vol_virage.csv` (70° turn)
+      is what actually exercises route smoothing (`test_poursuite_lisse_le_virage`).
+    - **J4b (user feedback: flared jets, several phases, colour, genericity)**: `propulsion` section
+      — nozzles (FRD), radius, **phases** bounded by times or event names, each with a `Jet`
+      (flame and/or smoke; presets `JETS`: fusee_poudre, fusee_liquide, postcombustion, reacteur,
+      panne…). Geometry is NumPy in `engine/jets.py`: flame = unlit surface of revolution that
+      flares then closes, white core, Mach diamonds, deterministic flicker; smoke = world-frame
+      tube whose radius grows with **distance behind the nozzle** (cone) and age, fades in behind
+      the flame, keeps the jet of its *emission* phase. `style.trainee` is legacy (converted to a
+      smoke-only phase) and no longer on in `conference`. `core/manoeuvres.py` is a point-mass
+      flight generator (lift n·g, thrust, V² drag, bank/heading/slope controllers) used by
+      `01_EXEMPLE/SCENARIOS/generer_scenarios.py` (aircraft STL built by hand — trimesh's convex
+      hull and fix_normals need SciPy, which is not a dependency). Genericity: cameras frame
+      `Maquette.taille` (max of length/span), `style.sol.altitude`, aircraft telemetry
+      (facteur_de_charge, cap, pente, Euler angles), events from a CSV, event names in
+      `sequence`. Under EGL only SSAA anti-aliases (FXAA silently falls back, MSAA does nothing);
+      Phong material by default because PBR without an environment map goes black when backlit.
+    - **J5**: `trajectoire: {source: rocketpy, script, fonction}` runs the user's script (cwd =
+      its folder) and reads the returned `Flight` by **attribute access only** (`data/rocketpy_.py`
+      never imports RocketPy, which needs Python ≥ 3.10; extra `[rocketpy]` is marker-gated).
+      RocketPy conventions, verified on a real sim: ENU, `z` is ASL (minus `env.elevation`),
+      quaternion e0..e3 body→inertial, body `z` = nose → FRD by cyclic permutation
+      (x_FRD=z, y_FRD=x, z_FRD=y). Events: rail exit, burnout, apogee, parachutes, impact; Flight
+      Functions sampled as columns under their RocketPy names. Disk cache (`data/cache.py`,
+      `.npz` keyed by SHA-256 of every input + lib versions, `$CFD_TRAJCAST_CACHE`, `0` disables)
+      for STEP tessellation and RocketPy flights (key includes input files of the script's folder;
+      `--sans-cache` otherwise). **Parallel render** (`-j`, `Film.rendre(processus=)`): the plan is
+      computed once, frames depend only on their index, so contiguous chunks are rendered+encoded
+      in `spawn` worker processes (EGL does not survive fork) and joined with ffmpeg concat
+      `-c copy` (`encodage.concatener`); test compares serial vs parallel frame by frame. On this
+      8-core iGPU laptop the gain is modest (CPU-bound: x264 `medium` ≈ 140 ms·core per 1080p
+      frame) — numbers in `00_DOC/06_ROCKETPY_ET_PERFORMANCE.md`. Also `video.de`/`video.a`
+      (time or event name), `cfd-trajcast exporter` (trajectory → CSV in internal conventions).
+      User decision: examples and scenarios always use the supplied Aim9 CAD, aircraft
+      trajectories included (the procedural aircraft STL is gone).
+    - **J6** (`00_DOC/07_4K_NUIT_BLENDER.md`): 4K works unchanged (every overlay is sized in
+      fractions of the image height). `nuit` style preset: stars, bloom (`lueur`), flame light
+      (`eclairage.jets`), dark overview. Stars use a **transparent render + NumPy sky composite**
+      (`engine/effets.composer_ciel`; alpha is premultiplied coverage) — depth-buffer readback was
+      126 ms/frame at 4K and does not mark the background. Optional **Blender engine**
+      (`moteur: {type: blender, rendu: eevee|cycles}`, `engine/rendu/blender.py`, factory
+      `engine/rendu/creer_moteur`): bpy wheels pin one Python (bpy 5.x = 3.13 only, extra
+      `[blender]`); the wheel's TBB must be preloaded (`RTLD_GLOBAL`) or `import bpy` fails on a
+      TBB symbol from the older system lib. Blender renders the 3D on a transparent film and
+      shares sky/stars/bloom with PyVista; `ensemble` views stay on PyVista. Event banners now
+      move below the title while it shows (`Habillage._eviter_titre`). `00_DOC/02_CONFIGURATION.md`
+      is the full YAML key reference, enforced by `tests/test_doc_configuration.py` (AST of every
+      `_cles(...)` set). CI: `cfd-trajcast` job in `.github/workflows/ci.yml` (3.9 + 3.12, EGL
+      then xvfb fallback, `diagnostic` must pass so render tests cannot silently skip, preview
+      MP4 artefact).
+    - J0 findings that bind later milestones: OSMesa is **not** in the VTK wheel (crashes) → EGL,
+      then EGL llvmpipe, then xvfb (without `DISPLAY` the engine sets
+      `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` itself — `WAYLAND_DISPLAY` must not count,
+      VTK only speaks X or EGL); imageio-ffmpeg silently resizes
+      1080 → 1088 unless `macro_block_size=1`; encoding, not rendering, is the bottleneck.
 
 Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
 its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.9) with a `dev` extra

@@ -1,0 +1,36 @@
+Jalon J1 — conventions (repères, attitude, CAO)
+
+Images
+  planche_J1.png           les 4 instants + vue d'ensemble du vol
+  1_rampe.png
+  2_Mach_1.png
+  3_montée_balistique.png
+  4_apogée.png
+
+À regarder
+  - flèche rouge (nez) superposée à la jaune (vitesse) aux 4 instants
+  - pente du nez : forte et constante en propulsion, ~0° à l'apogée
+  - roulis : la flèche bleue (z corps, ventre) tourne autour du nez d'une vignette à l'autre
+  - dôme et canards du côté de la flèche rouge, empennage côté culot
+  - E, N, U : U vers le haut ; la fusée monte vers la droite (cap 30°, vue de côté)
+
+Lecture du même vol par les deux configurations
+  CONFIG.yaml (ENU, quaternion, STL) vs CONFIG_EULER.yaml (NED, Euler ZYX, STEP)
+  écart d'attitude max 1.41e-08°, de position 0.00e+00 m, de boîte CAO 3.59e-08 m
+
+Constats de `cfd-trajcast check CONFIG.yaml`
+  info    axe du nez cohérent avec la vitesse pendant la montée : angle médian 0.0° sur 676 échantillons
+  info    1112 échantillons sur 55.55 s, apogée 7273 m à 40.55 s, Mach maximal 1.07
+  info    maquette mise à l'échelle × 75.326 : 0.0381 m → 2.87 m
+  info    maquette Aim9.stl : 2054 faces, longueur 2.870 m, envergure 0.751 m
+
+Constats de `cfd-trajcast check CONFIG_EULER.yaml`
+  info    14 changement(s) de signe du quaternion corrigé(s) (q et −q sont la même attitude)
+  info    axe du nez cohérent avec la vitesse pendant la montée : angle médian 0.0° sur 676 échantillons
+  info    1112 échantillons sur 55.55 s, apogée 7273 m à 40.55 s, Mach maximal 1.07
+  info    STEP en mm, converti en mètres par OpenCASCADE
+  info    maquette mise à l'échelle × 75.326 : 0.0381 m → 2.87 m
+  info    maquette Aim9.stp : 2054 faces, longueur 2.870 m, envergure 0.751 m
+
+Généré le 2026-11-15 17:13 en 2.7 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

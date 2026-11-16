@@ -1,0 +1,94 @@
+# Vue d'ensemble : le vol entier dans un repère NED gradué (vue principale, à gauche),
+# trois zooms — embarquée, poursuite, sol — au milieu, et la télémétrie à droite.
+# Aperçu : cfd-trajcast rendre CONFIG_ENSEMBLE.yaml --apercu
+etude:
+  titre: "Vol de référence — AIM-9"
+  sous_titre: "Trajectoire analytique, rendu cfd-trajcast"
+
+trajectoire:
+  source: csv
+  fichier: vol_reference.csv
+  repere: ENU                      # x Est, y Nord, z Haut ; origine à la rampe
+  unites: { temps: s, longueur: m }
+  colonnes: { t: t, x: x, y: y, z: z }
+  attitude:
+    type: quaternion
+    colonnes: [qw, qx, qy, qz]
+    ordre: wxyz                    # scalaire en tête
+    sens: corps_vers_reference     # v_ENU = q ⊗ v_corps ⊗ q*
+    corps: FRD                     # x nez, y droite, z bas
+  evenements:
+    - { t: 3.744,  nom: "Mach 1" }
+    - { t: 4.0,    nom: "Fin de propulsion" }
+    - { t: 40.565, nom: "Apogée" }
+
+maquette:
+  fichier: MAQUETTE/Aim9.stl
+  unite: mm                        # un STL n'a pas d'unité : la déclarer
+  axe_nez: "-X"                    # le dôme est en x = 0, le culot en x = 38,1
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]           # point suivi par la trajectoire (unité du fichier)
+  longueur_imposee: 2.87           # le modèle fait 38,1 mm ; l'AIM-9 réel 2,87 m
+
+video:
+  resolution: 1080p
+  ips: 30
+  vitesse: 1.0
+  codec: { crf: 18, preset: medium }
+
+vues:
+  ensemble:
+    mode: ensemble                 # repère NED gradué, caméra fixe qui cadre tout le vol
+    azimut: auto                   # ° depuis le Nord ; auto = de flanc, un peu en arrière
+    elevation: 20
+    cadrage: 0.85                  # part du cadre occupée par la boîte graduée (marge pour les titres d'axes)
+    echelle_fusee: auto            # auto : fusée ≈ 10 % de l'étendue du vol (facteur affiché à l'écran)
+  poursuite:
+    mode: poursuite
+    azimut: 60
+    elevation: 10
+  sol:
+    mode: sol
+    position: [1440, 90, 2]
+    champ: auto
+    cadrage: 0.25
+  embarquee:
+    mode: embarquee
+    position_corps: [-0.9, 0.0, -0.16]
+    visee: [1.0, 0.0, 0.06]
+    champ: 70
+
+disposition:
+  # Rectangles [x, y, largeur, hauteur] en fractions de l'image. Ce vol est presque vertical
+  # (7,3 km de haut pour 2,2 km de portée) : la vue d'ensemble prend une colonne haute à
+  # gauche plutôt qu'un bandeau large ; les trois zooms s'empilent au milieu.
+  type: libre
+  cases:
+    - { vue: ensemble,   rect: [0.0,  0.0,    0.44, 1.0] }
+    - { vue: embarquee,  rect: [0.44, 0.0,    0.30, 0.3334] }
+    - { vue: poursuite,  rect: [0.44, 0.3334, 0.30, 0.3333] }
+    - { vue: sol,        rect: [0.44, 0.6667, 0.30, 0.3333] }
+    - { vue: telemetrie, rect: [0.74, 0.10,   0.26, 0.90] }
+
+telemetrie:
+  # Une ligne par grandeur (1 à 8), dans l'ordre. Trois écritures :
+  #   - un nom de grandeur calculée : altitude, vitesse, mach, acceleration, incidence_totale ;
+  #   - un nom de colonne de la trajectoire (affichée telle quelle, sans unité) ;
+  #   - un dict : { colonne: …, libelle: …, unite: …, facteur: …, decimales: …, couleur: "#rrggbb" }
+  #     ou { grandeur: …, unite: …, libelle: … } pour une calculée dans une autre unité.
+  grandeurs:
+    - { grandeur: altitude, unite: km }
+    - mach
+    - { colonne: q0, libelle: "Pression dynamique q₀", unite: kPa, facteur: 0.001, decimales: 1 }
+    - { grandeur: incidence_totale, libelle: "Incidence totale αₜ" }
+    - { colonne: roulis, libelle: "Roulis φ", unite: "°", decimales: 0 }
+
+montage:
+  logo: { fichier: logo.png, coin: haut_droite, hauteur: 0.05 }   # dans le bandeau au-dessus de la télémétrie
+  titre_debut: 3.0
+  position_titre: haut             # haut (défaut) | centre | bas : au centre, il cacherait la fusée
+  generique_fin: 3.0
+  bandeaux_evenements: true
+  coin_bandeaux: haut_gauche       # sur la vue d'ensemble, sous son étiquette
+  duree_bandeau: 3.0
+  etiquettes_vues: true

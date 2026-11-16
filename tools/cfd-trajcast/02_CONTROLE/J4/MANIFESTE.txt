@@ -1,0 +1,24 @@
+Jalon J4 — scène soignée, caméras orbite / images clés, ralentis
+
+Fichiers
+  planche_J4_sobre_conference.png  CONFIG_MULTIVUES aux instants du J3 : sobre | conférence
+  planche_J4_virage.png            CONFIG_VIRAGE (conférence) : 4 instants
+  vol_virage_1080p.mp4             tout le vol à virage, 1080p, 30 ips, avec ralentis
+
+À regarder
+  - conférence : ciel en dégradé, terrain texturé (tuile raccordable de 400 m), soleil,
+    traînée qui s'élargit et s'efface, arrêtée à « Fin de propulsion »
+  - sobre : identique au J3 (préréglage par défaut, rien ne change pour les anciens fichiers)
+  - caméra « cinema » à images clés : de face au départ, de côté pendant le virage,
+    à l'horizontale à l'apogée, par-dessous à la fin — transitions sans à-coup
+  - orbite en médaillon : un tour en 18 s de vidéo
+  - ralentis : ×4 autour de Mach 1 / fin de propulsion, ×2 à l'apogée, rampes de 0,5 s
+  - télémétrie : la route passe de 30° à 100° pendant le virage
+
+Vidéo contrôlée par ffmpeg
+  1920×1080, 30 ips, 1873 images, 62.43 s (vol de 55.5 s), h264 yuv420p
+  vitesse de lecture de 0.25 à 1.00 s de vol par seconde
+  rendu en 128.1 s (68 ms/image, un seul processus)
+
+Généré le 2026-11-15 18:48 en 140.5 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=''

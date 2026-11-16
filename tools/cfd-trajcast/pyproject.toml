@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfd-trajcast"
+version = "0.1.0"
+description = "Simulation de vol de fusée → vidéo de présentation (rendu 3D, télémétrie, montage)."
+# 3.9 : interpréteur des bases RHEL 8 / Rocky 8. Les dernières roues compatibles y
+# sont vtk 9.6, pyvista 0.46, trimesh 4.12 (bilan J0, 00_DOC/04_RENDU_HORS_ECRAN.md).
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+classifiers = ["Operating System :: POSIX :: Linux"]
+dependencies = [
+    "numpy>=1.22",
+    "pandas>=1.4",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "trimesh>=4.0",
+    "pyvista>=0.44",
+    "vtk>=9.3",
+    "matplotlib>=3.5",
+    "pillow>=9.1",
+    "imageio>=2.20",
+    "imageio-ffmpeg>=0.5",
+]
+
+[project.optional-dependencies]
+# STEP via OpenCASCADE (roues pip). Séparé : STL/GLB fonctionnent sans.
+step = ["cascadio>=0.1"]
+rocketpy = ["rocketpy>=1.2; python_version >= '3.10'"]   # RocketPy exige Python ≥ 3.10
+# Moteur Blender : une roue bpy par version de Python (bpy 5.x : 3.13 exactement).
+blender = ["bpy>=5.0; python_version == '3.13'"]
+tout = ["cascadio>=0.1", "rocketpy>=1.2; python_version >= '3.10'"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pandas-stubs",
+    "cascadio>=0.1",
+]
+
+[project.scripts]
+cfd-trajcast = "cfd_trajcast.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cfd_trajcast = ["01_EXEMPLE/*.yaml", "01_EXEMPLE/*.csv", "01_EXEMPLE/*.py", "01_EXEMPLE/*.md",
+                "01_EXEMPLE/*.sh", "01_EXEMPLE/*.png", "01_EXEMPLE/MAQUETTE/*",
+                "01_EXEMPLE/SCENARIOS/*", "01_EXEMPLE/ROCKETPY/*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+# Prototypes jetables du jalon J0, gardés tels quels pour la traçabilité des mesures.
+extend-exclude = ["02_CONTROLE/J0/prototypes"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+# Docs, rapport et messages en français : tirets, signe moins, multiplié, apostrophes
+# courbes, espaces insécables voulus ; lettres grecques = symboles de mécanique du vol.
+allowed-confusables = ["–", "−", "×", "’", " ", " ", "α", "θ", "φ", "ψ", "ω", "ρ", "σ"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["SIM300"]
+"src/cfd_trajcast/__init__.py" = ["I001", "E402", "RUF022"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cfd_trajcast"]
+
+[tool.mypy]
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["cascadio", "trimesh", "trimesh.*", "imageio_ffmpeg", "rocketpy", "rocketpy.*", "bpy", "bpy.*",
+          "mathutils"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["rendu: demande un rendu hors écran (pyvista)"]
