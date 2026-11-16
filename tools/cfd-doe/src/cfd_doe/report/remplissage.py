@@ -7,7 +7,10 @@ Lu de haut en bas :
 3. **Plan retenu** : ses tables (rôle, ce qu'elles balaient, nombre de calculs),
    son hypothèse, et la **démarche** numérotée — quoi lancer, dans quel ordre,
    quoi comparer.
-4. **Comparaison** de tous les plans demandés : calculs, contrôles, tests.
+4. **Comparaison** de tous les plans demandés : calculs, contrôles, tests, et
+   **niveau de précision** de la table (exacte, interpolée, si additive,
+   approchée) ; avec une mesure (``--precision``), l'erreur chiffrée sur le
+   modèle d'essai.
 
 Avec ``verbeux=True``, chaque plan reçoit le détail du plan retenu, plus sa
 répartition par Mach et par sous-domaine.
@@ -15,7 +18,7 @@ répartition par Mach et par sous-domaine.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from rich import box
 from rich.console import Group, RenderableType
@@ -24,6 +27,7 @@ from rich.table import Table
 from rich.text import Text
 
 from cfd_doe.data.format import formater_intervalle, formater_nombre
+from cfd_doe.engine.precision import MesurePrecision
 from cfd_doe.engine.remplissage import (
     ROLE_CALCUL,
     ROLE_CONTROLE,
@@ -39,7 +43,19 @@ __all__ = ["detail_plan", "rapport_remplissage", "tableau_comparaison"]
 
 _STYLE_ROLE = {ROLE_CALCUL: theme.VALEUR, ROLE_CONTROLE: theme.ATTENTION, ROLE_TEST: theme.OK}
 _NOM_ROLE = {ROLE_CALCUL: "calcul", ROLE_CONTROLE: "contrôle", ROLE_TEST: "test"}
-_TABLE_COURT = {"oui": "directe", "oui, par somme": "somme", "non": "modèle"}
+#: Style d'un niveau de précision, du plus sûr (1) au plus dépendant d'un modèle (4).
+_STYLE_PRECISION = {1: theme.OK, 2: theme.VALEUR, 3: theme.ATTENTION, 4: theme.ATTENTION}
+
+
+def _pct(x: float | None) -> str:
+    """Un pourcentage d'erreur lisible : « exacte », « < 0,01 % », « 0,61 % », « 12 % »."""
+    if x is None:
+        return "·"
+    if x < 1e-6:
+        return "exacte"
+    if x < 0.01:
+        return "< 0,01 %"
+    return (f"{x:.2g}" if x < 100 else f"{x:.0f}").replace(".", ",") + " %"
 
 
 def _n(x: int) -> str:
@@ -172,8 +188,17 @@ def _par_mach(plan: PlanDOE, c: Contexte) -> str:
     return _n(haut) if bas == haut else f"{_n(bas)} à {_n(haut)}"
 
 
-def detail_plan(plan: PlanDOE, c: Contexte, *, complet: bool = False) -> Group:
-    """Les tables d'un plan, son hypothèse, sa démarche ; ``complet`` ajoute les répartitions."""
+def detail_plan(
+    plan: PlanDOE,
+    c: Contexte,
+    *,
+    complet: bool = False,
+    mesure: MesurePrecision | None = None,
+) -> Group:
+    """Les tables d'un plan, son hypothèse, sa précision, sa démarche.
+
+    ``complet`` ajoute les répartitions ; ``mesure``, l'erreur chiffrée sur le modèle d'essai.
+    """
     table = _table(f"{plan.nom} — {plan.titre} ({_n(plan.compter())} calculs)")
     table.add_column("table", no_wrap=True)
     table.add_column("rôle", no_wrap=True)
@@ -189,10 +214,23 @@ def detail_plan(plan: PlanDOE, c: Contexte, *, complet: bool = False) -> Group:
         )
     morceaux: list[RenderableType] = [table]
 
+    niveau = plan.niveau_precision
     faits = [
         ("", f"hypothèse : {plan.hypothese}", theme.DISCRET),
         ("", f"table du simulateur : {plan.table_directe}", theme.DISCRET),
+        ("", f"précision : {niveau.libelle}", _STYLE_PRECISION[niveau.rang]),
+        ("", f"   erreur due à {niveau.erreur}", theme.DISCRET),
+        ("", f"   se mesure par {niveau.mesure}", theme.DISCRET),
     ]
+    if mesure is not None:
+        texte = (
+            f"   sur le modèle d'essai : RMS {_pct(mesure.erreur)} ({mesure.pire}), "
+            f"max {_pct(mesure.erreur_max)}"
+        )
+        if mesure.mesuree is not None:
+            role = "contrôle" if "controle" in mesure.verification else "test"
+            texte += f" ; écart aux points de {role} {_pct(mesure.mesuree)}"
+        faits.append(("", texte, theme.VALEUR))
     if c.machs:
         faits.append(("", f"calculs par Mach : {_par_mach(plan, c)}", theme.DISCRET))
     if plan.facteurs:
@@ -241,15 +279,22 @@ def detail_plan(plan: PlanDOE, c: Contexte, *, complet: bool = False) -> Group:
 # ---------------------------------------------------------------------------
 
 
-def tableau_comparaison(resultat: Resultat) -> Table:
-    """Tous les plans côte à côte ; le plan retenu est marqué."""
+def tableau_comparaison(
+    resultat: Resultat, precision: Mapping[str, MesurePrecision] | None = None
+) -> Table:
+    """Tous les plans côte à côte, avec leur niveau de précision ; le plan retenu est marqué.
+
+    ``precision`` ajoute l'erreur RMS de chaque table sur le modèle d'essai.
+    """
     c = resultat.contexte
     retenu = c.remplissage.retenu
     table = _table(f"Comparaison des plans ({len(resultat.plans)})")
     # Seule la méthode se raccourcit : un nombre tronqué ne se lit plus.
-    largeur_nom = min(24, max(len(p.nom) for p in resultat.plans) + 2)
+    largeur_nom = min(20 if precision else 24, max(len(p.nom) for p in resultat.plans) + 2)
     table.add_column("plan", no_wrap=True, min_width=largeur_nom, overflow="ellipsis")
-    table.add_column("méthode", no_wrap=True, overflow="ellipsis", max_width=19)
+    table.add_column(
+        "méthode", no_wrap=True, overflow="ellipsis", max_width=12 if precision else 17
+    )
     for colonne, role in (
         ("calcul", ROLE_CALCUL),
         ("contrôle", ROLE_CONTROLE),
@@ -258,7 +303,9 @@ def tableau_comparaison(resultat: Resultat) -> Table:
     ):
         largeur = max(len(colonne), *(len(_n(p.compter(role))) for p in resultat.plans))
         table.add_column(colonne, justify="right", no_wrap=True, min_width=largeur)
-    table.add_column("table", style=theme.DISCRET, no_wrap=True, min_width=7)
+    table.add_column("précision", no_wrap=True, min_width=11)
+    if precision:
+        table.add_column("erreur", justify="right", no_wrap=True, min_width=7)
     for plan in resultat.plans:
         est_retenu = plan.nom == retenu
 
@@ -277,7 +324,11 @@ def tableau_comparaison(resultat: Resultat) -> Table:
             cellule(ROLE_TEST),
             Text(_n(plan.compter()), style=theme.ACCENT if est_retenu else theme.VALEUR),
         ]
-        ligne.append(_TABLE_COURT[plan.table_directe])
+        niveau = plan.niveau_precision
+        ligne.append(Text(niveau.court, style=_STYLE_PRECISION[niveau.rang]))
+        if precision:
+            mesure = precision.get(plan.nom)
+            ligne.append(Text(_pct(mesure.erreur if mesure else None), style=theme.VALEUR))
         table.add_row(*ligne)
     return table
 
@@ -305,8 +356,16 @@ def _synthese(resultat: Resultat) -> Text:
     return texte
 
 
-def rapport_remplissage(resultat: Resultat, *, verbeux: bool = False) -> Group:
-    """Le rapport complet, prêt pour ``Console.print``."""
+def rapport_remplissage(
+    resultat: Resultat,
+    *,
+    verbeux: bool = False,
+    precision: Mapping[str, MesurePrecision] | None = None,
+) -> Group:
+    """Le rapport complet, prêt pour ``Console.print``.
+
+    ``precision`` : les mesures de :func:`cfd_doe.engine.precision.mesurer`.
+    """
     c = resultat.contexte
     morceaux: list[RenderableType] = [_en_tete(c), Text(), _grille_reference(c)]
     if c.notes:
@@ -315,12 +374,14 @@ def rapport_remplissage(resultat: Resultat, *, verbeux: bool = False) -> Group:
 
     if verbeux:
         for plan in resultat.plans:
-            morceaux += [detail_plan(plan, c, complet=True), Text()]
+            mesure = precision.get(plan.nom) if precision else None
+            morceaux += [detail_plan(plan, c, complet=True, mesure=mesure), Text()]
     else:
-        morceaux += [detail_plan(resultat.retenu, c), Text()]
+        mesure = precision.get(resultat.retenu.nom) if precision else None
+        morceaux += [detail_plan(resultat.retenu, c, mesure=mesure), Text()]
 
     if len(resultat.plans) > 1:
-        morceaux.append(tableau_comparaison(resultat))
+        morceaux.append(tableau_comparaison(resultat, precision))
         legende = [
             (
                 "",
@@ -330,11 +391,23 @@ def rapport_remplissage(resultat: Resultat, *, verbeux: bool = False) -> Group:
             ),
             (
                 "",
-                "table du simulateur — directe : les calculs, complétés par symétrie ; somme : "
-                "incréments à additionner ; modèle : un métamodèle à ajuster et valider",
+                "précision de la table — exacte : aux nœuds, chaque nœud est un calcul ou son "
+                "image ; interpolée : exacte aux nœuds calculés, linéaire entre eux ; si "
+                "additive : exacte si les effets s'ajoutent (vérifié aux points de contrôle) ; "
+                "approchée : prédiction d'un métamodèle (vérifiée aux points de test)",
                 theme.DISCRET,
             ),
         ]
+        if precision:
+            legende.append(
+                (
+                    "",
+                    "erreur — RMS du pire coefficient sur toute la grille, en % de son étendue, "
+                    "mesurée sur le modèle d'essai (cfd-doe remplir --precision) : un banc "
+                    "commun pour comparer les méthodes, pas l'erreur qu'on aura sur l'engin",
+                    theme.DISCRET,
+                )
+            )
         morceaux.append(_puces(legende))
         if verbeux:
             morceaux += [Text(), Text("  Hypothèses", style=theme.ENTETE), _hypotheses(resultat)]

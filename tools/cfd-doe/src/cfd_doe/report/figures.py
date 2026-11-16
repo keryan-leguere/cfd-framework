@@ -45,6 +45,7 @@ import numpy as np
 from cfd_doe.core.domaine_fondamental import Disque, Secteur
 from cfd_doe.core.intervalle import TOLERANCE, Intervalle
 from cfd_doe.data.format import formater_nombre
+from cfd_doe.engine.precision import MesurePrecision
 from cfd_doe.engine.reconstruction import Tables
 from cfd_doe.engine.reduction import SousDomaine
 from cfd_doe.engine.remplissage import (
@@ -364,6 +365,23 @@ class _Fond:
 
 
 def _fond(c: Contexte, x: str, y: str, fixes: Mapping[str, float] | None) -> _Fond:
+    """Le fond d'un plan (x, y) ; les projections, communes à tous les plans, sont gardées.
+
+    Le cache vit sur le contexte lui-même (attribut hors champs du dataclass figé) :
+    il disparaît avec lui, et deux contextes ne se le partagent jamais.
+    """
+    if fixes is not None:
+        return _calculer_fond(c, x, y, fixes)
+    cache: dict[tuple[str, str], _Fond] | None = getattr(c, "_fonds_figures", None)
+    if cache is None:
+        cache = {}
+        object.__setattr__(c, "_fonds_figures", cache)
+    if (x, y) not in cache:
+        cache[(x, y)] = _calculer_fond(c, x, y, None)
+    return cache[(x, y)]
+
+
+def _calculer_fond(c: Contexte, x: str, y: str, fixes: Mapping[str, float] | None) -> _Fond:
     """Zones aux centres d'une grille de cellules couvrant exactement le plan affiché.
 
     Un nombre pair de cellules : sur une plage symétrique, aucun centre ne tombe
@@ -414,27 +432,32 @@ def _hachures(zone: np.ndarray) -> np.ndarray:
 
 def _peindre(ax: Any, fond: _Fond, polaire: bool = False) -> None:
     """Fond coloré et hachuré, contour de la zone calculée."""
-    from matplotlib.colors import ListedColormap
+    from matplotlib.colors import ListedColormap, to_rgb
 
     if polaire:
         # En polaire, des hachures en indices deviendraient des spirales : teintes seules.
-        bx, by = np.radians(fond.bx), fond.by
-        image = 2 * fond.zone.astype(int)
+        ax.pcolormesh(
+            np.radians(fond.bx),
+            fond.by,
+            2 * fond.zone.astype(int),
+            cmap=ListedColormap(_TEINTES),
+            vmin=-0.5,
+            vmax=len(_TEINTES) - 0.5,
+            shading="flat",
+            rasterized=True,
+            zorder=0,
+        )
     else:
-        bx = np.linspace(fond.bx[0], fond.bx[-1], len(fond.xs) * _SUR + 1)
-        by = np.linspace(fond.by[0], fond.by[-1], len(fond.ys) * _SUR + 1)
-        image = _hachures(fond.zone)
-    ax.pcolormesh(
-        bx,
-        by,
-        image,
-        cmap=ListedColormap(_TEINTES),
-        vmin=-0.5,
-        vmax=len(_TEINTES) - 0.5,
-        shading="flat",
-        rasterized=True,
-        zorder=0,
-    )
+        # Une image RVB : dix fois plus rapide à rendre qu'un pcolormesh de même taille.
+        teintes = np.array([to_rgb(t) for t in _TEINTES])
+        ax.imshow(
+            teintes[_hachures(fond.zone)],
+            extent=(fond.bx[0], fond.bx[-1], fond.by[0], fond.by[-1]),
+            origin="lower",
+            aspect="auto",
+            interpolation="nearest",
+            zorder=0,
+        )
     for valeur, cle in ((2, "symetrie"), (0, "hors"), (1, "calcul")):
         if (fond.zone == valeur).any():
             _noter(ax, cle)
@@ -875,6 +898,8 @@ def figure_plan(
                 _cadrer(ax, c, x, y)
                 ax.tick_params(labelbottom=i == k - 1, labelleft=j == 0)
                 ax.set_box_aspect(1)
+                # Graduations secondaires : illisibles à cette taille, et la moitié du rendu.
+                ax.minorticks_off()
                 if i < k - 1:
                     ax.set_xlabel("")
                 if j > 0:
@@ -983,7 +1008,7 @@ def figure_comparaison_calculs(
             gauche = gauche + valeurs
         for yi, plan, fin in zip(y, plans, gauche):
             ax.annotate(
-                _n(plan.compter()),
+                f"{_n(plan.compter())}  ·  {plan.niveau_precision.court}",
                 (fin, yi),
                 xytext=(3, 0),
                 textcoords="offset points",
@@ -997,9 +1022,9 @@ def figure_comparaison_calculs(
             etiquette.set_color(_COULEUR_FAMILLE[plan.table_directe])
         if log:
             ax.set_xscale("log")
-            ax.set_xlim(max(1.0, totaux.min()) / 1.6, totaux.max() * 3.0)
+            ax.set_xlim(max(1.0, totaux.min()) / 1.6, totaux.max() * 8.0)
         else:
-            ax.set_xlim(0, totaux.max() * 1.16)
+            ax.set_xlim(0, totaux.max() * 1.35)
             _virgule(ax)
         ax.set_ylim(-0.6, len(plans) - 0.4)
         ax.tick_params(axis="y", which="both", left=False, right=False)
@@ -1023,7 +1048,9 @@ def figure_comparaison_calculs(
         for t, f in zip(texte.get_texts(), familles):
             t.set_color(_COULEUR_FAMILLE[f])
         _titre(
-            ax, "Nombre de calculs par plan", "empilés par rôle ; nom coloré selon la table obtenue"
+            ax,
+            "Nombre de calculs par plan",
+            "empilés par rôle, avec le niveau de précision de la table ; nom coloré selon la table obtenue",
         )
         return _enregistrer(fig, dossier / "comparaison_calculs", formats)
 
@@ -1057,6 +1084,7 @@ def figure_comparaison_plans(
             _projection(ax, c, x, y, fond)
             _tracer_roles(ax, points, x, y, 3.0)
             _cadrer(ax, c, x, y)
+            ax.minorticks_off()
             _titre(ax, f"({_LETTRES[i % 16]}) {plan.nom}", f"{_n(len(points))} calculs")
         for ax in list(axes.flat)[len(plans) :]:
             ax.axis("off")
@@ -1379,9 +1407,15 @@ def _etendue_finie(x: np.ndarray) -> float:
 
 
 def tracer_figures(
-    resultat: Resultat, dossier: Path, formats: Sequence[str] = FORMATS
+    resultat: Resultat,
+    dossier: Path,
+    formats: Sequence[str] = FORMATS,
+    precision: Mapping[str, MesurePrecision] | None = None,
 ) -> list[Path]:
-    """Écrit les figures du remplissage dans ``dossier`` ; renvoie un fichier par figure."""
+    """Écrit les figures du remplissage dans ``dossier`` ; renvoie un fichier par figure.
+
+    ``precision`` (mesures sur le modèle d'essai) ajoute ``precision_cout``.
+    """
     _cfd_plot()
     dossier.mkdir(parents=True, exist_ok=True)
     fichiers: list[Path | None] = [figure_domaine(resultat, dossier, formats)]
@@ -1391,4 +1425,16 @@ def tracer_figures(
             figure_comparaison_calculs(resultat, dossier, formats),
             figure_comparaison_plans(resultat, dossier, formats),
         ]
+    if precision:
+        fichiers.append(
+            figure_precision(
+                [
+                    Precision(m.plan, m.plan.compter(), m.erreur, m.erreur_max)
+                    for m in precision.values()
+                ],
+                dossier,
+                titre=f"{resultat.contexte.reduction.etude.nom} : précision contre coût",
+                formats=formats,
+            )
+        )
     return [f for f in fichiers if f is not None]

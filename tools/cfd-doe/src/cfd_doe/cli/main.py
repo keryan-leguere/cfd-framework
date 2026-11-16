@@ -43,6 +43,7 @@ from cfd_doe.data.etude import (
 from cfd_doe.data.geometries import GEOMETRIES
 from cfd_doe.data.remplissage import ErreurRemplissage, charger_remplissage
 from cfd_doe.data.trajectoires import TRAJECTOIRES
+from cfd_doe.engine.precision import mesurer
 from cfd_doe.engine.reduction import reduire, vers_dict
 from cfd_doe.engine.remplissage import ecrire_csv, remplir
 from cfd_doe.paths import EXEMPLE_DIR
@@ -170,7 +171,17 @@ def cmd_remplir(args: argparse.Namespace, sortie: _Sortie) -> int:
             )
         remplissage = replace(remplissage, retenu=args.retenu)
     resultat = remplir(remplissage)
-    sortie.out.print(rapport_remplissage(resultat, verbeux=args.verbose))
+    precision = None
+    if args.precision or remplissage.sortie.precision:
+        if resultat.contexte.reduction.repere == "cartesien":
+            with sortie.out.status("précision : chaque plan sur le modèle d'essai…"):
+                precision = mesurer(resultat)
+        else:
+            sortie.out.print(
+                f"[{theme.ATTENTION}]! précision chiffrée : repère cartésien seulement "
+                f"(--repere cartesien)[/]"
+            )
+    sortie.out.print(rapport_remplissage(resultat, verbeux=args.verbose, precision=precision))
 
     dossier = Path(args.sortie) if args.sortie else remplissage.sortie.dossier
     ecrits: list[tuple[Path, str]] = []
@@ -187,7 +198,7 @@ def cmd_remplir(args: argparse.Namespace, sortie: _Sortie) -> int:
     if remplissage.sortie.figures and not args.sans_figures:
         try:
             formats = remplissage.sortie.formats
-            for figure in tracer_figures(resultat, dossier / "FIGURES", formats):
+            for figure in tracer_figures(resultat, dossier / "FIGURES", formats, precision):
                 ecrits.append((figure, f"figure, {' + '.join(formats)}"))
         except FiguresIndisponibles as erreur:
             sortie.out.print(f"[{theme.ATTENTION}]! {erreur}[/]")
@@ -300,6 +311,11 @@ def build_parser() -> argparse.ArgumentParser:
     remplir_.add_argument("--sortie", metavar="DOSSIER", help="dossier de sortie (prime)")
     remplir_.add_argument("--sans-figures", action="store_true", help="ne pas tracer les figures")
     remplir_.add_argument("--sans-csv", action="store_true", help="ne pas écrire le fichier DOE")
+    remplir_.add_argument(
+        "--precision",
+        action="store_true",
+        help="chiffrer l'erreur de chaque plan sur le modèle d'essai (repère cartésien)",
+    )
     remplir_.set_defaults(fonction=cmd_remplir)
 
     exemple = sous.add_parser("exemple", help="recopier l'exemple livré")

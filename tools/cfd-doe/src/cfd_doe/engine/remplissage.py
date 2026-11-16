@@ -52,10 +52,12 @@ from cfd_doe.data.variables import SYMBOLES
 from cfd_doe.engine.reduction import Reduction, SousDomaine, reduire, symetries_exportees
 
 __all__ = [
+    "PRECISIONS",
     "RECONSTRUCTIONS",
     "ROLES",
     "Bloc",
     "Contexte",
+    "NiveauPrecision",
     "PlanDOE",
     "PointDOE",
     "Resultat",
@@ -82,6 +84,50 @@ RECONSTRUCTIONS: dict[str, str] = {
     "smolyak": "polynôme de l'espace de la grille creuse",
     "krigeage": "krigeage ordinaire, portées au maximum de vraisemblance",
     "co-krigeage": "krigeage de la BF, plus krigeage de l'écart HF − BF",
+}
+
+
+@dataclass(frozen=True)
+class NiveauPrecision:
+    """Ce qu'on peut attendre d'une table, avant tout calcul."""
+
+    rang: int  # 1 : la plus sûre … 4 : la plus dépendante d'un modèle
+    court: str  # pour un tableau
+    libelle: str
+    erreur: str  # d'où vient l'erreur
+    mesure: str  # comment la mesurer en vrai
+
+
+#: Les quatre niveaux de précision, du plus sûr au plus dépendant d'un modèle.
+PRECISIONS: dict[str, NiveauPrecision] = {
+    "exacte": NiveauPrecision(
+        1,
+        "exacte",
+        "exacte aux nœuds de la table",
+        "aucune aux nœuds ; entre eux, celle de l'interpolation du simulateur",
+        "rien à mesurer : chaque nœud est un calcul ou son image",
+    ),
+    "interpolee": NiveauPrecision(
+        2,
+        "interpolée",
+        "exacte aux nœuds calculés, interpolée linéairement entre eux",
+        "la courbure des coefficients entre deux niveaux retenus",
+        "quelques polaires à niveaux fins sur les variables allégées",
+    ),
+    "conditionnelle": NiveauPrecision(
+        3,
+        "si additive",
+        "exacte si les effets s'ajoutent comme le plan le suppose",
+        "les interactions absentes des tables (erreur d'additivité)",
+        "les points « controle » : calculs comparés à la somme reconstruite",
+    ),
+    "approchee": NiveauPrecision(
+        4,
+        "approchée",
+        "approchée : la table est la prédiction d'un métamodèle",
+        "la régularité des coefficients à l'échelle de l'écart entre calculs",
+        "les points « test », non utilisés pour l'ajustement (optimistes : loin des bords)",
+    ),
 }
 
 #: Un terme de reconstruction par somme : (signe, facteurs conservés).
@@ -220,6 +266,13 @@ class PlanDOE:
     #: Plans par somme : C(x) = Σ signe · C(x restreint aux facteurs conservés,
     #: les autres à la référence). Factoriel : un seul terme, tous les facteurs.
     termes: tuple[Terme, ...] = ()
+    #: Clé de :data:`PRECISIONS`.
+    precision: str = "approchee"
+
+    @property
+    def niveau_precision(self) -> NiveauPrecision:
+        """Le niveau de précision attendu de la table de ce plan."""
+        return PRECISIONS[self.precision]
 
     @property
     def nom(self) -> str:
@@ -535,6 +588,7 @@ class _Chantier:
         reconstruction: str = "krigeage",
         niveaux: Mapping[str, tuple[float, ...]] | None = None,
         termes: Sequence[Terme] = (),
+        precision: str = "approchee",
     ) -> PlanDOE:
         if self.exclus:
             self.avertissements.append(f"{self.exclus} point(s) écarté(s) par « exclure »")
@@ -554,6 +608,7 @@ class _Chantier:
             reconstruction=reconstruction,
             niveaux=None if niveaux is None else dict(niveaux),
             termes=_simplifier(termes),
+            precision=precision,
         )
 
 
@@ -617,6 +672,7 @@ def _factoriel(ch: _Chantier) -> PlanDOE:
             ),
         ],
         reconstruction="table",
+        precision="interpolee" if inegaux else "exacte",
         niveaux=_niveaux_grille(c, niveaux),
         termes=[(1, (*c.libres, *(p.nom for p in c.parametres)))],
     )
@@ -645,6 +701,7 @@ def _etoile(ch: _Chantier) -> PlanDOE:
             "niveaux et les couplages d'un plan sérieux (décomposition, factoriel).",
         ],
         reconstruction="somme",
+        precision="conditionnelle",
         niveaux=_niveaux_grille(c, niveaux),
         termes=[
             (1, ()),
@@ -832,6 +889,7 @@ def _decomposition(ch: _Chantier) -> PlanDOE:
         "oui, par somme",
         demarche,
         reconstruction="somme",
+        precision="conditionnelle",
         niveaux=_niveaux_grille(c, niveaux),
         termes=termes,
     )

@@ -160,6 +160,8 @@ class Sortie:
     tous_les_csv: bool = False
     #: Formats des figures : PNG (300 dpi) pour l'écran, PDF ou SVG vectoriels pour un rapport.
     formats: tuple[str, ...] = ("png", "pdf")
+    #: Chiffrer l'erreur de chaque plan sur le modèle d'essai (comme ``--precision``).
+    precision: bool = False
 
 
 @dataclass(frozen=True)
@@ -333,7 +335,7 @@ def remplissage_depuis_dict(
     brute = donnees.get("sortie") or {}
     if not isinstance(brute, Mapping):
         raise ErreurRemplissage("« sortie » doit être un dictionnaire")
-    _refuser("sortie", brute, ("dossier", "csv", "figures", "tous_les_csv", "formats"))
+    _refuser("sortie", brute, ("dossier", "csv", "figures", "tous_les_csv", "formats", "precision"))
     formats = brute.get("formats", ["png", "pdf"])
     if isinstance(formats, str):
         formats = [formats]
@@ -350,6 +352,7 @@ def remplissage_depuis_dict(
         figures=bool(brute.get("figures", True)),
         tous_les_csv=bool(brute.get("tous_les_csv", False)),
         formats=tuple(dict.fromkeys(str(f) for f in formats)),
+        precision=bool(brute.get("precision", False)),
     )
 
     return Remplissage(

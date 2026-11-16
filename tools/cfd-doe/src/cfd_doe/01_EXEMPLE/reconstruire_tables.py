@@ -48,8 +48,13 @@ from rich.console import Console
 from rich.table import Table
 
 from cfd_doe.data.remplissage import Remplissage, charger_remplissage
+from cfd_doe.engine.precision import (  # noqa: F401  (réexportés pour qui importe ce script)
+    basse_fidelite,
+    calculer,
+    modele_brut,
+    verite,
+)
 from cfd_doe.engine.reconstruction import (
-    Mesures,
     Tables,
     ecrire_mesures,
     ecrire_tables,
@@ -58,84 +63,20 @@ from cfd_doe.engine.reconstruction import (
     lot_suivant,
     reconstruire,
 )
-from cfd_doe.engine.remplissage import Contexte, PlanDOE, PointDOE, ecrire_csv, remplir
+from cfd_doe.engine.remplissage import Contexte, PlanDOE, ecrire_csv, remplir
 
 ICI = Path(__file__).resolve().parent
 console = Console(highlight=False)
 
 
 # ---------------------------------------------------------------------------
-# 1. Le modèle aéro factice
+# 1. Le modèle aéro factice : celui du paquet (engine/precision.py)
 # ---------------------------------------------------------------------------
-
-
-def modele_brut(valeurs: Mapping[str, np.ndarray], contexte: Contexte) -> dict[str, np.ndarray]:
-    """Six coefficients plausibles, en repère engin, avant symétrisation.
-
-    Non-linéarités et interactions volontaires, pour que les méthodes se
-    distinguent : portance tourbillonnaire en α|α|, efficacité de gouverne qui
-    sature (tanh), couplages δm × δn², β² × δn, paramètres × gouverne, bosse
-    transsonique en Mach. Les paramètres de l'étude, quels qu'ils soient,
-    entrent par leur valeur réduite dans [0, 1].
-    """
-    n = len(next(iter(valeurs.values())))
-
-    def v(nom: str) -> np.ndarray:
-        return np.asarray(valeurs.get(nom, np.zeros(n)), dtype=float)
-
-    a, b, dm, dn, dl = v("alpha"), v("beta"), v("DM"), v("DN"), v("DL")
-    mach = v("mach") if "mach" in valeurs else np.full(n, 0.8)
-    k = 1.0 + 0.4 * np.exp(-(((mach - 1.0) / 0.15) ** 2))
-    p = np.zeros(n)
-    for param in contexte.parametres:
-        plage = param.plage
-        p += (v(param.nom) - plage.bas) / (plage.largeur or 1.0)
-    p /= max(1, len(contexte.parametres))
-    gm, gn = np.tanh(dm / 20.0), np.tanh(dn / 20.0)
-    return {
-        "CA": 0.30 * k + 1e-3 * (a**2 + b**2) + 4e-4 * (dm**2 + dn**2) + 2e-4 * dl**2 - 0.08 * p,
-        "CN": k * (0.10 * a + 0.0025 * a * np.abs(a))
-        + 0.40 * gm
-        + 8e-4 * a * dm
-        + 0.10 * p * a / 10
-        + 2.5e-5 * dm * dn**2
-        + 0.004,  # dissymétrie : ne survit que sans miroir H
-        "CY": -0.09 * b + 0.30 * gn + 3e-4 * b**2 * dn,
-        "Cl": 0.02 * dl + 6e-4 * a * b - 0.01 * p * dl / 10,
-        "Cm": -0.05 * k * a - 0.60 * gm * (1 - 0.25 * p) - 4e-5 * dm * dn**2,
-        "Cn": 0.04 * b - 0.60 * gn - 6e-4 * b**2 * dn,
-    }
-
-
-def verite(contexte: Contexte, valeurs: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """Le modèle moyenné sur le groupe de symétrie de l'étude : exactement symétrique.
-
-    C(x) = (1/|G|) Σ_g s_g · C_brut(g·x), avec les signes de l'export : le
-    même que la réduction suppose. Seuls les coefficients de la trajectoire.
-    """
-    noms = list(contexte.reduction.etude.trajectoire.coefficients)
-    total = {c: modele_brut(valeurs, contexte)[c].copy() for c in noms}
-    for s in contexte.symetries:
-        image = {k: (-x if k in s["variables"] else x) for k, x in valeurs.items()}
-        brut = modele_brut(image, contexte)
-        for c in noms:
-            total[c] += (-1.0 if c in s["coefficients"] else 1.0) * brut[c]
-    return {c: x / (1 + len(contexte.symetries)) for c, x in total.items()}
-
-
-def basse_fidelite(y: np.ndarray) -> np.ndarray:
-    """Un solveur moins fidèle : biais lisse, fonction impaire de C (symétries conservées)."""
-    return 0.9 * y + 0.03 * y**3
-
-
-def calculer(points: Sequence[PointDOE], contexte: Contexte) -> Mesures:
-    """« Lance la CFD » sur ces points."""
-    valeurs = {c: np.array([p.valeurs[c] for p in points]) for c in contexte.colonnes}
-    y = verite(contexte, valeurs)
-    bf = np.array([p.fidelite == "BF" for p in points])
-    if bf.any():
-        y = {c: np.where(bf, basse_fidelite(x), x) for c, x in y.items()}
-    return Mesures(tuple(points), y)
+#
+# modele_brut, verite (moyennée sur le groupe de l'étude), basse_fidelite et
+# calculer sont importés ci-dessus : c'est le même banc que
+# « cfd-doe remplir --precision ». Pour essayer un autre modèle, remplacer
+# ``calculer`` par une fonction de même signature.
 
 
 # ---------------------------------------------------------------------------
