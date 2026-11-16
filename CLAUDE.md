@@ -630,6 +630,22 @@ not part of the Bash framework's runtime:
       (`engine/demarche.py`, `Reduction.demarche`) from the optional `journal=` of
       `stratifier_signes` / `fusionner` — never recomputed — and `numeroteur` raises if a leaf
       does not fall in exactly one sub-domain, so story and table cannot drift silently.
+    - **Plane flight in polar** (`2DOF`/`3DOF_TANGAGE`/`4DOF`, or a custom yaw type): `auto`
+      stays Cartesian, but `--repere polaire` is accepted (user request: a downstream code that
+      tabulates in (αt, φa) to use the cruciform rotation). φa takes only the flight-plane
+      directions (`engine/reduction.py::vol_plan`, `_polaire_plan`), each folded into the sector
+      (`representant_phia`: α < 0 → φa = 0 by the 180° rotation for a cruciform, → φa = 60° for 3
+      fins). Only symmetries that keep the plane act, so `ordre_groupe` is the Cartesian group seen
+      on the free variables (2, not 8). On the axis with one free lateral deflection, only the
+      line-preserving elements act (`_apex_plan`). It yields the **same points** as Cartesian,
+      renamed — `tests/test_reduction.py::test_vol_plan_polaire_un_representant_par_orbite`.
+      `core/symetrie.restreindre` now joins merged names (`miroir H ≡ rotation 180°`).
+    - **`cfd-doe domaine --figures [DIR]`** (`report/figures_domaine.py`): two qualitative paper
+      figures, the study reduced in **both** frames whatever it retains, Cartesian row above polar:
+      `domaine_reperes` (plane (α, β): computed part hatched, deduced grey, symmetry planes dashed,
+      lettered pieces with a key saying *all* deflections inside vs *only part* on planes/axis) and
+      `domaine_braquages` (deflection plane per letter, convex clipping of box ∩ disk ∩ sector, all
+      vector). **SVG by default** (`FORMATS_DOMAINE`, `--formats` overrides). The figure font lacks `∈`: texts say « dans ». A test asserts no missing glyph.
     - **`01_EXEMPLE/completer_table.py`** (package data, copied by `cfd-doe exemple`) is a
       *standalone* script — pandas/numpy/yaml/rich, **no `cfd_doe` import** (enforced in
       `test_architecture.py`) — that fills a results DataFrame up to a full product grid

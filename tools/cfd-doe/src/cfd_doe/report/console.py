@@ -134,7 +134,8 @@ def panneau_etude(reduction: Reduction) -> Panel:
             not sd.bornes[v].est_point for sd in reduction.sous_domaines for v in ("DMB", "DNB")
         )
         repere = "polaire (αt, φa)" + (", braquages en repère mixte" if mixte else "")
-        if mixte:
+        disque = any(sd.contraintes for sd in reduction.sous_domaines)
+        if mixte and disque:
             repere += ", limite en " + {"carre": "carré"}.get(
                 etude.limite_braquage, etude.limite_braquage
             )

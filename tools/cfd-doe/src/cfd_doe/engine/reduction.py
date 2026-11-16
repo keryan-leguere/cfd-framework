@@ -65,7 +65,15 @@ from cfd_doe.engine.demarche import (
     symbole,
 )
 
-__all__ = ["Reduction", "SousDomaine", "reduire", "symetries_exportees", "vers_dict"]
+__all__ = [
+    "Reduction",
+    "SousDomaine",
+    "reduire",
+    "representant_phia",
+    "symetries_exportees",
+    "vers_dict",
+    "vol_plan",
+]
 
 
 @dataclass(frozen=True)
@@ -157,17 +165,40 @@ def _rediger_trajectoire(redac: Redaction, etude: Etude, domaine: dict[str, Inte
 # ---------------------------------------------------------------------------
 
 
+def vol_plan(domaine: Mapping[str, Intervalle]) -> str | None:
+    """``"tangage"`` (β ≡ 0, α libre), ``"lacet"`` (α ≡ 0, β libre), sinon ``None``.
+
+    En vol plan, le vecteur vitesse reste dans un plan qui contient l'axe : φa
+    ne prend que les deux directions de ce plan (0° et 180° en tangage, 90° et
+    270° en lacet), et les braquages n'y tournent que d'un demi-tour — ils
+    changent de signe, sans se mélanger.
+    """
+    alpha, beta = domaine["alpha"], domaine["beta"]
+    if not alpha.est_point and beta.est_nul:
+        return "tangage"
+    if not beta.est_point and alpha.est_nul:
+        return "lacet"
+    return None
+
+
 def _choisir_repere(etude: Etude, domaine: Mapping[str, Intervalle]) -> tuple[str, str]:
     geo = etude.geometrie
     angles_libres = not domaine["alpha"].est_point and not domaine["beta"].est_point
+    plan = vol_plan(domaine)
     braquages_lateraux = [not domaine[v].est_point for v in ("DM", "DN")]
     polaire_possible = angles_libres and braquages_lateraux[0] == braquages_lateraux[1]
 
     if etude.repere == "polaire":
+        if plan is not None:
+            return (
+                "polaire",
+                f"imposé par l'étude ; vol plan en {plan} : φa ne prend que les directions "
+                "du plan de vol, repliées dans le secteur fondamental",
+            )
         if not angles_libres:
             raise ErreurEtude(
-                "repère polaire impossible : il faut α et β actifs, avec des plages non réduites "
-                f"à un point (trajectoire {etude.trajectoire.nom})"
+                "repère polaire impossible : il faut α et β actifs, ou un vol plan (l'un "
+                f"des deux libre, l'autre nul) — trajectoire {etude.trajectoire.nom}"
             )
         if not polaire_possible:
             raise ErreurEtude(
@@ -179,7 +210,13 @@ def _choisir_repere(etude: Etude, domaine: Mapping[str, Intervalle]) -> tuple[st
         return "cartesien", "imposé par l'étude"
 
     if not angles_libres:
-        return "cartesien", "vol plan : β ou α fixé, le polaire n'apporte rien"
+        if plan is not None:
+            return (
+                "cartesien",
+                "vol plan : le polaire donnerait les mêmes points, renommés (αt, φa) — "
+                "--repere polaire pour une table en (αt, φa)",
+            )
+        return "cartesien", "β et α fixés : pas de direction d'écoulement à replier"
     if geo.revolution:
         if polaire_possible:
             return "polaire", "corps de révolution : seul αt compte"
@@ -206,6 +243,24 @@ def _rediger_repere(
         "le plus proche de l'origine à son coin le plus éloigné (§5.1)"
     )
     if etude.geometrie.revolution:
+        return etape
+    if vol_plan(domaine) is not None:
+        directions = ", ".join(f"{_fn(phi)}°" for phi, _ in _directions_plan(domaine))
+        etape.ajouter(
+            f"vol plan : φa ne prend que {directions} ; le rectangle (α, β) se réduit à un "
+            "segment, et le secteur fondamental n'est atteint que sur ces directions repliées"
+        )
+        if domaine["DM"].est_point != domaine["DN"].est_point:
+            etape.ajouter(
+                "(δm, δn) → (δmB, δnB) : tournés d'un multiple de 90° seulement, ils changent "
+                "de signe (ou s'échangent) sans se mélanger ; un seul est libre, pas de "
+                "disque à couvrir"
+            )
+        elif not domaine["DM"].est_point:
+            etape.ajouter(
+                "(δm, δn) → (δmB, δnB), tournés de φa (repère mixte, §7.1) : ils tournent "
+                "avec l'écoulement, une rotation de l'engin ne les change plus"
+            )
         return etape
     arc = arc_phia_rectangle(alpha, beta)
     if arc.est_complet:
@@ -440,7 +495,221 @@ def _apex(
     return strates
 
 
-def _rediger_groupe_polaire(redac: Redaction, geo: Geometrie) -> None:
+def _demi_positive(i: Intervalle) -> Intervalle | None:
+    """La partie ``> 0`` de ``i`` (0 exclu : c'est l'axe αt = 0), ou ``None``."""
+    if i.haut <= TOLERANCE:
+        return None
+    if i.bas <= TOLERANCE:
+        return Intervalle(0.0, i.haut, bas_inclus=False, haut_inclus=i.haut_inclus)
+    return i
+
+
+def _directions_plan(domaine: Mapping[str, Intervalle]) -> list[tuple[float, Intervalle]]:
+    """Vol plan : chaque direction φa atteinte, avec sa plage d'αt (= |α| ou |β|)."""
+    plan = vol_plan(domaine)
+    assert plan is not None
+    libre = domaine["alpha" if plan == "tangage" else "beta"]
+    positif, negatif = (0.0, 180.0) if plan == "tangage" else (90.0, 270.0)
+    oppose = Intervalle(-libre.haut, -libre.bas, libre.haut_inclus, libre.bas_inclus)
+    directions = []
+    for phi, demi in ((positif, _demi_positive(libre)), (negatif, _demi_positive(oppose))):
+        if demi is not None:
+            directions.append((phi, demi))
+    return directions
+
+
+def representant_phia(geo: Geometrie, phia: float) -> float:
+    """L'image de φa dans le secteur fondamental (la plus petite, s'il y en a deux)."""
+    n = geo.n_rotation
+    largeur = geo.secteur_phia
+    assert largeur is not None
+    images = [normaliser_angle(phia + k * 360.0 / n) for k in range(n)]
+    if geo.miroirs:
+        images += [normaliser_angle(2.0 * phis - phia) for phis in geo.plans_phia]
+    dedans = [
+        x for x in images if x <= largeur + TOLERANCE and (geo.miroirs or x < largeur - TOLERANCE)
+    ]
+    return 0.0 if min(dedans) <= TOLERANCE else min(dedans)
+
+
+def _amplitude(plage: Intervalle, nom: str, avert: list[str]) -> Intervalle:
+    if plage.est_point and plage.est_nul:
+        return plage
+    if not plage.est_symetrique:
+        avert.append(
+            f"{nom} : plage {_fi(plage)} asymétrique ; en vol plan polaire, le demi-tour "
+            f"φa → φa + 180° en change le signe : étendue à {_fi(plage.symetrise())}"
+        )
+    return plage.symetrise()
+
+
+def _braquages_plan(
+    etude: Etude, domaine: dict[str, Intervalle], phia: float, avert: list[str]
+) -> tuple[dict[str, Intervalle], tuple[Contrainte, ...]]:
+    """(δmB, δnB) le long d'une direction du plan de vol.
+
+    À φa = 0° ou 180°, δmB = ±δm et δnB = ±δn ; à 90° ou 270°, ils s'échangent.
+    Deux braquages libres : la rotation reste un multiple de 90°, mais pour ne
+    pas tenir deux conventions, on reprend la règle générale (disque, §7.6).
+    """
+    dm, dn = domaine["DM"], domaine["DN"]
+    if not dm.est_point and not dn.est_point:
+        lateraux, contraintes, _ = _braquages_mixtes(etude, domaine, avert)
+        return lateraux, contraintes
+    a_m, a_n = _amplitude(dm, "DM", avert), _amplitude(dn, "DN", avert)
+    if abs(math.sin(math.radians(phia))) > 0.5:
+        a_m, a_n = a_n, a_m
+    return {"DMB": a_m, "DNB": a_n}, ()
+
+
+def _apex_plan(geo: Geometrie, base: dict[str, Intervalle], noeud: Brouillon) -> list[Strate]:
+    """Axe αt = 0 en vol plan, un seul braquage latéral libre (repère engin).
+
+    Seules agissent les symétries qui gardent la droite des braquages : le
+    miroir φs = 0° (δn, δl), le miroir φs = 90° s'il existe (δm, δl), la
+    rotation de 180° si N est pair (δm, δn). Les autres envoient la droite
+    hors du domaine : elles ne relient aucun couple de points calculables.
+    """
+    elements: list[ElementSigne] = []
+    if geo.miroirs:
+        elements.append(ElementSigne("miroir φs = 0°", frozenset({"DL", "DNB"})))
+        if any(abs(p - 90.0) <= TOLERANCE for p in geo.plans_phia):
+            elements.append(ElementSigne("miroir φs = 90°", frozenset({"DL", "DMB"})))
+    if geo.n_rotation % 2 == 0:
+        elements.append(ElementSigne("rotation 180°", frozenset({"DMB", "DNB"})))
+    noeud = noeud.ajouter(
+        "un seul braquage latéral libre : n'agissent que les symétries qui gardent sa droite "
+        "(les autres l'envoient sur le braquage fixé à 0)"
+    )
+    journal: list[Evenement] = []
+    strates = stratifier_signes(
+        {v: base[v] for v in VARIABLES_POLAIRES},
+        engendrer(elements),
+        VARIABLES_POLAIRES,
+        nom="axe",
+        journal=journal,
+    )
+    arbre_signes(noeud, journal)
+    return strates
+
+
+def _polaire_plan(
+    etude: Etude,
+    domaine: dict[str, Intervalle],
+    avert: list[str],
+    notes: list[str],
+    etape: Brouillon,
+) -> list[Strate]:
+    """Vol plan en polaire : chaque direction de φa ramenée dans le secteur."""
+    geo = etude.geometrie
+    largeur = geo.secteur_phia
+    assert largeur is not None
+    roulis = domaine["DL"]
+    if geo.miroirs and not roulis.est_point and not roulis.est_symetrique:
+        avert.append(
+            f"DL : plage {_fi(roulis)} asymétrique, étendue à "
+            f"±{_fn(roulis.amplitude)}° (les miroirs changent le signe de δl)"
+        )
+        roulis = roulis.symetrise()
+
+    # Directions repliées : plusieurs peuvent tomber sur le même φa du secteur.
+    replis: dict[float, list[tuple[float, Intervalle, dict[str, Intervalle]]]] = {}
+    contraintes: tuple[Contrainte, ...] = ()
+    for phi, alphat in _directions_plan(domaine):
+        lateraux, contraintes = _braquages_plan(etude, domaine, phi, avert)
+        cle = round(representant_phia(geo, phi), 9)
+        replis.setdefault(cle, []).append((phi, alphat, lateraux))
+
+    secteur = Intervalle(0.0, largeur, haut_inclus=geo.miroirs)
+    noeud = etape.ajouter(
+        f"vol plan : chaque direction de φa ramenée dans le secteur fondamental {_fi(secteur)}°"
+    )
+    strates: list[Strate] = []
+    for cible, groupe in sorted(replis.items()):
+        alphat = Intervalle(
+            min(a.bas for _, a, _ in groupe),
+            max(a.haut for _, a, _ in groupe),
+            bas_inclus=all(a.bas_inclus for _, a, _ in groupe),
+        )
+        lateraux = {
+            v: Intervalle(
+                min(lat[v].bas for _, _, lat in groupe), max(lat[v].haut for _, _, lat in groupe)
+            )
+            for v in ("DMB", "DNB")
+        }
+        venues = " et ".join(
+            f"{_fn(phi)}°" + ("" if abs(phi - cible) <= TOLERANCE else f" (→ {_fn(cible)}°)")
+            for phi, _, _ in groupe
+        )
+        bornes = {
+            "alphat": alphat,
+            "phia": Intervalle.point(cible),
+            **lateraux,
+            "DL": roulis,
+        }
+        miroir = geo.miroirs and (cible <= TOLERANCE or abs(cible - largeur) <= TOLERANCE)
+        if miroir:
+            branche = noeud.ajouter(
+                f"φa = {_fn(cible)}°, venu de {venues} : plan du miroir φs = {_fn(cible)}°"
+            )
+            journal: list[Evenement] = []
+            strates += stratifier_signes(
+                bornes,
+                (MIROIR_PLAN_POLAIRE,),
+                VARIABLES_POLAIRES,
+                nom="plan",
+                contraintes=contraintes,
+                journal=journal,
+            )
+            arbre_signes(branche, journal)
+        else:
+            strate = Strate(bornes, contraintes, nom="secteur")
+            strates.append(strate)
+            noeud.ajouter(
+                f"φa = {_fn(cible)}°, venu de {venues} : aucune symétrie ne fixe ce φa "
+                "→ braquages entiers",
+                strate,
+            )
+
+    if domaine["alpha"].contient(0.0) and domaine["beta"].contient(0.0):
+        notes.append("axe αt = 0 : φa fixé à 0 par convention (§2.5), braquages en repère engin")
+        axe = etape.ajouter(
+            "αt = 0 : φa indéfini, fixé à 0 (§2.5) ; le groupe n'agit plus que sur les "
+            "braquages, en repère engin"
+        )
+        engin = {
+            "DMB": _amplitude(domaine["DM"], "DM", []),
+            "DNB": _amplitude(domaine["DN"], "DN", []),
+        }
+        base = {
+            **engin,
+            "DL": roulis,
+            "alphat": Intervalle.point(0.0),
+            "phia": Intervalle.point(0.0),
+        }
+        if engin["DMB"].est_point != engin["DNB"].est_point:
+            strates += _apex_plan(geo, base, axe)
+        else:
+            strates += _apex(
+                geo,
+                etude,
+                domaine,
+                {**engin, "DL": roulis} if not contraintes else {**lateraux, "DL": roulis},
+                contraintes,
+                axe,
+            )
+    return strates
+
+
+def _groupe_plan(geo: Geometrie, domaine: Mapping[str, Intervalle]) -> tuple[ElementSigne, ...]:
+    """Le groupe vu sur les variables libres d'un vol plan (mêmes éléments qu'en cartésien)."""
+    libres = [v for v in VARIABLES_CARTESIENNES if not domaine[v].est_point]
+    return restreindre(engendrer(geo.generateurs_cartesiens()), libres)
+
+
+def _rediger_groupe_polaire(
+    redac: Redaction, geo: Geometrie, domaine: Mapping[str, Intervalle]
+) -> None:
     etape = redac.etape("Groupe de symétries")
     if geo.revolution:
         etape.ajouter(
@@ -471,6 +740,15 @@ def _rediger_groupe_polaire(redac: Redaction, geo: Geometrie) -> None:
         f"secteur fondamental φa ∈ {_fi(secteur)}° : ses {geo.ordre_groupe} images par le "
         "groupe pavent le tour, chaque orbite de φa y a un représentant"
     )
+    if vol_plan(domaine) is not None:
+        vu = _groupe_plan(geo, domaine)
+        noeud = etape.ajouter(
+            f"vol plan : seules relient deux points calculables les symétries qui gardent le "
+            f"plan de vol ; vues sur les variables libres, ordre {len(vu)}"
+            + (" :" if len(vu) > 1 else " — rien à réduire")
+        )
+        for e in vu[1:]:
+            noeud.ajouter(decrire_element(e))
 
 
 def _polaire(
@@ -483,7 +761,7 @@ def _polaire(
     geo = etude.geometrie
     alphat = plage_alphat_rectangle(domaine["alpha"], domaine["beta"])
     zero = Intervalle.point(0.0)
-    _rediger_groupe_polaire(redac, geo)
+    _rediger_groupe_polaire(redac, geo, domaine)
     etape = redac.etape("Découpage en domaine fondamental")
 
     if geo.revolution:
@@ -498,6 +776,9 @@ def _polaire(
         strate = Strate(bornes, nom="axisymétrique")
         etape.ajouter(f"αt ∈ {_fi(alphat)}°, φa = 0 et pas de braquage : une seule strate", strate)
         return [strate]
+
+    if vol_plan(domaine) is not None:
+        return _polaire_plan(etude, domaine, avert, notes, etape)
 
     notes.append(
         f"le rectangle (α, β) est couvert par αt ∈ {_fi(alphat)}° sur tout le secteur utile : "
@@ -651,13 +932,20 @@ def reduire(etude: Etude) -> Reduction:
             avert.append("corps de révolution en cartésien : seuls les miroirs V, H sont exploités")
     else:
         strates = _polaire(etude, domaine, avert, notes, redac)
-        if not domaine["DM"].est_point:
+        if not domaine["DM"].est_point and not domaine["DN"].est_point:
             _rediger_limite(etape_repere, etude, domaine)
         variables = VARIABLES_POLAIRES
         exploitees = _symetries_polaires(geo)
         ordre = geo.ordre_groupe
         nom_groupe = geo.nom_groupe
         perdues = ()
+        if vol_plan(domaine) is not None and not geo.revolution:
+            # Seules comptent les symétries qui gardent le plan de vol : ce sont
+            # exactement celles du cartésien, vues sur les variables libres.
+            vu = _groupe_plan(geo, domaine)
+            exploitees = tuple(e.nom for e in vu if e.inverse)
+            ordre = len(vu)
+            nom_groupe = f"{geo.nom_groupe} vu sur le plan de vol"
 
     recollements: list[Recollement] = []
     strates = fusionner(strates, recollements)

@@ -3,6 +3,8 @@
 #   cfd-doe domaine ETUDE_FUSEE.yaml
 #   cfd-doe domaine ETUDE_FUSEE.yaml --repere cartesien   # ce que coûterait (α, β)
 #   cfd-doe domaine ETUDE_FUSEE.yaml --traj 3DOF_TANGAGE  # vol plan
+#   cfd-doe domaine ETUDE_FUSEE.yaml --traj 3DOF_TANGAGE --repere polaire  # même vol, en (αt, φa)
+#   cfd-doe domaine ETUDE_FUSEE.yaml --figures            # figures : cartésien sur polaire
 #
 # Angles en degrés. Conventions : 00_DOC/01_BASE_AERO.md §1.
 

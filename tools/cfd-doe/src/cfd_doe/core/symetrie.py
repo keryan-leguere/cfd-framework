@@ -70,8 +70,9 @@ def restreindre(
     """L'action du groupe vue sur ``variables`` seulement.
 
     Deux éléments qui ne diffèrent que sur des variables absentes (fixées à 0,
-    donc insensibles au signe) deviennent le même élément ; on garde le premier
-    nom rencontré.
+    donc insensibles au signe) deviennent le même élément ; il porte alors
+    leurs noms joints par « ≡ » (``miroir H ≡ rotation 180°`` en vol plan),
+    pour qu'on voie que n'importe lequel des deux suffit.
     """
     garde = frozenset(variables)
     vus: dict[frozenset[str], ElementSigne] = {}
@@ -79,6 +80,8 @@ def restreindre(
         cle = e.inverse & garde
         if cle not in vus:
             vus[cle] = ElementSigne(e.nom if cle else "id", cle)
+        elif cle and e.nom not in vus[cle].nom.split(" ≡ "):
+            vus[cle] = ElementSigne(f"{vus[cle].nom} ≡ {e.nom}", cle)
     vus.setdefault(frozenset(), IDENTITE)
     identite = vus.pop(frozenset())
     return (identite, *vus.values())

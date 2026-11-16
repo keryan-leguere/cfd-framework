@@ -99,7 +99,7 @@ class TestRecit:
         r = reduire(_etude(traj="3DOF_TANGAGE", geo="double_symetrie"))
         textes = _textes(_etape(r, "Groupe").noeuds)
         assert any("ordre 2" in t and "se confondent" in t for t in textes)
-        assert "miroir H (α, δm)" in textes
+        assert "miroir H ≡ rotation 180° (α, δm)" in textes
 
     def test_cruciforme_polaire_plans_et_axe(self) -> None:
         r = reduire(_etude())

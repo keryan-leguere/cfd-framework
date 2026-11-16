@@ -4,6 +4,7 @@
 
     cfd-doe domaine ETUDE.yaml                 sous-domaines à calculer
     cfd-doe domaine ETUDE.yaml --verbose       … et la démarche qui y mène
+    cfd-doe domaine ETUDE.yaml --figures [D]   … et ses figures, cartésien sur polaire
     cfd-doe domaine --traj 6DOF --geometrie cruciforme \\
             --alpha -20 20 --beta -5 5 --dl -10 10 --dm -20 20 --dn -20 20
     cfd-doe check ETUDE.yaml                   le fichier tient-il debout ?
@@ -50,6 +51,7 @@ from cfd_doe.paths import EXEMPLE_DIR
 from cfd_doe.report import theme
 from cfd_doe.report.console import panneau_erreur, rapport_reduction
 from cfd_doe.report.figures import FiguresIndisponibles, tracer_figures
+from cfd_doe.report.figures_domaine import FORMATS_DOMAINE, tracer_figures_domaine
 from cfd_doe.report.remplissage import rapport_remplissage
 
 __all__ = ["build_parser", "main"]
@@ -141,6 +143,16 @@ def cmd_domaine(args: argparse.Namespace, sortie: _Sortie) -> int:
                 yaml.safe_dump(donnees, sort_keys=False, allow_unicode=True), encoding="utf-8"
             )
         sortie.out.print(f"[{theme.OK}]écrit :[/] {chemin}")
+    if args.figures is not None:
+        formats = tuple(args.formats or FORMATS_DOMAINE)
+        try:
+            for figure in tracer_figures_domaine(reduction.etude, Path(args.figures), formats):
+                sortie.out.print(
+                    f"[{theme.OK}]écrit :[/] {figure} [{theme.DISCRET}](figure, "
+                    f"{' + '.join(formats)})[/]"
+                )
+        except FiguresIndisponibles as erreur:
+            sortie.out.print(f"[{theme.ATTENTION}]! {erreur}[/]")
     return EXIT_OK
 
 
@@ -286,6 +298,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="détailler la démarche : trajectoire, repère, symétries, découpage en sous-domaines",
+    )
+    domaine.add_argument(
+        "--figures",
+        nargs="?",
+        const="FIGURES_DOMAINE",
+        metavar="DOSSIER",
+        help="figures du domaine, cartésien et polaire superposés (défaut : FIGURES_DOMAINE)",
+    )
+    domaine.add_argument(
+        "--formats",
+        nargs="+",
+        choices=("png", "pdf", "svg"),
+        metavar="FMT",
+        help="formats des figures (défaut : svg)",
     )
     domaine.set_defaults(fonction=cmd_domaine)
 

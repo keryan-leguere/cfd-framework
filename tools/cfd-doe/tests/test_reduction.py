@@ -63,9 +63,9 @@ class TestRepere:
         assert r.repere == "cartesien"
         assert any("rotation de 90°" in a for a in r.avertissements)
 
-    def test_polaire_impossible_en_vol_plan(self) -> None:
+    def test_polaire_impossible_sans_angle_libre(self) -> None:
         with pytest.raises(ErreurEtude, match="polaire impossible"):
-            reduire(_etude(traj="2DOF", repere="polaire"))
+            reduire(_etude(traj="1DOF", repere="polaire"))
 
     def test_revolution_ne_garde_que_alphat(self) -> None:
         r = reduire(_etude(traj="3DOF_MASSE_PONCTUELLE", geo="revolution"))
@@ -248,3 +248,97 @@ def test_export_serialisable() -> None:
     assert donnees["repere"] == "polaire"
     assert len(donnees["sous_domaines"]) == 8
     assert "disque" in texte and "secteur" in texte
+
+
+# ---------------------------------------------------------------------------
+# Vol plan en polaire : mêmes points qu'en cartésien, nommés en (αt, φa)
+# ---------------------------------------------------------------------------
+
+_LACET = {"LACET": {"efforts": ["A", "Y", "n"], "description": "plan de lacet"}}
+
+
+def _etude_plan(traj: str, n: int, repere: str) -> Etude:
+    variables = {v: [-2, 2] for v in VARIABLES}
+    extra: dict[str, Any] = {"trajectoires": _LACET} if traj == "LACET" else {}
+    return _etude(
+        traj=traj,
+        geo={"type": "n_ailettes", "n_ailettes": n},
+        repere=repere,
+        variables=variables,
+        **extra,
+    )
+
+
+def _en_polaire(point: dict[str, float]) -> dict[str, float]:
+    from cfd_doe.core.angles import braquages_mixtes
+
+    alphat, phia = vers_alphat_phia(point["alpha"], point["beta"])
+    if alphat == 0.0:
+        dmb, dnb = point["DM"], point["DN"]  # sur l'axe : repère engin (§2.5)
+    else:
+        dmb, dnb = braquages_mixtes(point["DM"], point["DN"], phia)
+    return {"alphat": alphat, "phia": phia, "DMB": dmb, "DNB": dnb, "DL": point["DL"]}
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 6])
+@pytest.mark.parametrize("traj", ["2DOF", "3DOF_TANGAGE", "4DOF", "LACET"])
+def test_vol_plan_polaire_un_representant_par_orbite(traj: str, n: int) -> None:
+    """Tout point du plan de vol a exactement un représentant dans les sous-domaines polaires.
+
+    Et les deux repères en calculent autant : le polaire ne fait que renommer.
+    """
+    polaire = reduire(_etude_plan(traj, n, "polaire"))
+    cartesien = reduire(_etude_plan(traj, n, "cartesien"))
+    assert polaire.repere == "polaire" and cartesien.repere == "cartesien"
+    assert polaire.ordre_groupe == cartesien.ordre_groupe
+    actions = _action_polaire(n)
+    actives = polaire.etude.trajectoire.actives
+    representants: set[tuple[float, ...]] = set()
+    n_cartesien = 0
+    for valeurs in itertools.product(range(-2, 3), repeat=len(actives)):
+        point = {v: 0.0 for v in VARIABLES}
+        point.update(zip(actives, map(float, valeurs)))
+        p = _en_polaire(point)
+        images = {
+            tuple(round(x, 6) + 0.0 for x in (q["phia"], q["DMB"], q["DNB"], q["DL"])): q
+            for q in (a(p) for a in actions)
+        }
+        dedans = [k for k, q in images.items() if _dans(polaire.sous_domaines, q)]
+        assert len(dedans) == 1, (n, point, dedans)
+        representants.add((p["alphat"], *dedans[0]))
+        n_cartesien += _dans(cartesien.sous_domaines, point)
+    assert len(representants) == n_cartesien
+
+
+def test_vol_plan_polaire_cruciforme_tangage() -> None:
+    """Le cas de la question : φa = 0 seul, δmB entier ; sur l'axe δmB ≥ 0."""
+    r = reduire(_etude(traj="3DOF_TANGAGE", repere="polaire"))
+    plan, axe = r.sous_domaines
+    assert plan.bornes["phia"].est_nul and plan.bornes["alphat"].haut == 20.0
+    assert plan.bornes["DMB"] == r.sous_domaines[0].bornes["DMB"]
+    assert plan.bornes["DMB"].est_symetrique and not plan.contraintes
+    assert axe.bornes["alphat"].est_nul and axe.bornes["DMB"].bas == 0.0
+    assert r.ordre_groupe == 2
+    assert "miroir H ≡ rotation 180°" in r.symetries_exploitees
+
+
+def test_vol_plan_polaire_trois_ailettes_tombe_sur_le_bord_du_secteur() -> None:
+    """α < 0 n'est pas l'image de α > 0 (pas de 180°) : il arrive sur le miroir φs = 60°."""
+    r = reduire(_etude(traj="2DOF", geo={"type": "n_ailettes", "n_ailettes": 3}, repere="polaire"))
+    assert sorted(sd.bornes["phia"].bas for sd in r.sous_domaines) == [0.0, 60.0]
+
+
+def test_vol_plan_polaire_sans_symetriser_alpha() -> None:
+    """α ∈ [−5, 20] : le cartésien étend α à ±20, le polaire garde αt ≤ 20 sans rien étendre."""
+    variables = {**PLEIN, "alpha": [-5, 20]}
+    polaire = reduire(_etude(traj="3DOF_TANGAGE", repere="polaire", variables=variables))
+    cartesien = reduire(_etude(traj="3DOF_TANGAGE", variables=variables))
+    assert not any(a.startswith("alpha") for a in polaire.avertissements)
+    assert any(a.startswith("alpha") for a in cartesien.avertissements)
+    assert polaire.sous_domaines[0].bornes["alphat"].haut == 20.0
+
+
+def test_vol_plan_auto_reste_cartesien_et_le_dit() -> None:
+    r = reduire(_etude(traj="3DOF_TANGAGE"))
+    assert r.repere == "cartesien"
+    assert "--repere polaire" in r.raison_repere

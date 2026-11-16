@@ -556,8 +556,8 @@ def test_les_cas_couvrent_trajectoires_et_symetries() -> None:
 def test_chaque_cas_se_remplit(chemin: Path, repere: str, tmp_path: Path) -> None:
     remplissage = charger_remplissage(chemin)
     actives = remplissage.etude.trajectoire.actives
-    if repere == "polaire" and not {"alpha", "beta"} <= set(actives):
-        # Le polaire demande α et β : refusé, avec un message qui le dit.
+    if repere == "polaire" and not {"alpha", "beta"} & set(actives):
+        # Le polaire demande au moins un angle libre : refusé, avec un message qui le dit.
         with pytest.raises(ErreurEtude, match="polaire impossible"):
             remplir(dataclasses.replace(remplissage, etude=remplissage.etude.avec(repere=repere)))
         return

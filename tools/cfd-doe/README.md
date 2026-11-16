@@ -34,6 +34,8 @@ cfd-doe exemple                                    # copie 01_EXEMPLE/ dans ./cf
 cfd-doe domaine cfd-doe-exemple/ETUDE_FUSEE.yaml   # sous-domaines à calculer
 cfd-doe domaine ETUDE.yaml --repere cartesien      # ce que coûterait de rester en (α, β)
 cfd-doe domaine ETUDE.yaml --verbose               # + la démarche : comment on obtient les sous-domaines
+cfd-doe domaine ETUDE.yaml --figures [DOSSIER]     # + figures article : cartésien au-dessus du polaire
+cfd-doe domaine ETUDE.yaml --traj 3DOF_TANGAGE --repere polaire   # vol plan, table en (αt, φa)
 cfd-doe domaine ETUDE.yaml --export SD.yaml        # pour la phase de remplissage (.yaml / .json)
 cfd-doe check ETUDE.yaml                           # validation seule
 cfd-doe remplir REMPLISSAGE.yaml                   # peupler les sous-domaines : doe.csv, figures
@@ -97,6 +99,20 @@ produit un avertissement.
 - **cartésien** (α, β) en repère engin sinon. Seuls les miroirs vertical/horizontal et la rotation
   de 180° y sont exploitables ; s'il est imposé à un cruciforme, le rapport dit ce qui est perdu.
 
+**Vol plan en polaire** (`2DOF`, `3DOF_TANGAGE`, `4DOF`, ou un type à vous en lacet). `auto` reste
+cartésien, mais `--repere polaire` est accepté : φa ne prend alors que les deux directions du plan
+de vol (0° et 180° en tangage), ramenées dans le secteur fondamental. On calcule **les mêmes
+points** qu'en cartésien, sous d'autres noms, ce que vérifie un test d'orbites (N = 1, 2, 3, 4, 6).
+En tangage, α > 0 devient αt = α, φa = 0, δmB = δm, et α < 0 est replié sur φa = 0 par la rotation
+de 180° (cruciforme), ou sur le miroir φs = 60° pour 3 ailettes. C'est utile quand le code aval
+tabule en (αt, φa) pour exploiter une symétrie de rotation : la table du vol plan est alors
+directement la coupe φa = 0 de sa table. Seules agissent les symétries qui gardent le plan de vol,
+donc l'ordre affiché est celui « vu sur le plan de vol » (2 pour un cruciforme en 3DOF, pas 8). Deux
+symétries qui agissent pareil sur les variables libres sont nommées ensemble
+(`miroir H ≡ rotation 180°`) : n'importe laquelle suffit, ce qui compte si votre code n'a pas
+l'une des deux. Une plage asymétrique d'α n'est pas étendue en polaire, alors qu'elle l'est en
+cartésien.
+
 **Symétries → sous-domaines.** Le domaine est ramené à un *domaine fondamental* : chaque point du
 domaine d'entrée y a exactement un représentant par symétrie. Il se découpe en sous-domaines
 disjoints, car sur un plan de symétrie une partie du groupe agit encore, sur les braquages :
@@ -138,6 +154,27 @@ Chaque branche terminale porte `→ #k`, la ligne du tableau où elle aboutit : 
 contre le résultat. Ce n'est pas un second calcul : le moteur rédige au fil de la réduction
 (`engine/demarche.py`, à partir du journal de `stratifier_signes` et de `fusionner`), et refuse de
 produire une feuille qui ne tombe pas dans exactement un sous-domaine.
+
+**Figures (`--figures [DOSSIER]`, défaut `FIGURES_DOMAINE`, `--formats svg png pdf`).**
+Deux figures qualitatives prêtes pour un article (profil `paper` de cfd-plot), en **SVG** par
+défaut ; `--formats png pdf` pour du PNG 300 dpi et du PDF.
+L'étude y est réduite **dans les deux repères**, quel que soit celui qu'elle retient, avec le
+cartésien au-dessus du polaire :
+
+- `domaine_reperes` : le plan (α, β). En haut, le rectangle demandé et la part que le cartésien
+  calcule (hachurée) ; en bas, le même rectangle, le disque d'αt et le secteur fondamental
+  (45° en cruciforme). En gris, ce qui est déduit par symétrie ; en tireté, les plans de symétrie ;
+  en trait épais, les plans et l'axe calculés à part. Chaque morceau porte une lettre, et la
+  légende de droite dit ses braquages : **tous** à l'intérieur, **une partie seulement** sur un
+  plan de symétrie ou sur l'axe (`#3 : δnB = 0, δl ≥ 0`). Une note signale quand le secteur
+  déborde du rectangle, c'est-à-dire quand des points hors du domaine demandé sont calculés.
+- `domaine_braquages` : pour chaque lettre, le plan (δm, δn), ou (δmB, δnB) en polaire, avec sa
+  part calculée et sa part déduite (disque entier, demi-disque, secteur de 45° sur l'axe).
+  Ce que le panneau ne montre pas, en général δl, est écrit dessous. En vol plan, un seul braquage
+  est libre et le panneau devient un axe.
+
+Tout est lu des sous-domaines (`report/figures_domaine.py`). Sans cfd-plot, le rapport s'affiche
+quand même et un avertissement remplace les figures.
 
 ## 6. Conventions de signe
 
