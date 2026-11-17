@@ -42,6 +42,17 @@ def test_csv_relu_au_bit_pres(tmp_path: Path) -> None:
     assert code == EXIT_OK  # tolérance nulle : la relecture n'a pas perdu un ULP
 
 
+def test_sorties_seules(tmp_path: Path) -> None:
+    ref = pd.DataFrame({"x": np.arange(10.0), "y": np.arange(10.0) ** 2})
+    chemin = tmp_path / "r.csv"
+    ref.to_csv(chemin, index=False)
+    faux = tmp_path / "f.csv"
+    ref.iloc[::-1].to_csv(faux, index=False)
+    base = ["-s", "x,y", "--sans-figures"]
+    assert main(["integration", str(chemin), str(chemin), *base, "-o", str(tmp_path / "a")]) == EXIT_OK
+    assert main(["integration", str(chemin), str(faux), *base, "-o", str(tmp_path / "b")]) == EXIT_NON_CONFORME
+
+
 def test_config_yaml_et_surcharge(fichiers: tuple[Path, Path, Path], tmp_path: Path) -> None:
     ref, _, mauvais = fichiers
     config = tmp_path / "c.yaml"
@@ -56,7 +67,7 @@ def test_config_yaml_et_surcharge(fichiers: tuple[Path, Path, Path], tmp_path: P
 @pytest.mark.parametrize(
     "args",
     [
-        ["integration", "{ref}", "{ref}", "--sans-figures"],  # ni entrées ni sorties
+        ["integration", "{ref}", "{ref}", "--sans-figures"],  # aucune sortie
         ["integration", "{ref}", "absent.csv", *ARGS],
         ["integration", "{ref}", "{ref}", "-e", "Mach", "-s", "inconnue", "--sans-figures"],
     ],

@@ -36,7 +36,8 @@ def test_tolerances_propres_heritent_de_la_commune() -> None:
     ("kwargs", "message"),
     [
         ({"entrees": ["a"], "sorties": ["a"]}, "à la fois entrée et sortie"),
-        ({"entrees": [], "sorties": ["x"]}, "aucune colonne d'entrée"),
+        ({"entrees": [], "sorties": []}, "aucune colonne de sortie"),
+        ({"entrees": [], "sorties": ["x"], "alignement": "entrees"}, "sans colonne d'entrée"),
         ({"entrees": ["a", "a"], "sorties": ["x"]}, "deux fois"),
         ({"entrees": ["a"], "sorties": ["x"], "tolerances": {"y": (1, 1)}}, "pas une sortie"),
         ({"entrees": ["a"], "sorties": ["x"], "tolerances": {"x": {"rtl": 1}}}, "inconnue"),
@@ -48,6 +49,23 @@ def test_tolerances_propres_heritent_de_la_commune() -> None:
 def test_refus(kwargs: dict[str, object], message: str) -> None:
     with pytest.raises(ErreurSpecification, match=message):
         construire_specification(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("entrees", [None, [], "", " , "])
+def test_sans_entree_appariement_par_position(entrees: object) -> None:
+    s = construire_specification(entrees, ["x"])  # type: ignore[arg-type]
+    assert s.entrees == ()
+    assert s.alignement == "position"
+
+
+def test_alignement_par_defaut_selon_les_entrees() -> None:
+    assert construire_specification(["a"], ["x"]).alignement == "entrees"
+    assert construire_specification(None, ["x"], alignement="position").alignement == "position"
+
+
+def test_depuis_yaml_sans_entree() -> None:
+    spec, _ = specification_depuis_dict({"sorties": ["x", "y"]})
+    assert spec.entrees == () and spec.alignement == "position"
 
 
 def test_depuis_yaml_lit_les_nombres_ecrits_en_texte() -> None:

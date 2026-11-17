@@ -66,3 +66,12 @@ def test_types_incompatibles_apparies_en_texte() -> None:
     app = apparier(ref, test, ["a"])
     assert app.entrees_en_texte == ("a",)
     assert app.test.tolist() == [1, 0]
+
+
+def test_sans_entree_par_position() -> None:
+    ref = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0]})
+    test = pd.DataFrame({"x": [1.0, 2.0, 3.0]})
+    app = apparier(ref, test, [], alignement="position")
+    assert app.ref.tolist() == [0, 1, 2] and app.test.tolist() == [0, 1, 2]
+    assert app.absentes.tolist() == [3] and app.en_trop.size == 0
+    assert not app.divergentes.any() and app.n_cles_dupliquees == 0

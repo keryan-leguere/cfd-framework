@@ -11,7 +11,8 @@ Deux modes :
 - **par position** : la i-ème ligne contre la i-ème ligne. Les entrées sont
   alors *vérifiées* : une paire dont les entrées diffèrent n'est pas comparée
   (ses sorties ne répondent pas à la même question), elle est déclarée
-  « entrées divergentes ».
+  « entrées divergentes ». Sans aucune entrée déclarée, c'est le seul mode
+  possible : rien n'identifie un cas, rien n'est vérifié, l'ordre fait foi.
 
 Les entrées numériques sont comparées en double précision (un entier ``2``
 apparie un flottant ``2.0``), ``-0.0`` égale ``0.0`` ; ``chiffres_cle``
@@ -116,8 +117,13 @@ def apparier(
     """Apparie les lignes de ``ref`` et ``test`` (voir le module)."""
     cle_ref, cle_test, en_texte = cles_entrees(ref, test, entrees, chiffres_cle)
     cols = list(entrees)
-    rang_ref = cle_ref.groupby(cols, dropna=False, sort=False).cumcount().to_numpy()
-    n_dup = int((rang_ref > 0).sum())
+    if not cols and alignement != ALIGNEMENT_POSITION:
+        raise ValueError("sans entrée, seul l'appariement par position est possible")
+    if cols:
+        rang_ref = cle_ref.groupby(cols, dropna=False, sort=False).cumcount().to_numpy()
+        n_dup = int((rang_ref > 0).sum())
+    else:
+        n_dup = 0  # sans entrée, une « combinaison répétée » n'a pas de sens
 
     if alignement == ALIGNEMENT_POSITION:
         n = min(len(ref), len(test))

@@ -577,7 +577,8 @@ not part of the Bash framework's runtime:
       `cfd-validation integration REF TEST --config X.yaml` (exit 0 conform, 1 input error,
       2 non-conform). Rows are paired **on input values** by default (order may differ;
       missing/extra rows reported; duplicated keys paired in order and flagged), or by position
-      with inputs *checked* (diverging pairs are not compared). Criterion
+      with inputs *checked* (diverging pairs are not compared); with no inputs declared (outputs
+      only) position is the only mode — unchecked, warned about, no attribution nor figures 04–06. Criterion
       `|t − r| ≤ atol + rtol·|r|`, reference is the oracle; NaN==NaN is identical, NaN vs number
       is `NON_FINI` with **infinite margin**. Per value: Δ, rel, **ULP** (`core/ecarts.py` maps
       floats to `2⁶³ ± magnitude` so −0/+0 share a key), **margin = Δ/tolerance**. Every

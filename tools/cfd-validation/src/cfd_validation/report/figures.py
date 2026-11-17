@@ -559,6 +559,8 @@ def tracer_figures(
     fichiers = figure_synthese(res, d / "01_synthese_sorties", formats)
     fichiers += figure_marges_sorties(res, d / "02_marges_par_sortie", formats)
     fichiers += figure_repartition(res, d / "03_repartition_marges", formats)
+    if not res.specification.entrees:  # 04 à 06 croisent les sorties avec les entrées
+        return fichiers
     rang = {b.nom: k + 1 for k, b in enumerate(res.sorties)}
     for b in _numeriques(res):
         if par_entree == "toutes" or (par_entree == "echecs" and b.n_echecs):

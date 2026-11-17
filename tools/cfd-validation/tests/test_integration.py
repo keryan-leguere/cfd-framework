@@ -110,6 +110,29 @@ def test_position_divergentes_non_comparees(reference: pd.DataFrame) -> None:
     assert not res.conforme
 
 
+def test_sans_entree_lignes_dans_l_ordre(reference: pd.DataFrame) -> None:
+    sorties = reference[["CN", "Cm", "regime"]]
+    test = sorties.iloc[:-1].copy()
+    test.loc[2, "CN"] += 1.0
+    res = _comparer(sorties, test, entrees=None)
+    assert res.specification.alignement == "position"
+    assert res.structure.n_comparees == len(sorties) - 1
+    assert res.structure.n_absentes == 1
+    cn = next(b for b in res.sorties if b.nom == "CN")
+    assert cn.n_ecarts == 1 and cn.pire is not None and cn.pire.ligne_ref == 2
+    assert cn.pire.entrees == {}
+    assert res.attributions == ()
+    assert any("aucune entrée déclarée" in a for a in res.avertissements)
+    assert list(res.lignes.columns[:3]) == ["ligne_ref", "ligne_test", "statut"]
+
+
+def test_sans_entree_permutation_detectee(reference: pd.DataFrame) -> None:
+    # Sans entrée, l'ordre fait foi : des lignes permutées sont des écarts.
+    sorties = reference[["CN", "Cm"]]
+    res = _comparer(sorties, sorties.iloc[::-1], entrees=[], sorties=["CN", "Cm"])
+    assert not res.conforme
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

@@ -818,6 +818,12 @@ def _avertissements(spec: Specification, s: Structure) -> tuple[str, ...]:
     ]
     if sans_justif:
         av.append(f"tolérance déclarée sans justification pour {', '.join(sans_justif)}")
+    if not spec.entrees:
+        av.append(
+            "aucune entrée déclarée : les lignes sont appariées dans l'ordre, sans vérification — "
+            "un cas manquant ou permuté décale toutes les lignes suivantes, qui sortent alors "
+            "toutes en écart ; déclarer les entrées quand elles existent"
+        )
     if s.n_cles_dupliquees:
         av.append(
             f"{s.n_cles_dupliquees} ligne(s) de référence répètent une combinaison d'entrées déjà vue : "
@@ -831,7 +837,7 @@ def _avertissements(spec: Specification, s: Structure) -> tuple[str, ...]:
         av.append(f"type de « {c} » différent : {a} (référence) contre {b} (test)")
     if s.ignorees_test:
         av.append(f"colonne(s) du test non déclarée(s), ignorée(s) : {', '.join(s.ignorees_test)}")
-    if s.n_ref < EFFECTIF_MIN_ATTRIBUTION:
+    if spec.entrees and s.n_ref < EFFECTIF_MIN_ATTRIBUTION:
         av.append(
             f"{s.n_ref} lignes de référence : en dessous de {EFFECTIF_MIN_ATTRIBUTION}, "
             "le V de Cramér classe mal les entrées — lire les taux par niveau"

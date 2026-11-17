@@ -204,14 +204,16 @@ def _identification(res: ResultatIntegration) -> list[RenderableType]:
 def _specification(res: ResultatIntegration, complet: bool) -> list[RenderableType]:
     spec = res.specification
     g = _grille()
-    g.add_row("Entrées", ", ".join(spec.entrees))
+    g.add_row("Entrées", ", ".join(spec.entrees) if spec.entrees else Text("aucune", style=theme.ATTENTION))
     g.add_row("Sorties", ", ".join(spec.sorties))
     if spec.alignement == ALIGNEMENT_ENTREES:
         appariement = "sur la valeur des entrées"
         if spec.chiffres_cle:
             appariement += f", arrondies à {spec.chiffres_cle} chiffres significatifs"
-    else:
+    elif spec.entrees:
         appariement = "par position, entrées vérifiées ligne à ligne"
+    else:
+        appariement = "par position (la i-ème ligne contre la i-ème), rien à vérifier"
     g.add_row("Appariement", appariement)
     if spec.renommage_test:
         g.add_row("Renommage du test", ", ".join(f"{a} → {b}" for a, b in spec.renommage_test.items()))
@@ -246,7 +248,7 @@ def _structure(res: ResultatIntegration) -> list[RenderableType]:
 
     ligne("Absentes du test", s.n_absentes)
     ligne("En trop dans le test", s.n_en_trop)
-    if res.specification.alignement != ALIGNEMENT_ENTREES:
+    if res.specification.alignement != ALIGNEMENT_ENTREES and res.specification.entrees:
         ligne("Entrées divergentes", s.n_divergentes)
     if res.specification.alignement == ALIGNEMENT_ENTREES:
         g.add_row("Ordre des lignes", "identique" if s.meme_ordre else "différent (sans conséquence : appariement sur les entrées)")
@@ -266,8 +268,9 @@ def _bilan_sorties(res: ResultatIntegration, complet: bool) -> list[RenderableTy
         titre=f"Comptes, sur {res.structure.n_comparees} lignes comparées",
     )
     ampl = _table("Sortie", "max |Δ|", "max |Δ|/|réf|", "max ULP", "biais", "RMS", "marge max", droite=range(1, 7), titre="Amplitudes (marge = |Δ| / tolérance ; conforme si ≤ 1)")
+    avec_entrees = bool(res.specification.entrees)
     pires = _table(
-        "Sortie", "Ligne", "Référence", "Test", "Marge", "Entrées",
+        "Sortie", "Ligne", "Référence", "Test", "Marge", *(("Entrées",) if avec_entrees else ()),
         droite=(1, 2, 3, 4), insecables=(0, 1, 2, 3, 4),
         titre=(
             "Point le plus éloigné de la référence, par sortie"
@@ -308,7 +311,11 @@ def _bilan_sorties(res: ResultatIntegration, complet: bool) -> list[RenderableTy
                 _valeur(b.pire.reference, 10),
                 _valeur(b.pire.test, 10),
                 _marge(b.pire.marge) if b.numerique else _statut(b.pire.statut, court=True),
-                _entrees_texte(dict(b.pire.entrees), res.entrees_par_pertinence(b.nom), n_cites),
+                *(
+                    (_entrees_texte(dict(b.pire.entrees), res.entrees_par_pertinence(b.nom), n_cites),)
+                    if avec_entrees
+                    else ()
+                ),
             )
     blocs: list[RenderableType] = [comptes, Text(""), ampl]
     if pires.row_count:
@@ -322,6 +329,18 @@ def _attribution(res: ResultatIntegration, complet: bool) -> list[RenderableType
     n_echec = res.n_lignes_echec
     if n_echec == 0:
         return [titre, Padding(Text("Aucune ligne en échec : rien à attribuer.", style=theme.DISCRET), (0, 0, 1, 2))]
+    if not res.attributions:
+        return [
+            titre,
+            Padding(
+                Text(
+                    f"{n_echec} ligne(s) de référence en échec sur {res.structure.n_ref} "
+                    f"({pourcentage(n_echec, res.structure.n_ref)}), absentes du test comprises. "
+                    "Aucune entrée déclarée : rien à quoi attribuer les échecs — leurs rangs sont en section 6.",
+                ),
+                (0, 0, 1, 2),
+            ),
+        ]
 
     ordre = sorted(res.attributions, key=lambda a: (math.isnan(a.v), -(a.v if not math.isnan(a.v) else 0)))
     t = _table(
@@ -461,7 +480,7 @@ def largeur_journal(res: ResultatIntegration, *, minimum: int = 160, maximum: in
     fixes = _colonnes_fixes(res, df, complet=True)
     entrees = [_largeur_entree(df, n) for n in res.specification.entrees]
     lignes = _RETRAIT + sum(fixes) + sum(entrees) + _ECART * (len(fixes) + len(entrees) - 1)
-    liaison = _RETRAIT + max(len(n) for n in res.specification.entrees) + sum(
+    liaison = _RETRAIT + max((len(n) for n in res.specification.entrees), default=0) + sum(
         max(len(b.nom), 4) + _ECART for b in res.sorties if b.presente
     )
     return max(minimum, min(maximum, max(lignes, liaison) + 2))

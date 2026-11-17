@@ -52,6 +52,10 @@ point), **attribution des échecs aux entrées**, lignes en échec, verdict.
 
 Codes de retour : `0` conforme, `1` erreur d'entrée, `2` non conforme.
 
+Sans colonne d'entrée (`entrees` omis, ou `--sorties` seul en ligne de
+commande), les lignes sont appariées dans l'ordre, la i-ème contre la i-ème,
+sans vérification ni attribution des échecs.
+
 ## Documentation
 
 - `00_DOC/01_PRINCIPE.md` : vérification et validation, oracles, et ce que

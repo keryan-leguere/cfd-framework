@@ -100,3 +100,21 @@ def test_figures_conforme_sans_liaison(reference: pd.DataFrame, tmp_path: Path) 
     assert "06_liaison_entrees_sorties.png" not in noms  # aucun échec : rien à attribuer
     assert not any(n.startswith("04_") for n in noms)  # aucune sortie en échec
     assert {"01_synthese_sorties.png", "02_marges_par_sortie.png"} <= noms
+
+
+def test_sans_entree_rapport_et_pieces(reference: pd.DataFrame, tmp_path: Path) -> None:
+    pytest.importorskip("cfd_plot")
+    sorties = reference[["CN", "Cm"]]
+    test = sorties.copy()
+    test.loc[1, "Cm"] *= 1.01
+    console = _console()
+    with glyphes_manquants_en_erreur():
+        res = valider_integration(sorties, test, sorties=["CN", "Cm"], sortie=tmp_path / "o", console=console,
+                                  formats=("png",), figures_par_entree="toutes")
+    texte = console.export_text()
+    assert "par position (la i-ème ligne contre la i-ème)" in texte
+    assert "Aucune entrée déclarée" in texte
+    assert not res.conforme
+    noms = {p.name for p in res.fichiers}
+    assert "integration.log" in noms and "01_synthese_sorties.png" in noms
+    assert not any(n.startswith(("04_", "05_", "06_")) for n in noms)

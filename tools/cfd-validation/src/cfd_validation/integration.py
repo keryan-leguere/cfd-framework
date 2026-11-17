@@ -32,7 +32,6 @@ import pandas as pd
 from rich.console import Console
 
 from cfd_validation.data.specification import (
-    ALIGNEMENT_ENTREES,
     Specification,
     SpecTolerance,
     construire_specification,
@@ -58,7 +57,7 @@ def valider_integration(
     rtol: float | None = None,
     atol: float | None = None,
     justification: str | None = None,
-    alignement: str = ALIGNEMENT_ENTREES,
+    alignement: str | None = None,
     chiffres_cle: int | None = None,
     renommage_test: Mapping[str, str] | None = None,
     identifiant: str = IDENTIFIANT_DEFAUT,
@@ -81,7 +80,9 @@ def valider_integration(
         Les deux tables, entrées et sorties en colonnes, une ligne par cas.
     entrees, sorties
         Les colonnes d'entrée (qui identifient un cas) et de sortie (qu'on
-        compare). Liste, ou chaîne séparée par des virgules.
+        compare). Liste, ou chaîne séparée par des virgules. ``entrees`` peut
+        être vide (``None`` ou ``[]``) : les lignes sont alors appariées dans
+        l'ordre, la i-ème contre la i-ème.
     specification
         Une :class:`Specification` déjà construite, à la place des arguments
         ``entrees`` … ``renommage_test``.
@@ -93,7 +94,8 @@ def valider_integration(
         signalée comme non justifiée).
     alignement
         ``"entrees"`` : apparier les lignes sur leurs entrées (l'ordre peut
-        différer) ; ``"position"`` : par rang, entrées vérifiées.
+        différer ; défaut s'il y a des entrées) ; ``"position"`` : par rang,
+        entrées vérifiées (défaut sans entrées).
     chiffres_cle
         Arrondir les entrées à ce nombre de chiffres significatifs avant appariement.
     renommage_test
@@ -121,8 +123,8 @@ def valider_integration(
         (DataFrames), ``.fichiers``.
     """
     if specification is None:
-        if entrees is None or sorties is None:
-            raise TypeError("entrees et sorties sont requis (ou specification=)")
+        if sorties is None:
+            raise TypeError("sorties est requis (ou specification=)")
         specification = construire_specification(
             entrees,
             sorties,

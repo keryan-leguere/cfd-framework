@@ -77,12 +77,14 @@ class Specification:
         return self.tolerances[sortie]
 
 
-def _noms(valeur: str | Iterable[str], quoi: str) -> tuple[str, ...]:
-    if isinstance(valeur, str):
+def _noms(valeur: str | Iterable[str] | None, quoi: str, *, vide_admis: bool = False) -> tuple[str, ...]:
+    if valeur is None:
+        noms: tuple[str, ...] = ()
+    elif isinstance(valeur, str):
         noms = tuple(n.strip() for n in valeur.split(",") if n.strip())
     else:
         noms = tuple(valeur)
-    if not noms:
+    if not noms and not vide_admis:
         raise ErreurSpecification(f"aucune colonne {quoi} déclarée")
     for n in noms:
         if not isinstance(n, str) or not n:
@@ -138,14 +140,14 @@ def lire_tolerance(spec: SpecTolerance, *, base: Tolerance, quoi: str) -> Tolera
 
 
 def construire_specification(
-    entrees: str | Iterable[str],
+    entrees: str | Iterable[str] | None,
     sorties: str | Iterable[str],
     *,
     tolerances: Mapping[str, SpecTolerance] | None = None,
     rtol: float | None = None,
     atol: float | None = None,
     justification: str | None = None,
-    alignement: str = ALIGNEMENT_ENTREES,
+    alignement: str | None = None,
     chiffres_cle: int | None = None,
     renommage_test: Mapping[str, str] | None = None,
 ) -> Specification:
@@ -155,25 +157,35 @@ def construire_specification(
     ----------
     entrees, sorties
         Noms de colonnes (liste, ou chaîne séparée par des virgules).
+        ``entrees`` peut être vide (``None``, ``[]``, ``""``) : rien n'identifie
+        alors un cas, les lignes sont appariées par position, sans vérification.
     tolerances
         Tolérance propre à certaines sorties : ``{"Cm": {"rtol": 1e-6, "justification": "…"}}``.
     rtol, atol, justification
         Tolérance commune des autres sorties. Sans ``rtol`` ni ``atol``, c'est la
         tolérance par défaut, signalée comme telle dans le rapport.
     alignement
-        ``"entrees"`` (défaut) : apparier sur la valeur des entrées ;
-        ``"position"`` : apparier par rang, entrées vérifiées.
+        ``"entrees"`` : apparier sur la valeur des entrées (défaut s'il y en a) ;
+        ``"position"`` : apparier par rang, entrées vérifiées (défaut, et seul
+        mode possible, sans entrées).
     chiffres_cle
         Arrondir les entrées à ce nombre de chiffres significatifs avant
         appariement — quand l'autre environnement les écrit tronquées.
     renommage_test
         ``{nom dans le test: nom dans la référence}``, appliqué au test d'abord.
     """
-    e = _noms(entrees, "d'entrée")
+    e = _noms(entrees, "d'entrée", vide_admis=True)
     s = _noms(sorties, "de sortie")
     communes = sorted(set(e) & set(s))
     if communes:
         raise ErreurSpecification(f"colonnes à la fois entrée et sortie : {', '.join(communes)}")
+    if alignement is None:
+        alignement = ALIGNEMENT_ENTREES if e else ALIGNEMENT_POSITION
+    elif alignement == ALIGNEMENT_ENTREES and not e:
+        raise ErreurSpecification(
+            "alignement « entrees » sans colonne d'entrée : rien pour apparier les lignes "
+            "(déclarer les entrées, ou alignement « position »)"
+        )
     if alignement not in ALIGNEMENTS:
         raise ErreurSpecification(
             f"alignement inconnu : {alignement!r} (admis : {', '.join(ALIGNEMENTS)})"
@@ -230,9 +242,9 @@ def specification_depuis_dict(contenu: Mapping[str, Any]) -> tuple[Specification
 
         identifiant: INT-01
         description: "Le code intégré au workflow restitue la référence."
-        entrees: [Mach, alpha, beta]
+        entrees: [Mach, alpha, beta]   # facultatif : sans entrées, appariement par position
         sorties: [CN, CA, Cm]
-        alignement: entrees          # ou position
+        alignement: entrees            # ou position (défaut sans entrées)
         tolerances:
           defaut: {rtol: 1.0e-9, atol: 1.0e-12, justification: "…"}
           sorties:
@@ -249,9 +261,8 @@ def specification_depuis_dict(contenu: Mapping[str, Any]) -> tuple[Specification
         raise ErreurSpecification(
             f"clé(s) inconnue(s) : {', '.join(inconnues)} (admises : {', '.join(_CLES_FICHIER)})"
         )
-    for requise in ("entrees", "sorties"):
-        if requise not in contenu:
-            raise ErreurSpecification(f"clé « {requise} » manquante")
+    if "sorties" not in contenu:
+        raise ErreurSpecification("clé « sorties » manquante")
     tol = contenu.get("tolerances") or {}
     if not isinstance(tol, Mapping):
         raise ErreurSpecification("« tolerances » doit être un dictionnaire")
@@ -271,13 +282,13 @@ def specification_depuis_dict(contenu: Mapping[str, Any]) -> tuple[Specification
             f"(admises : {', '.join(_CLES_TOLERANCE)})"
         )
     spec = construire_specification(
-        contenu["entrees"],
+        contenu.get("entrees"),
         contenu["sorties"],
         tolerances=tol.get("sorties") or None,
         rtol=_nombre(defaut["rtol"], "tolerances.defaut.rtol") if "rtol" in defaut else None,
         atol=_nombre(defaut["atol"], "tolerances.defaut.atol") if "atol" in defaut else None,
         justification=defaut.get("justification"),
-        alignement=str(contenu.get("alignement", ALIGNEMENT_ENTREES)),
+        alignement=None if contenu.get("alignement") is None else str(contenu["alignement"]),
         chiffres_cle=contenu.get("chiffres_cle"),
         renommage_test=contenu.get("renommage_test"),
     )

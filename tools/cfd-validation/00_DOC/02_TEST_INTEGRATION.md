@@ -45,6 +45,16 @@ précision (`2` apparie `2.0`, `-0.0` apparie `0.0`).
   sont alors **vérifiées** : une paire aux entrées différentes n'est pas
   comparée, elle est déclarée « entrées divergentes ».
 - `renommage_test={"cn": "CN"}` corrige des noms de colonnes différents.
+- **Sans entrées** (`entrees` omis ou vide, `--entrees` absent, pas de clé
+  `entrees:` dans le YAML) : seules les sorties sont déclarées, les lignes
+  sont appariées **dans l'ordre**, la i-ème contre la i-ème, et rien n'est
+  vérifié puisque rien n'identifie un cas. C'est le seul mode possible :
+  `alignement="entrees"` sans entrée est refusé. Les lignes en surnombre d'un
+  côté sont absentes ou en trop, comme ailleurs. Le rapport le signale en
+  avertissement : un cas manquant *au milieu* de la table décale toutes les
+  lignes suivantes, qui sortent alors en écart, et rien ne peut distinguer ce
+  décalage d'une régression. L'attribution aux entrées (section 5) et les
+  figures 04 à 06 n'ont alors pas d'objet et ne sont pas produites.
 
 ## 2. Critère
 
