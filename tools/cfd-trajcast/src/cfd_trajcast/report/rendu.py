@@ -14,9 +14,10 @@ from rich.text import Text
 
 from cfd_trajcast.engine.diagnostic import Sonde
 from cfd_trajcast.engine.pipeline import Progression, ResultatRendu
+from cfd_trajcast.engine.schema_ensemble import Schema
 from cfd_trajcast.report import theme
 
-__all__ = ["barre_progression", "rapport_diagnostic", "rapport_rendu"]
+__all__ = ["barre_progression", "rapport_diagnostic", "rapport_rendu", "rapport_schema"]
 
 
 @contextmanager
@@ -48,6 +49,19 @@ def rapport_rendu(r: ResultatRendu) -> Panel:
     if r.processus > 1:
         table.add_row("parallèle", f"{r.processus} processus, {r.troncons} tronçons recollés")
     return Panel(table, title=Text("cfd-trajcast · rendre", style=theme.TITRE), title_align="left",
+                 border_style=theme.DISCRET, box=box.ROUNDED)
+
+
+def rapport_schema(s: Schema) -> Panel:
+    """Le schéma SVG écrit."""
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column(style=theme.DISCRET)
+    table.add_column(style=theme.VALEUR)
+    table.add_row("fichier", str(s.chemin))
+    table.add_row("format", f"SVG {s.largeur}×{s.hauteur}, {len(s.svg.encode('utf-8')) / 1000:.0f} ko")
+    poses = ", ".join(f"{t:.1f} s" for t in s.poses) or "aucune"
+    table.add_row("maquette", f"agrandie × {s.echelle:.0f}, posée à {poses} ({s.faces} faces)")
+    return Panel(table, title=Text("cfd-trajcast · ensemble", style=theme.TITRE), title_align="left",
                  border_style=theme.DISCRET, box=box.ROUNDED)
 
 

@@ -9,6 +9,8 @@ if command -v cfd-trajcast >/dev/null 2>&1; then CMD=(cfd-trajcast); else CMD=(p
 "${CMD[@]}" check CONFIG_MULTIVUES.yaml
 "${CMD[@]}" rendre CONFIG_MULTIVUES.yaml --apercu
 "${CMD[@]}" rendre CONFIG_ENSEMBLE.yaml --apercu
+"${CMD[@]}" ensemble CONFIG_ENSEMBLE.yaml --video --apercu   # vue d'ensemble seule : SVG + MP4
+python3 vue_ensemble.py --svg-seul                          # la même, depuis Python
 "${CMD[@]}" rendre CONFIG_VIRAGE.yaml --apercu
 # RocketPy (Python ≥ 3.10, pip install 'cfd-trajcast[rocketpy]') : sauté s'il est absent.
 if python3 -c "import rocketpy" >/dev/null 2>&1; then

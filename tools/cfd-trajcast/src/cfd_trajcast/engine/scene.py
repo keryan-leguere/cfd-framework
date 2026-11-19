@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 from numpy.typing import NDArray
 
-from cfd_trajcast.core.camera import ParametresEnsemble, ParametresVue, PisteCamera, piste
+from cfd_trajcast.core.camera import ParametresEnsemble, ParametresVue, PisteCamera, pas_rond, piste
 from cfd_trajcast.core.disposition import Case, Disposition, agencer
 from cfd_trajcast.core.temps import instants_de_vol
 from cfd_trajcast.data.configuration import (
@@ -31,6 +31,7 @@ from cfd_trajcast.data.trajectoire import Trajectoire
 from cfd_trajcast.engine.jets import Phase
 
 __all__ = [
+    "THEMES_ENSEMBLE",
     "ErreurPlan",
     "Plan",
     "Propulsion",
@@ -44,6 +45,16 @@ __all__ = [
 ]
 
 Tableau = NDArray[np.float64]
+
+#: Couleurs de la vue d'ensemble (``style.ensemble``), partagées par la vidéo et le schéma SVG.
+THEMES_ENSEMBLE: dict[str, dict[str, str]] = {
+    "clair": {"fond": "#f3f5f8", "sol": "#d5dde4", "trace_sol": "#9aa7b4", "trace": "#7d8b99",
+              "texte": "#1f2a36", "etiquette": "grey", "fusee": "#1f3b57", "grille": "#4a5866",
+              "parcouru": "#ff7a1a", "evenement": "#1f77b4"},
+    "sombre": {"fond": "#0b1220", "sol": "#1c2a3a", "trace_sol": "#3d5068", "trace": "#6c7f95",
+               "texte": "#e8eef5", "etiquette": "#1c2a3a", "fusee": "#dfe6ee", "grille": "#9fb0c2",
+               "parcouru": "#ff7a1a", "evenement": "#1f77b4"},
+}
 
 #: Points du tracé du vol dessiné en fond.
 POINTS_TRACE = 4000
@@ -233,15 +244,6 @@ def recaler(plan: Plan, traj: Trajectoire, maquette: Maquette,
         for nom, p in vues if not isinstance(p, ParametresEnsemble)
     }
     return replace(plan, t_vol=t_vol, positions=positions, attitudes=attitudes, cameras=cameras)
-
-
-def pas_rond(valeur: float) -> float:
-    """Le plus petit pas 1, 2 ou 5 × 10ⁿ supérieur ou égal à ``valeur``."""
-    puissance = 10 ** np.floor(np.log10(valeur))
-    for k in (1, 2, 5, 10):
-        if k * puissance >= valeur:
-            return float(k * puissance)
-    return float(10 * puissance)
 
 
 def grille_sol(positions: Tableau, marge: float = 2000.0, lignes_max: int = 120,

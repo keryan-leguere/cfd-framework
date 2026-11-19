@@ -42,6 +42,7 @@ from cfd_trajcast.core import rotations as rot
 
 __all__ = [
     "ENU_VERS_NED",
+    "BoiteEnsemble",
     "Cle",
     "ParametresEmbarquee",
     "ParametresEnsemble",
@@ -51,15 +52,18 @@ __all__ = [
     "ParametresSol",
     "ParametresVue",
     "PisteCamera",
+    "boite_ensemble",
     "cadre_ensemble",
     "distance_auto",
     "echelle_ensemble",
+    "pas_rond",
     "piste",
     "piste_embarquee",
     "piste_images_cles",
     "piste_orbite",
     "piste_poursuite",
     "piste_sol",
+    "projeter",
     "route_lissee",
     "vers_ned",
 ]
@@ -306,6 +310,76 @@ def echelle_ensemble(positions_enu: ArrayLike, longueur: float, p: ParametresEns
         return float(p.echelle_fusee)
     etendue = float(np.max(np.ptp(np.asarray(positions_enu, dtype=float), axis=0)))
     return max(1.0, p.part_fusee * etendue / longueur)
+
+
+def pas_rond(valeur: float) -> float:
+    """Le plus petit pas 1, 2 ou 5 × 10ⁿ supérieur ou égal à ``valeur``."""
+    puissance = 10 ** np.floor(np.log10(valeur))
+    for k in (1, 2, 5, 10):
+        if k * puissance >= valeur:
+            return float(k * puissance)
+    return float(10 * puissance)
+
+
+@dataclass(frozen=True, eq=False)
+class BoiteEnsemble:
+    """La boîte graduée de la vue d'ensemble, en **NED** (m).
+
+    ``mini``/``maxi`` : emprise du vol, sol compris ; ``bas``/``haut`` : les mêmes bornes
+    arrondies au multiple de ``pas``, un pas « rond » commun aux trois axes. ``sol`` : la
+    coordonnée « Bas » du sol ; ``marge`` : le débord du plan du sol autour du vol.
+    """
+
+    mini: Tableau
+    maxi: Tableau
+    pas: float
+    bas: Tableau
+    haut: Tableau
+    sol: float
+    marge: float
+
+    def graduations(self, axe: int) -> Tableau:
+        """Les valeurs graduées de l'axe ``axe`` (0 Nord, 1 Est, 2 Bas)."""
+        n = round(float((self.haut[axe] - self.bas[axe]) / self.pas)) + 1
+        return np.asarray(self.bas[axe] + self.pas * np.arange(n), dtype=float)
+
+
+def boite_ensemble(positions_enu: ArrayLike, sol_altitude: float = 0.0) -> BoiteEnsemble:
+    """Boîte graduée de la vue d'ensemble : la même pour la vidéo et pour le schéma SVG."""
+    ned = vers_ned(positions_enu)
+    mini, maxi = ned.min(axis=0), ned.max(axis=0)
+    sol = -float(sol_altitude)  # le sol en coordonnée « Bas »
+    maxi[2] = max(maxi[2], sol)
+    etendue = float(np.max(maxi - mini))
+    if not etendue > 0:
+        raise ValueError("vue d'ensemble : le vol n'a aucune étendue")
+    pas = pas_rond(etendue / 5)
+    return BoiteEnsemble(mini=mini, maxi=maxi, pas=pas, bas=np.floor(mini / pas) * pas,
+                         haut=np.ceil(maxi / pas) * pas, sol=sol, marge=0.04 * etendue)
+
+
+def projeter(points: ArrayLike, position: ArrayLike, vise: ArrayLike, haut: ArrayLike,
+             champ: float, largeur: float, hauteur: float) -> tuple[Tableau, Tableau]:
+    """Projection sténopé d'une caméra VTK : points ``(n, 3)`` → pixels ``(n, 2)`` et profondeur.
+
+    Même convention que VTK (``view_angle`` = champ **vertical**, haut ré-orthogonalisé,
+    origine des pixels en haut à gauche). Profondeur : distance le long de l'axe de visée
+    (négative derrière la caméra).
+    """
+    pts = np.atleast_2d(np.asarray(points, dtype=float))
+    cam = np.asarray(position, dtype=float)
+    avant = np.asarray(vise, dtype=float) - cam
+    avant /= np.linalg.norm(avant)
+    droite = np.cross(avant, np.asarray(haut, dtype=float))
+    droite /= np.linalg.norm(droite)
+    haut_ecran = np.cross(droite, avant)
+    d = pts - cam
+    profondeur = d @ avant
+    f = (hauteur / 2) / np.tan(np.radians(champ) / 2)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x = largeur / 2 + f * (d @ droite) / profondeur
+        y = hauteur / 2 - f * (d @ haut_ecran) / profondeur
+    return np.stack([x, y], axis=1), np.asarray(profondeur, dtype=float)
 
 
 def cadre_ensemble(

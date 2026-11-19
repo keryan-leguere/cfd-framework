@@ -27,6 +27,53 @@ pip install -e ".[blender]"     # [blender] : moteur Blender (bpy 5.x : Python 3
 pip install -e ".[dev]"         # tests, ruff, mypy
 ```
 
+### Machine sans réseau (air-gap)
+
+Contrairement aux autres paquets de `tools/`, `pip install --no-deps` **ne suffit pas** :
+cfd-trajcast importe des bibliothèques compilées rarement présentes (VTK, ffmpeg, OpenCASCADE).
+Elles sont livrées en roues pour **Python 3.9, Linux x86_64, glibc ≥ 2.28** (RHEL/Rocky 8) :
+15 fichiers, 167 Mo, `SHA256SUMS` joint, publiés dans la release GitHub
+[`cfd-trajcast-roues-py39`](https://github.com/keryan-leguere/cfd-framework/releases/tag/cfd-trajcast-roues-py39)
+(`gh release download cfd-trajcast-roues-py39 -D WHEELS_PY39` sur une machine connectée).
+
+| Roue | Rôle |
+|---|---|
+| `vtk` 9.5.2 (108 Mo) | moteur 3D de la vidéo |
+| `pyvista` 0.46.5, `scooby`, `pooch` + `requests`, `urllib3`, `idna`, `certifi`, `charset_normalizer`, `platformdirs`, `typing_extensions` | pilotage de VTK |
+| `imageio_ffmpeg` 0.6.0 (29 Mo, contient le binaire ffmpeg), `imageio` | encodage MP4 — importé dès `import cfd_trajcast` |
+| `trimesh` 4.12.2 | lecture STL/OBJ/GLB |
+| `cascadio` 0.1.1 (28 Mo) | lecture STEP (facultatif si la CAO est en STL) |
+
+Sont supposés **déjà installés** : `numpy`, `pandas`, `matplotlib`, `pillow`, `pyyaml`, `rich`.
+
+1. Vérifier la cible (les roues compilées en dépendent exactement) :
+
+   ```bash
+   python3 -VV        # attendu : Python 3.9.x
+   ldd --version      # 1re ligne : glibc ≥ 2.28 (RHEL/Rocky 8 : 2.28)
+   python3 -c "import platform; print(platform.libc_ver(), platform.machine())"   # (glibc, 2.28+), x86_64
+   python3 -c "import numpy, pandas, matplotlib, PIL, yaml, rich"   # les paquets « standard » sont là ?
+   ```
+
+2. Installer, sans réseau :
+
+   ```bash
+   cd WHEELS_PY39 && sha256sum -c SHA256SUMS && cd ..
+   python3 -m pip install --no-index --find-links WHEELS_PY39 \
+       vtk pyvista trimesh imageio imageio-ffmpeg cascadio
+   python3 -m pip install --no-deps --no-build-isolation tools/cfd-trajcast
+   python3 -m pip check
+   ```
+
+3. Vérifier le rendu : `cfd-trajcast diagnostic` (ou `python3 -m cfd_trajcast diagnostic`).
+   La vidéo demande aussi, **hors pip**, `libEGL` + Mesa (paquets `mesa-libEGL mesa-dri-drivers`
+   sur RHEL 8) ou un serveur X / `xvfb-run`. Le schéma SVG (`cfd-trajcast ensemble`) n'en a pas
+   besoin.
+
+Le lot se refait sur une machine connectée avec `outils/telecharger_roues_py39.sh` (il faut un
+interpréteur 3.9 : avec un autre, `pip download --python-version 3.9` évalue les conditions
+`python_version < "3.10"` avec la mauvaise version et oublie des dépendances).
+
 ## En cinq lignes
 
 ```python
@@ -35,6 +82,16 @@ from cfd_trajcast import Film, Maquette, Trajectoire
 traj = Trajectoire.depuis_csv("vol.csv", repere="NED", attitude={"type": "euler", "sequence": "ZYX"})
 fusee = Maquette.depuis_fichier("fusee.step", axe_nez="-X", axe_haut="+Z", longueur_attendue=2.87)
 Film(traj, fusee).rendre("vol.mp4")
+```
+
+La vue d'ensemble seule — schéma SVG du vol entier (sans moteur 3D) et vidéo MP4 :
+
+```python
+from cfd_trajcast import VueEnsemble
+
+vue = VueEnsemble.depuis_yaml("CONFIG_ENSEMBLE.yaml")   # n'importe quelle configuration
+vue.svg("vol.svg")                                      # ≈ 0,1 s, vectoriel
+vue.rendre("vol_ensemble.mp4")                          # tout le vol, une seule vue
 ```
 
 ## En ligne de commande
@@ -46,6 +103,9 @@ cd ex && cfd-trajcast check CONFIG.yaml
 cfd-trajcast rendre CONFIG.yaml --apercu
 cfd-trajcast rendre CONFIG_MULTIVUES.yaml --apercu   # 3 vues + télémétrie + habillage
 cfd-trajcast rendre CONFIG_ENSEMBLE.yaml --apercu    # vue d'ensemble NED + 3 zooms
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml           # vue d'ensemble seule : SVG du vol entier, sans rendu
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu   # … et sa vidéo MP4, tout le vol
+python vue_ensemble.py                               # la même chose depuis Python
 cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu      # style conférence, images clés, ralentis
 bash SCENARIOS/RUN_SCENARIOS.sh                      # avion, panne en spirale, fusée bi-étage
 cfd-trajcast image CONFIG.yaml --t 12.5

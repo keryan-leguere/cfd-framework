@@ -6,6 +6,8 @@
     cfd-trajcast rendre CONFIG.yaml          la vidéo (--apercu : 540p, 15 ips, rapide)
     cfd-trajcast rendre CONFIG.yaml -j 4     sur 4 processus (défaut : automatique)
     cfd-trajcast image CONFIG.yaml --t 12.5  une image, pour régler la caméra
+    cfd-trajcast ensemble CONFIG.yaml        la vue d'ensemble seule : schéma SVG du vol entier
+    cfd-trajcast ensemble CONFIG.yaml --video   … et sa vidéo MP4, tout le vol
     cfd-trajcast exporter CONFIG.yaml        la trajectoire lue (RocketPy compris) en CSV
     cfd-trajcast diagnostic                  ffmpeg, extras, fenêtres de rendu possibles
     cfd-trajcast exemple [DEST]              recopier l'exemple (Aim9 + vol de référence)
@@ -30,18 +32,39 @@ from cfd_trajcast.data.maquette import ErreurMaquette, Maquette
 from cfd_trajcast.data.trajectoire import ErreurTrajectoire
 from cfd_trajcast.data.validation import verifier
 from cfd_trajcast.engine.diagnostic import diagnostiquer
+from cfd_trajcast.engine.ensemble import VueEnsemble
 from cfd_trajcast.engine.pipeline import Film
 from cfd_trajcast.engine.scene import ErreurPlan
 from cfd_trajcast.paths import EXEMPLE_DIR
 from cfd_trajcast.report import theme
 from cfd_trajcast.report.console import panneau_erreur, rapport_check
-from cfd_trajcast.report.rendu import barre_progression, rapport_diagnostic, rapport_rendu
+from cfd_trajcast.report.rendu import (
+    barre_progression,
+    rapport_diagnostic,
+    rapport_rendu,
+    rapport_schema,
+)
 
 __all__ = ["EXIT_CONTROLE", "EXIT_ERREUR_ENTREE", "EXIT_OK", "build_parser", "main"]
 
 EXIT_OK = 0
 EXIT_ERREUR_ENTREE = 1
 EXIT_CONTROLE = 2
+
+
+def _poses(texte: str) -> int | list[float | str]:
+    """``5`` : cinq poses ; ``12.5,Apogée`` : un instant et un événement."""
+    if "," not in texte and texte.strip().isdigit():
+        return int(texte)
+    out: list[float | str] = []
+    for morceau in (m.strip() for m in texte.split(",")):
+        if not morceau:
+            continue
+        try:
+            out.append(float(morceau))
+        except ValueError:
+            out.append(morceau)
+    return out
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +99,25 @@ def build_parser() -> argparse.ArgumentParser:
     image.add_argument("--sortie", type=Path, help="fichier PNG (défaut : à côté du YAML)")
     image.add_argument("--apercu", action="store_true", help="à la résolution de l'aperçu")
     image.add_argument("--sans-cache", action="store_true", help="refaire la simulation RocketPy")
+    ens = sous.add_parser(
+        "ensemble", help="vue d'ensemble seule : schéma SVG du vol entier (sans rendu 3D), et sa vidéo",
+    )
+    ens.add_argument("config", type=Path, help="fichier YAML (une vue `mode: ensemble` est facultative)")
+    ens.add_argument("--vue", help="nom de la vue `mode: ensemble` dont reprendre les réglages")
+    ens.add_argument("--svg", type=Path, help="fichier SVG (défaut : <config>_ensemble.svg)")
+    ens.add_argument("--taille", type=int, default=1600, help="plus grand côté du schéma, en px (défaut 1600)")
+    ens.add_argument("--poses", type=_poses, default=None, metavar="N|t,…",
+                     help="maquette posée : un nombre (régulièrement réparties) ou une liste d'instants (s) "
+                     "et de noms d'événements séparés par des virgules (défaut : aux événements)")
+    ens.add_argument("--theme", choices=("clair", "sombre"), help="défaut : style.ensemble du fichier")
+    ens.add_argument("--video", action="store_true", help="rendre aussi la vidéo MP4 de tout le vol")
+    ens.add_argument("--mp4", type=Path, help="fichier MP4 (défaut : <config>_ensemble.mp4) ; implique --video")
+    ens.add_argument("--apercu", action="store_true", help="vidéo en 540p, 15 ips, encodage rapide")
+    ens.add_argument("--duree", type=float, help="durée de la vidéo (s) pour tout le vol")
+    ens.add_argument("--sans-telemetrie", action="store_true", help="pas de bande de télémétrie dans la vidéo")
+    ens.add_argument("-j", "--processus", type=int, default=0, metavar="N",
+                     help="processus de rendu en parallèle (0 : automatique, 1 : en série)")
+    ens.add_argument("--sans-cache", action="store_true", help="refaire la simulation RocketPy")
     exporter = sous.add_parser("exporter", help="écrire la trajectoire lue en CSV (conventions internes)")
     exporter.add_argument("config", type=Path, help="fichier YAML")
     exporter.add_argument("--sortie", type=Path, help="fichier CSV (défaut : <config>_trajectoire.csv)")
@@ -149,6 +191,40 @@ def _image(args: argparse.Namespace, out: Console, err: Console) -> int:
     return EXIT_OK
 
 
+def _ensemble(args: argparse.Namespace, out: Console, err: Console) -> int:
+    try:
+        cfg = charger_configuration(args.config)
+        vue = VueEnsemble.depuis_configuration(cfg, vue=args.vue, utiliser_cache=not args.sans_cache)
+    except ValueError as exc:  # ErreurConfiguration, ErreurTrajectoire, ErreurMaquette, vue inconnue
+        err.print(panneau_erreur(str(exc), indice=f"configuration : {args.config}"))
+        return EXIT_ERREUR_ENTREE
+    constats = verifier(vue.trajectoire, vue.maquette)
+    if a_des_erreurs(constats):
+        err.print(panneau_erreur("la configuration ne passe pas ses contrôles",
+                                 indice=f"cfd-trajcast check {args.config}"))
+        return EXIT_CONTROLE
+    svg = args.svg or args.config.with_name(f"{args.config.stem}_ensemble.svg")
+    try:
+        schema = vue.svg(svg, taille=args.taille, poses=args.poses, theme=args.theme)
+    except ValueError as exc:
+        err.print(panneau_erreur(str(exc)))
+        return EXIT_ERREUR_ENTREE
+    out.print(rapport_schema(schema))
+    if not (args.video or args.mp4):
+        return EXIT_OK
+    suffixe = "_ensemble_apercu.mp4" if args.apercu else "_ensemble.mp4"
+    mp4 = args.mp4 or args.config.with_name(args.config.stem + suffixe)
+    try:
+        with barre_progression(out, "rendu") as rappel:
+            resultat = vue.rendre(mp4, apercu=args.apercu, progression=rappel, processus=args.processus or None,
+                                  telemetrie=False if args.sans_telemetrie else None, duree=args.duree)
+    except (ErreurPlan, ValueError) as exc:
+        err.print(panneau_erreur(str(exc)))
+        return EXIT_ERREUR_ENTREE
+    out.print(rapport_rendu(resultat))
+    return EXIT_OK
+
+
 def _exporter(args: argparse.Namespace, out: Console, err: Console) -> int:
     try:
         cfg = charger_configuration(args.config)
@@ -190,6 +266,8 @@ def _exemple(dest: Path, force: bool, out: Console, err: Console) -> int:
     out.print("  cfd-trajcast rendre CONFIG.yaml --apercu", style=theme.DISCRET)
     out.print("  cfd-trajcast rendre CONFIG_MULTIVUES.yaml --apercu", style=theme.DISCRET)
     out.print("  cfd-trajcast rendre CONFIG_ENSEMBLE.yaml --apercu", style=theme.DISCRET)
+    out.print("  cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu", style=theme.DISCRET)
+    out.print("  python vue_ensemble.py   (la même chose depuis Python)", style=theme.DISCRET)
     out.print("  cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu", style=theme.DISCRET)
     out.print("  cd ROCKETPY && cfd-trajcast rendre CONFIG_ROCKETPY.yaml --apercu   (RocketPy, Python ≥ 3.10)",
               style=theme.DISCRET)
@@ -207,6 +285,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rendre(args, out, err)
     if args.commande == "image":
         return _image(args, out, err)
+    if args.commande == "ensemble":
+        return _ensemble(args, out, err)
     if args.commande == "exporter":
         return _exporter(args, out, err)
     if args.commande == "diagnostic":

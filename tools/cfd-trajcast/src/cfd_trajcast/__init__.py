@@ -21,6 +21,8 @@ from cfd_trajcast.data.trajectoire import (
 )
 from cfd_trajcast.data.validation import verifier
 from cfd_trajcast.engine.pipeline import Film, ResultatRendu
+from cfd_trajcast.engine.ensemble import VueEnsemble
+from cfd_trajcast.engine.schema_ensemble import Schema
 
 __all__ = [
     "Configuration",
@@ -36,7 +38,9 @@ __all__ = [
     "Film",
     "Maquette",
     "ResultatRendu",
+    "Schema",
     "Trajectoire",
+    "VueEnsemble",
     "__version__",
     "charger_configuration",
     "verifier",

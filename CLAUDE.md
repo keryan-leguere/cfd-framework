@@ -851,6 +851,16 @@ not part of the Bash framework's runtime:
       `_cles(...)` set). CI: `cfd-trajcast` job in `.github/workflows/ci.yml` (3.9 + 3.12, EGL
       then xvfb fallback, `diagnostic` must pass so render tests cannot silently skip, preview
       MP4 artefact).
+    - **Standalone overview** (user request: the `ensemble` view on its own): `VueEnsemble`
+      (`engine/ensemble.py`, exported at top level; `cfd-trajcast ensemble CONFIG [--video]`,
+      example `01_EXEMPLE/vue_ensemble.py`). `.svg()` writes the whole flight as an **SVG with no
+      3D engine** (`engine/schema_ensemble.py`, pure NumPy + SVG text, ~0.1 s): same camera
+      (`cadre_ensemble`), same graded box (`core/camera.boite_ensemble`, now shared with the
+      PyVista engine) and colours (`scene.THEMES_ENSEMBLE`); `core/camera.projeter` is tested
+      against VTK's `WorldToDisplay` (< 0.01 px). Rocket drawn by painter's algorithm (STL
+      winding is not trusted), poses default to events thinned on screen, image cropped to its
+      content (true proportions). `.rendre()` is a one-view `Film` over the **whole** flight
+      (`video.de/a` ignored), telemetry as a right band; a right-corner logo moves left there.
     - J0 findings that bind later milestones: OSMesa is **not** in the VTK wheel (crashes) → EGL,
       then EGL llvmpipe, then xvfb (without `DISPLAY` the engine sets
       `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` itself — `WAYLAND_DISPLAY` must not count,

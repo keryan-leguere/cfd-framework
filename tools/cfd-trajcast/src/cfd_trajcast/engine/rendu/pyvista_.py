@@ -18,21 +18,19 @@ import numpy as np
 from numpy.typing import NDArray
 
 from cfd_trajcast.core import rotations as rot
-from cfd_trajcast.core.camera import ENU_VERS_NED, cadre_ensemble, echelle_ensemble, vers_ned
+from cfd_trajcast.core.camera import (
+    ENU_VERS_NED,
+    boite_ensemble,
+    cadre_ensemble,
+    echelle_ensemble,
+    vers_ned,
+)
 from cfd_trajcast.engine.effets import Ciel, composer_ciel, lueur
 from cfd_trajcast.engine.jets import coques_flamme, fumee, lumiere_jets, phase_active, scintillement
-from cfd_trajcast.engine.scene import Plan, Scene, pas_rond
+from cfd_trajcast.engine.scene import THEMES_ENSEMBLE, Plan, Scene
 from cfd_trajcast.engine.textures import texture_damier, texture_terrain
 
 __all__ = ["THEMES_ENSEMBLE", "MoteurPyVista", "sonde"]
-
-#: Couleurs de la vue d'ensemble (``style.ensemble``).
-THEMES_ENSEMBLE: dict[str, dict[str, str]] = {
-    "clair": {"fond": "#f3f5f8", "sol": "#d5dde4", "trace_sol": "#9aa7b4", "trace": "#7d8b99",
-              "texte": "#1f2a36", "etiquette": "grey", "fusee": "#1f3b57", "grille": "#4a5866"},
-    "sombre": {"fond": "#0b1220", "sol": "#1c2a3a", "trace_sol": "#3d5068", "trace": "#6c7f95",
-               "texte": "#e8eef5", "etiquette": "#1c2a3a", "fusee": "#dfe6ee", "grille": "#9fb0c2"},
-}
 
 #: Préfixe des lignes que la sonde imprime pour le diagnostic.
 PREFIXE_SONDE = "SONDE:"
@@ -250,10 +248,8 @@ class MoteurPyVista:
         th = THEMES_ENSEMBLE[scene.style.ensemble_theme]
         p.set_background(th["fond"])
         trace = vers_ned(scene.trace)
-        mini, maxi = trace.min(axis=0), trace.max(axis=0)
-        bas_sol = -self.scene.style.sol_altitude          # le sol en coordonnée « Bas »
-        maxi[2] = max(maxi[2], bas_sol)
-        marge = 0.04 * float(np.max(maxi - mini))
+        boite = boite_ensemble(scene.trace, scene.style.sol_altitude)
+        mini, maxi, bas_sol, marge = boite.mini, boite.maxi, boite.sol, boite.marge
         # Sol (D = 0) sous l'emprise du vol, et trace au sol.
         p.add_mesh(pv.Plane(center=((mini[0] + maxi[0]) / 2, (mini[1] + maxi[1]) / 2, bas_sol),
                             direction=(0, 0, 1), i_size=maxi[0] - mini[0] + 2 * marge,
@@ -264,12 +260,12 @@ class MoteurPyVista:
         p.add_mesh(pv.lines_from_points(au_sol), color=th["trace_sol"], line_width=max(1, round(1.5 * u)))
         p.add_mesh(pv.lines_from_points(trace), color=th["trace"], line_width=max(1, round(2 * u)), opacity=0.6)
         parcouru = pv.lines_from_points(trace[:2])
-        p.add_mesh(parcouru, color="#ff7a1a", line_width=max(2, round(4 * u)))
+        p.add_mesh(parcouru, color=th["parcouru"], line_width=max(2, round(4 * u)))
         if scene.evenements:
             points = vers_ned(np.array([pos for _, pos in scene.evenements]))
             p.add_point_labels(points, [nom_e for nom_e, _ in scene.evenements],
                                point_size=max(4, round(10 * u)), font_size=max(8, round(18 * u)),
-                               point_color="#1f77b4", text_color=th["texte"], shape_color=th["etiquette"],
+                               point_color=th["evenement"], text_color=th["texte"], shape_color=th["etiquette"],
                                shape_opacity=0.6,
                                always_visible=True)
         m = scene.maquette
@@ -278,9 +274,8 @@ class MoteurPyVista:
         fusee = p.add_mesh(pv.PolyData(m.sommets, faces), color=th["fusee"], smooth_shading=True,
                            split_sharp_edges=True)
         # Graduations rondes : bornes arrondies au multiple d'un pas « rond » commun aux trois axes.
-        pas = pas_rond(float(np.max(maxi - mini)) / 5)
-        bas_g, haut_g = np.floor(mini / pas) * pas, np.ceil(maxi / pas) * pas
-        n_grad = [round(float((h - b) / pas)) + 1 for b, h in zip(bas_g, haut_g)]
+        bas_g, haut_g = boite.bas, boite.haut
+        n_grad = [len(boite.graduations(i)) for i in range(3)]
         bornes = (bas_g[0], haut_g[0], bas_g[1], haut_g[1], bas_g[2], haut_g[2])
         p.show_grid(bounds=bornes, xtitle="Nord (m)", ytitle="Est (m)", ztitle="Bas (m)",
                     n_xlabels=n_grad[0], n_ylabels=n_grad[1], n_zlabels=n_grad[2],

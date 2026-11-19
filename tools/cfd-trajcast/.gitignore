@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+src/cfd_trajcast/01_EXEMPLE/SORTIE_ENSEMBLE/
+src/cfd_trajcast/01_EXEMPLE/*_ensemble*.svg
+src/cfd_trajcast/01_EXEMPLE/*_ensemble*.mp4

@@ -158,6 +158,63 @@ l'image. Les proportions sont vraies : un vol presque vertical donne une boîte
 haute et étroite — on lui donne alors une case haute (voir `CONFIG_ENSEMBLE.yaml`)
 plutôt que de déformer les axes.
 
+### La vue d'ensemble seule : schéma SVG et vidéo
+
+`VueEnsemble` (`engine/ensemble.py`) sort la vue d'ensemble de la mise en page
+multi-vues, sous deux formes :
+
+```python
+from cfd_trajcast import VueEnsemble
+
+vue = VueEnsemble.depuis_yaml("CONFIG_ENSEMBLE.yaml")    # ou VueEnsemble(traj, maquette, parametres=…)
+vue.svg("vol.svg")                                       # schéma vectoriel, aucun rendu 3D
+vue.svg("vol_sombre.svg", theme="sombre", poses=[10.0, "Apogée"], titre="", taille=900)
+vue.rendre("vol.mp4", apercu=True)                       # vidéo de tout le vol, une seule vue
+vue.rendre("portrait.mp4", resolution=(1080, 1920), duree=20, telemetrie=False)
+vue.image(40.5, "apogee.png")                            # une image de cette vidéo
+```
+
+```bash
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml                       # → CONFIG_ENSEMBLE_ensemble.svg
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --poses 5 --theme sombre
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu      # + CONFIG_ENSEMBLE_ensemble_apercu.mp4
+cfd-trajcast ensemble CONFIG.yaml --video --duree 20 --sans-telemetrie
+```
+
+Les réglages viennent de la première vue `mode: ensemble` du fichier (`--vue NOM`
+/ `vue=` pour en choisir une), sinon des valeurs par défaut : n'importe quelle
+configuration convient. L'exemple complet est `01_EXEMPLE/vue_ensemble.py`.
+
+**Le schéma SVG** (`engine/schema_ensemble.py`) n'utilise ni VTK ni OpenGL : il
+projette lui-même, en NumPy, avec **la même caméra** (`cadre_ensemble`), **la même
+boîte graduée** (`boite_ensemble`, partagée avec le moteur PyVista), le même
+agrandissement de la maquette et les mêmes couleurs (`style.ensemble`). Un test
+compare sa projection (`core/camera.projeter`) à celle de VTK : moins de 0,01 px
+d'écart. Il montre le sol et la trace au sol, la boîte NED graduée (grilles sur les
+faces du fond), le vol entier, chaque événement (point, nom, instant, fil à plomb
+jusqu'au sol pour lire la profondeur) et la maquette posée à quelques instants :
+
+* `poses` : un nombre (instants régulièrement répartis), une liste d'instants (s)
+  et de noms d'événements, ou rien — une pose par événement, en sautant celles qui
+  tomberaient à moins d'une maquette à l'écran d'une pose déjà retenue (Mach 1 et
+  fin de propulsion, à 0,26 s d'écart, donneraient deux maquettes superposées) ;
+* la maquette est dessinée par l'algorithme du peintre (triangles du plus loin au
+  plus proche, Lambert à deux faces), parce que le sens des faces d'un STL n'est pas
+  garanti ; au-delà de 4 000 faces elle est simplifiée par regroupement de sommets ;
+* l'image est **recadrée sur son contenu** : `taille` fixe le plus grand côté, l'autre
+  suit le vol — un vol presque vertical donne une image haute, jamais d'axes étirés.
+
+Le fichier pèse quelques centaines de ko (la maquette en fait l'essentiel ;
+`poses=0` le ramène à ~40 ko).
+
+**La vidéo** est un `Film` à une vue : format (`video`), titres, bandeaux et logo
+(`montage`, `etude`) sont repris du fichier, mais **tout le vol** est montré
+(`video.de`/`video.a` ignorés ; `de=`/`a=` explicites pour une partie). La
+télémétrie, si le fichier en a une, va dans une bande à droite (`telemetrie=False`
+l'enlève, `True` l'impose avec le panneau par défaut) ; un logo prévu en haut à
+droite — au-dessus du panneau d'une disposition libre — passe alors à gauche pour
+ne pas en couvrir les valeurs. L'étiquette de vue est retirée (une seule vue).
+
 ## 5. Section `style`
 
 ```yaml
