@@ -867,6 +867,16 @@ not part of the Bash framework's runtime:
       VTK only speaks X or EGL); imageio-ffmpeg silently resizes
       1080 → 1088 unless `macro_block_size=1`; encoding, not rendering, is the bottleneck.
 
+- **`tools/installation/installer_lanceurs.py`** — not a package: a stdlib-only (3.9+) script run
+  after every `pip install` with the same `python3`. It rewrites every `tools/*` console script
+  to `#!/usr/bin/env python3` (pip bakes `sys.executable` and has no option or post-install hook;
+  setuptools rewrites any hand-written `#!…python` too), but only when the `python3` on `PATH`
+  imports the package (`--forcer` overrides), and never touches a non-pip script. It also
+  generates **static** bash completion: each CLI's argparse parser is captured by intercepting
+  `parse_args` (run with `--help`, since `cfd-stats` prints help on an empty line without parsing)
+  and turned into `~/.local/share/cfd-framework/completion.bash`, sourced from one marked
+  `~/.bashrc` line. Tests: `pytest tools/installation` (real bash runs the completion).
+
 Each of these (except `cfd-plot-digitizer`, which is a browser app with no build step at all) has
 its own `pyproject.toml` (setuptools, `src/` layout, Python ≥3.9) with a `dev` extra
 (`pytest`, `ruff`, `mypy`/`pytest-cov`). There is no workspace tool, no lockfile and no

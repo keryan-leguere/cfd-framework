@@ -65,7 +65,10 @@ Sont supposés **déjà installés** : `numpy`, `pandas`, `matplotlib`, `pillow`
    python3 -m pip check
    ```
 
-3. Vérifier le rendu : `cfd-trajcast diagnostic` (ou `python3 -m cfd_trajcast diagnostic`).
+3. Lanceur en `#!/usr/bin/env python3` et complétion bash (pour tous les paquets de
+   `tools/`) : `python3 tools/installation/installer_lanceurs.py`, à relancer après
+   chaque `pip install`.
+4. Vérifier le rendu : `cfd-trajcast diagnostic` (ou `python3 -m cfd_trajcast diagnostic`).
    La vidéo demande aussi, **hors pip**, `libEGL` + Mesa (paquets `mesa-libEGL mesa-dri-drivers`
    sur RHEL 8) ou un serveur X / `xvfb-run`. Le schéma SVG (`cfd-trajcast ensemble`) n'en a pas
    besoin.
