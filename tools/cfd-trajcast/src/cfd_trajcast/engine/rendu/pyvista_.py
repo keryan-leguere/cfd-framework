@@ -30,18 +30,31 @@ from cfd_trajcast.engine.jets import coques_flamme, fumee, lumiere_jets, phase_a
 from cfd_trajcast.engine.scene import THEMES_ENSEMBLE, Plan, Scene
 from cfd_trajcast.engine.textures import texture_damier, texture_terrain
 
-__all__ = ["THEMES_ENSEMBLE", "MoteurPyVista", "sonde"]
+__all__ = ["THEMES_ENSEMBLE", "MoteurPyVista", "fenetre_choisie", "sonde"]
 
 #: Préfixe des lignes que la sonde imprime pour le diagnostic.
 PREFIXE_SONDE = "SONDE:"
 
 
-def _pv() -> Any:
-    # Sans écran, aller droit à EGL : sinon VTK essaie X d'abord et le dit en rouge.
-    # Un choix explicite de l'utilisateur (VTK_DEFAULT_OPENGL_WINDOW) prime.
-    # VTK ne parle qu'à X ou à EGL : WAYLAND_DISPLAY ne compte pas.
+def fenetre_choisie() -> tuple[str | None, str]:
+    """Classe de fenêtre VTK que :func:`_pv` imposera (``None`` : VTK choisit) et pourquoi.
+
+    Sans écran, aller droit à EGL : sinon VTK essaie X d'abord et le dit en rouge.
+    Un choix explicite de l'utilisateur (``VTK_DEFAULT_OPENGL_WINDOW``) prime.
+    VTK ne parle qu'à X ou à EGL : ``WAYLAND_DISPLAY`` ne compte pas.
+    """
+    impose = os.environ.get("VTK_DEFAULT_OPENGL_WINDOW")
+    if impose:
+        return impose, "VTK_DEFAULT_OPENGL_WINDOW défini"
     if not os.environ.get("DISPLAY"):
-        os.environ.setdefault("VTK_DEFAULT_OPENGL_WINDOW", "vtkEGLRenderWindow")
+        return "vtkEGLRenderWindow", "DISPLAY non défini"
+    return None, f"DISPLAY={os.environ['DISPLAY']} défini"
+
+
+def _pv() -> Any:
+    classe, _ = fenetre_choisie()
+    if classe:
+        os.environ.setdefault("VTK_DEFAULT_OPENGL_WINDOW", classe)
     import pyvista as pv
 
     pv.OFF_SCREEN = True
@@ -362,11 +375,22 @@ class MoteurPyVista:
         self.fermer()
 
 
+def _etape(nom: str) -> None:
+    print(PREFIXE_SONDE, "etape", nom, flush=True)
+
+
 def sonde() -> int:
-    """Rend une sphère 64×64 ; imprime le pilote OpenGL et si l'image est non vide."""
+    """Rend une sphère 64×64 ; imprime le pilote OpenGL et si l'image est non vide.
+
+    Chaque étape est annoncée *avant* d'être tentée, sortie vidée : un plantage
+    (signal) ne laisse rien d'autre au diagnostic pour dire où il a eu lieu.
+    """
+    _etape("import")
     pv = _pv()
+    _etape("fenetre")
     p = pv.Plotter(off_screen=True, window_size=(64, 64))
     p.add_mesh(pv.Sphere(), color="red")
+    _etape("rendu")
     image = np.asarray(p.screenshot(return_img=True))
     for ligne in p.ren_win.ReportCapabilities().splitlines():
         if "renderer string" in ligne or "version string" in ligne:

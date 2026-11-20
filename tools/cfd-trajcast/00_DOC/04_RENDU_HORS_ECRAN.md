@@ -73,3 +73,32 @@ d'importer VTK (un choix explicite de l'utilisateur prime) : VTK n'essaie plus X
 d'abord. `cfd-trajcast diagnostic` essaie EGL, EGL périphérique 1 (llvmpipe ici) et
 X11, chacun dans un sous-processus. Pour forcer le rendu logiciel :
 `VTK_DEFAULT_EGL_DEVICE_INDEX=1` (l'indice dépend de la machine — le diagnostic le dit).
+
+## Lire un diagnostic en échec (machine air-gap)
+
+Retour utilisateur : sur une machine air-gap avec un bon GPU, les trois essais
+échouaient et le diagnostic ne disait pas pourquoi (120 caractères d'erreur). Il donne
+maintenant, dans l'ordre où il faut regarder :
+
+1. **Versions** de numpy, vtk, pyvista, trimesh, matplotlib, pillow, imageio-ffmpeg,
+   lues dans les métadonnées (sans import : un pyvista cassé ne casse pas le
+   diagnostic) et comparées aux minimums de `pyproject.toml` (`VERSIONS_MINIMALES`, un
+   test vérifie qu'ils concordent). Une version trop ancienne est **refusée** : code de
+   sortie 2 même si le rendu passe. pyvista < 0.44 est antérieur à NumPy 2, et le
+   diagnostic le signale quand NumPy 2 est installé.
+2. **Système** (Linux) : `libEGL` / `libOpenGL` / `libGLX` / `libGL` trouvées ou non,
+   fournisseurs EGL glvnd (`*.json` de `/usr/share/glvnd/egl_vendor.d`,
+   `/etc/glvnd/egl_vendor.d` ou `__EGL_VENDOR_LIBRARY_*`), droits sur `/dev/dri/renderD*`
+   et `/dev/nvidia*`, version du pilote NVIDIA.
+3. **Étape** à laquelle chaque essai s'arrête : la sonde annonce `import`, `fenetre`
+   puis `rendu` *avant* de les tenter, sortie vidée, parce qu'un plantage par signal ne
+   laisse rien d'autre. Un échec à l'`import` sur les trois essais vient de la pile
+   Python, pas du GPU. Le signal est nommé (`SIGSEGV`…).
+4. **Erreur complète** (40 dernières lignes du stderr) de chaque essai raté, sous le
+   tableau, pour pouvoir la recopier.
+5. **Fenêtre du rendu** : celle que le moteur prendra vraiment (`fenetre_choisie`).
+   Avec `DISPLAY` défini, c'est le choix de VTK (X11 en premier). Si cet essai échoue
+   alors qu'EGL passe, le diagnostic donne l'`export` à faire et sort en code 2.
+
+En dernière ligne, une **cause probable** (`cause_probable`) : pile Python, puis
+bibliothèques glvnd, puis fournisseurs EGL, puis droits sur les périphériques.

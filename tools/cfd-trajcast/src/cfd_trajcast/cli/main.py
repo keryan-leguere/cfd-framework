@@ -250,7 +250,8 @@ def _exporter(args: argparse.Namespace, out: Console, err: Console) -> int:
 def _diagnostic(out: Console) -> int:
     sondes = diagnostiquer()
     out.print(rapport_diagnostic(sondes))
-    rendu = any(s.ok for s in sondes if "EGL" in s.nom or "X11" in s.nom)
+    # Rendu possible avec la fenêtre que le moteur prendra, et pile Python au minimum déclaré.
+    rendu = all(s.ok for s in sondes if s.categorie in ("rendu", "version"))
     return EXIT_OK if rendu else EXIT_CONTROLE
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -12,7 +13,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 from rich.text import Text
 
-from cfd_trajcast.engine.diagnostic import Sonde
+from cfd_trajcast.engine.diagnostic import Sonde, cause_probable
 from cfd_trajcast.engine.pipeline import Progression, ResultatRendu
 from cfd_trajcast.engine.schema_ensemble import Schema
 from cfd_trajcast.report import theme
@@ -66,21 +67,48 @@ def rapport_schema(s: Schema) -> Panel:
 
 
 def rapport_diagnostic(sondes: Sequence[Sonde]) -> Panel:
-    """Une ligne par essai ; le verdict dit si le rendu est possible."""
+    """Une ligne par essai ; le verdict dit si le rendu est possible, sinon ce qu'il faut corriger.
+
+    Les erreurs complètes des essais ratés suivent le tableau : sur une machine
+    air-gap, c'est souvent tout ce que l'utilisateur pourra recopier.
+    """
+    from rich.console import Group
+
     table = Table(box=box.SIMPLE_HEAD, header_style=theme.ENTETE)
     table.add_column("élément")
     table.add_column("état", no_wrap=True)
     table.add_column("détail", style=theme.DISCRET)
+    precedente = None
     for s in sondes:
-        table.add_row(s.nom, Text("ok" if s.ok else "non", style=theme.OK if s.ok else theme.ATTENTION), s.detail)
-    rendu = [s for s in sondes if s.ok and ("EGL" in s.nom or "X11" in s.nom)]
-    verdict = (
-        Text(f"rendu possible : {rendu[0].nom} — {rendu[0].detail}", style=theme.OK)
-        if rendu
-        else Text("aucune fenêtre de rendu ne fonctionne : installer libEGL + Mesa, ou lancer "
-                  "sous xvfb-run", style=theme.ERREUR)
-    )
-    from rich.console import Group
-
-    return Panel(Group(table, verdict), title=Text("cfd-trajcast · diagnostic", style=theme.TITRE),
+        if precedente is not None and s.categorie != precedente:
+            table.add_section()
+        precedente = s.categorie
+        # Text, pas str : « extra [step] » serait lu comme une balise Rich et disparaîtrait.
+        table.add_row(Text(s.nom), Text("ok" if s.ok else "non", style=theme.OK if s.ok else theme.ATTENTION),
+                      Text(s.detail))
+    fenetres = [s for s in sondes if s.categorie == "fenetre"]
+    rendu = next((s for s in sondes if s.categorie == "rendu"), None)
+    reussies = [s for s in fenetres if s.ok]
+    vieilles = [s for s in sondes if s.categorie == "version" and not s.ok]
+    morceaux: list[Any] = [table]
+    if reussies and (rendu is None or rendu.ok):
+        morceaux.append(Text(f"rendu possible : {reussies[0].nom} — {reussies[0].detail}", style=theme.OK))
+    elif reussies and rendu is not None:
+        morceaux.append(Text(f"rendu possible, mais pas avec la fenêtre par défaut : {rendu.detail}",
+                             style=theme.ATTENTION))
+    else:
+        cause = cause_probable(sondes)
+        morceaux.append(Text("aucune fenêtre de rendu ne fonctionne.", style=theme.ERREUR))
+        morceaux.append(Text("cause probable : " + cause if cause else
+                             "installer libEGL + Mesa, ou lancer sous xvfb-run", style=theme.ERREUR))
+    if vieilles and reussies:
+        morceaux.append(Text("versions hors minimum : " + ", ".join(s.nom for s in vieilles)
+                             + " — non pris en charge, même si l'essai passe.", style=theme.ATTENTION))
+    traces = [s for s in fenetres if not s.ok and s.trace]
+    if traces:
+        morceaux.append(Text("\nerreurs complètes des essais ratés", style=theme.ENTETE))
+        for s in traces:
+            morceaux.append(Text(f"── {s.nom}", style=theme.ATTENTION))
+            morceaux.append(Text(s.trace, style=theme.DISCRET))
+    return Panel(Group(*morceaux), title=Text("cfd-trajcast · diagnostic", style=theme.TITRE),
                  title_align="left", border_style=theme.DISCRET, box=box.ROUNDED)
