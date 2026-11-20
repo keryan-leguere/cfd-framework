@@ -9,3 +9,6 @@ __pycache__/
 src/cfd_trajcast/01_EXEMPLE/SORTIE_ENSEMBLE/
 src/cfd_trajcast/01_EXEMPLE/*_ensemble*.svg
 src/cfd_trajcast/01_EXEMPLE/*_ensemble*.mp4
+.venv/
+src/cfd_trajcast/01_EXEMPLE/*_ensemble*.pdf
+src/cfd_trajcast/01_EXEMPLE/*_ensemble*.png

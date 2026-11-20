@@ -3,8 +3,10 @@
 ::
 
     vue = VueEnsemble.depuis_yaml("CONFIG_ENSEMBLE.yaml")
-    vue.svg("vol.svg")               # le vol entier, vectoriel, sans moteur 3D (≈ 0,1 s)
-    vue.rendre("vol.mp4")            # la vue d'ensemble en vidéo, tout le vol
+    vue.figure("vol")                # figure paper : vol.pdf, vol.svg, vol.png (Matplotlib + cfd-plot)
+    vue.animer("vol_anime.mp4")      # la même figure animée : vidéo sans rendu 3D
+    vue.svg("vol.svg")               # schéma SVG maison, sans aucune dépendance (≈ 0,1 s)
+    vue.rendre("vol.mp4")            # la vue d'ensemble rendue en 3D (PyVista), tout le vol
     vue.image(40.5, "apogee.png")    # une image de cette vidéo
 
 Les réglages de la vue (azimut, élévation, cadrage, agrandissement de la maquette)
@@ -31,6 +33,7 @@ from numpy.typing import NDArray
 
 from cfd_trajcast.core.camera import ParametresEnsemble
 from cfd_trajcast.core.disposition import Disposition
+from cfd_trajcast.core.temps import instants_de_vol
 from cfd_trajcast.data.configuration import (
     ConfigMontage,
     ConfigStyle,
@@ -42,7 +45,14 @@ from cfd_trajcast.data.configuration import (
 )
 from cfd_trajcast.data.maquette import Maquette
 from cfd_trajcast.data.trajectoire import Trajectoire
-from cfd_trajcast.engine.pipeline import Film, Progression, ResultatRendu
+from cfd_trajcast.engine.figure_ensemble import (
+    FORMATS_FIGURE,
+    AnimationEnsemble,
+    FigureEnsemble,
+    animation_ensemble,
+    figure_ensemble,
+)
+from cfd_trajcast.engine.pipeline import Film, Progression, ResultatRendu, video_apercu
 from cfd_trajcast.engine.schema_ensemble import Schema, schema_ensemble
 
 __all__ = ["NOM_VUE", "VueEnsemble"]
@@ -135,6 +145,48 @@ class VueEnsemble:
         """Écrit le schéma SVG du vol entier ; aucun rendu 3D."""
         return self.schema(taille=taille, poses=poses, titre=titre, sous_titre=sous_titre,
                            theme=theme).ecrire(chemin)
+
+    # -- figure paper et vidéo sans rendu ----------------------------------------------------
+    def figure(self, chemin: str | Path, *, formats: Sequence[str] = FORMATS_FIGURE, largeur_cm: float = 12.0,
+               poses: int | Sequence[float | str] | None = None, projection: str = "ortho",
+               titre: str = "", legende: bool = True) -> FigureEnsemble:
+        """Figure paper (Matplotlib + cfd-plot) : ``chemin``.pdf/.svg/.png.
+
+        Sans titre par défaut (il va dans la légende de l'article) ; la légende proposée
+        est rendue dans ``FigureEnsemble.legende``.
+        """
+        return figure_ensemble(self.trajectoire, self.maquette, self.parametres, chemin,
+                               sol_altitude=self.style.sol_altitude, poses=poses, largeur_cm=largeur_cm,
+                               formats=formats, projection=projection, titre=titre, legende=legende)
+
+    def animer(self, chemin: str | Path, *, de: float | None = None, a: float | None = None,
+               apercu: bool = False, duree: float | None = None, vitesse: float | None = None,
+               resolution: tuple[int, int] | None = None, titre: str | None = None,
+               progression: Progression | None = None) -> AnimationEnsemble:
+        """La figure animée en MP4, **sans rendu 3D** (ni OpenGL ni GPU), tout le vol par défaut.
+
+        Cadence, résolution, vitesse/durée et ralentis viennent de ``video`` comme pour
+        :meth:`rendre` ; ``titre`` : celui de l'étude par défaut, ``""`` pour aucun.
+        """
+        video = replace(self.video, de=None, a=None)
+        if resolution is not None:
+            video = replace(video, resolution=resolution)
+        if duree is not None or vitesse is not None:
+            video = replace(video, duree=duree, vitesse=vitesse, ralentis=() if duree is not None else video.ralentis)
+        if apercu:
+            video = video_apercu(video)
+        traj = self.trajectoire
+        t0 = float(traj.t[0]) if de is None else float(de)
+        t1 = float(traj.t[-1]) if a is None else float(a)
+        if not traj.t[0] <= t0 < t1 <= traj.t[-1]:
+            raise ValueError(f"intervalle [{t0:g} ; {t1:g}] s : croissant et dans le vol "
+                             f"[{traj.t[0]:g} ; {traj.t[-1]:g}] s")
+        base = (t1 - t0) / video.duree if video.duree is not None else (video.vitesse or 1.0)
+        instants = instants_de_vol(t0, t1, video.ips, base, video.ralentis, video.transition_ralenti)
+        return animation_ensemble(traj, self.maquette, self.parametres, chemin, instants, ips=video.ips,
+                                  resolution=video.resolution, sol_altitude=self.style.sol_altitude,
+                                  titre=self.etude.titre if titre is None else titre, crf=video.crf,
+                                  progression=progression)
 
     # -- vidéo -------------------------------------------------------------------------------
     def film(self, *, telemetrie: bool | None = None, resolution: tuple[int, int] | None = None,

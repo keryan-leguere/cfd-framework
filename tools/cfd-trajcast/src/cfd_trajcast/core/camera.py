@@ -42,6 +42,7 @@ from cfd_trajcast.core import rotations as rot
 
 __all__ = [
     "ENU_VERS_NED",
+    "REPERES_ENSEMBLE",
     "BoiteEnsemble",
     "Cle",
     "ParametresEmbarquee",
@@ -52,10 +53,13 @@ __all__ = [
     "ParametresSol",
     "ParametresVue",
     "PisteCamera",
+    "azimut_ensemble",
     "boite_ensemble",
     "cadre_ensemble",
     "distance_auto",
     "echelle_ensemble",
+    "ned_ensemble",
+    "origine_ensemble",
     "pas_rond",
     "piste",
     "piste_embarquee",
@@ -65,6 +69,7 @@ __all__ = [
     "piste_sol",
     "projeter",
     "route_lissee",
+    "titres_axes_ensemble",
     "vers_ned",
 ]
 
@@ -208,6 +213,10 @@ class ParametresEmbarquee:
             raise ValueError("champ : angle de vue vertical entre 1° et 150°")
 
 
+#: Repères de la vue d'ensemble — toujours Nord, Est, Bas (Bas positif vers le sol).
+REPERES_ENSEMBLE = ("ned", "ned_local")
+
+
 @dataclass(frozen=True)
 class ParametresEnsemble:
     """Vue d'ensemble NED. ``azimut`` (° depuis le Nord vers l'Est) : d'où l'on regarde ;
@@ -220,8 +229,13 @@ class ParametresEnsemble:
     echelle_fusee: float | None = None
     part_fusee: float = 0.1
     champ: float = 30.0
+    #: ``ned`` : NED classique (origine de la trajectoire) ; ``ned_local`` : le même, origine
+    #: verticale au point de départ (Bas = 0 au départ, Nord et Est inchangés).
+    repere: str = "ned"
 
     def __post_init__(self) -> None:
+        if self.repere not in REPERES_ENSEMBLE:
+            raise ValueError(f"repere : {', '.join(REPERES_ENSEMBLE)}")
         if not -80 <= self.elevation <= 80:
             raise ValueError("elevation : entre -80° et 80°")
         if not 0 < self.cadrage <= 1.5:
@@ -304,6 +318,42 @@ def vers_ned(points_enu: ArrayLike) -> Tableau:
     return np.asarray(np.asarray(points_enu, dtype=float) @ ENU_VERS_NED.T, dtype=float)
 
 
+def origine_ensemble(positions_enu: ArrayLike, repere: str = "ned") -> Tableau:
+    """Origine NED de la vue d'ensemble, à retrancher des coordonnées NED.
+
+    ``ned`` : (0, 0, 0). ``ned_local`` : (0, 0, Bas du **premier** point) — la verticale
+    est décalée sur le départ, Nord et Est ne bougent pas. Les axes restent ceux du NED
+    classique : seul le zéro de l'axe Bas change.
+    """
+    if repere not in REPERES_ENSEMBLE:
+        raise ValueError(f"repere : {', '.join(REPERES_ENSEMBLE)}")
+    if repere == "ned":
+        return np.zeros(3)
+    depart = vers_ned(np.atleast_2d(np.asarray(positions_enu, dtype=float))[0])
+    return np.array([0.0, 0.0, float(depart[2])])
+
+
+def ned_ensemble(points_enu: ArrayLike, origine: ArrayLike) -> Tableau:
+    """Points ENU → NED de la vue d'ensemble (origine retranchée)."""
+    return np.asarray(vers_ned(points_enu) - np.asarray(origine, dtype=float), dtype=float)
+
+
+def titres_axes_ensemble(repere: str = "ned") -> tuple[str, str, str]:
+    """Titres des axes Nord, Est, Bas ; « Bas local » en NED local."""
+    return ("Nord (m)", "Est (m)", "Bas local (m)" if repere == "ned_local" else "Bas (m)")
+
+
+def azimut_ensemble(positions_enu: ArrayLike, p: ParametresEnsemble) -> float:
+    """Azimut (° depuis le Nord vers l'Est) d'où l'on regarde ; auto : de flanc, un peu en
+    arrière de la route moyenne."""
+    if p.azimut is not None:
+        return float(p.azimut)
+    ned = vers_ned(positions_enu)
+    depl = ned[-1] - ned[0]
+    cap = np.degrees(np.arctan2(depl[1], depl[0])) if np.hypot(depl[0], depl[1]) > 1e-6 else 0.0
+    return float(cap + 110.0)
+
+
 def echelle_ensemble(positions_enu: ArrayLike, longueur: float, p: ParametresEnsemble) -> float:
     """Agrandissement de la fusée dans la vue d'ensemble (jamais en dessous de 1)."""
     if p.echelle_fusee is not None:
@@ -344,11 +394,16 @@ class BoiteEnsemble:
         return np.asarray(self.bas[axe] + self.pas * np.arange(n), dtype=float)
 
 
-def boite_ensemble(positions_enu: ArrayLike, sol_altitude: float = 0.0) -> BoiteEnsemble:
-    """Boîte graduée de la vue d'ensemble : la même pour la vidéo et pour le schéma SVG."""
-    ned = vers_ned(positions_enu)
+def boite_ensemble(positions_enu: ArrayLike, sol_altitude: float = 0.0,
+                   origine: ArrayLike | None = None) -> BoiteEnsemble:
+    """Boîte graduée de la vue d'ensemble : la même pour la vidéo et pour le schéma SVG.
+
+    ``origine`` : celle de :func:`origine_ensemble` (NED classique par défaut).
+    """
+    o = np.zeros(3) if origine is None else np.asarray(origine, dtype=float)
+    ned = ned_ensemble(positions_enu, o)
     mini, maxi = ned.min(axis=0), ned.max(axis=0)
-    sol = -float(sol_altitude)  # le sol en coordonnée « Bas »
+    sol = -float(sol_altitude) - float(o[2])  # le sol en coordonnée « Bas »
     maxi[2] = max(maxi[2], sol)
     etendue = float(np.max(maxi - mini))
     if not etendue > 0:
@@ -399,12 +454,7 @@ def cadre_ensemble(
     else:
         mini, maxi = (np.asarray(b, dtype=float) for b in boite_ned)
     centre = (mini + maxi) / 2
-    if p.azimut is None:
-        depl = ned[-1] - ned[0]
-        cap = np.degrees(np.arctan2(depl[1], depl[0])) if np.hypot(depl[0], depl[1]) > 1e-6 else 0.0
-        azimut = cap + 110.0
-    else:
-        azimut = p.azimut
+    azimut = azimut_ensemble(positions_enu, p)
     az, el = np.radians(azimut), np.radians(p.elevation)
     direction = np.array([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), -np.sin(el)])
     # Ajustement exact : chacun des 8 coins de la boîte doit tomber dans le cadre réduit à

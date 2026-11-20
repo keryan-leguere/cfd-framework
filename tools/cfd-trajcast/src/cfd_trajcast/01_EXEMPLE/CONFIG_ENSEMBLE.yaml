@@ -43,6 +43,7 @@ vues:
     elevation: 20
     cadrage: 0.85                  # part du cadre occupée par la boîte graduée (marge pour les titres d'axes)
     echelle_fusee: auto            # auto : fusée ≈ 10 % de l'étendue du vol (facteur affiché à l'écran)
+    repere: ned                    # ou ned_local : même NED, Bas = 0 au point de départ
   poursuite:
     mode: poursuite
     azimut: 60

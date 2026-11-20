@@ -63,7 +63,7 @@ from cfd_trajcast.engine.scene import (
 from cfd_trajcast.engine.telemetrie import FOND, PanneauTelemetrie, Serie, chemin_police, series
 
 __all__ = ["APERCU", "PROCESSUS_MAX", "TRONCON_MIN", "Film", "Progression", "ResultatRendu",
-           "memoire_disponible", "processus_auto"]
+           "memoire_disponible", "processus_auto", "video_apercu"]
 
 #: Rappel ``(images faites, images totales)``.
 Progression = Callable[[int, int], None]
@@ -132,7 +132,8 @@ class ResultatRendu:
         return 1000 * self.secondes / max(self.n_images, 1)
 
 
-def _video_apercu(video: ConfigVideo) -> ConfigVideo:
+def video_apercu(video: ConfigVideo) -> ConfigVideo:
+    """Le format de l'aperçu : 540p au plus, 15 ips au plus, encodage rapide."""
     largeur, hauteur = video.resolution
     h = min(hauteur, APERCU.resolution[1])
     l_ = round(largeur * h / hauteur / 2) * 2
@@ -344,7 +345,7 @@ class Film:
 
     def plan(self, *, de: float | None = None, a: float | None = None, apercu: bool = False) -> Plan:
         """Le plan de tournage, sans rien rendre."""
-        video = _video_apercu(self.video) if apercu else self.video
+        video = video_apercu(self.video) if apercu else self.video
         return planifier(self.trajectoire, self.maquette, video, self.vues, self.disposition,
                          self.sequence, fondu=self.montage.fondu,
                          de=self.de if de is None else de, a=self.a if a is None else a)
@@ -358,7 +359,7 @@ class Film:
         ``1`` : en série, dans ce processus).
         """
         debut = time.perf_counter()
-        video = _video_apercu(self.video) if apercu else self.video
+        video = video_apercu(self.video) if apercu else self.video
         plan = self.plan(de=de, a=a, apercu=apercu)
         n = len(plan)
         nproc = processus_auto(n, (plan.largeur, plan.hauteur)) if processus is None else max(1, int(processus))
@@ -429,7 +430,7 @@ class Film:
         t0, t_fin = float(self.trajectoire.t[0]), float(self.trajectoire.t[-1])
         if not t0 <= t <= t_fin:
             raise ValueError(f"t = {t:g} s hors du vol [{t0:g} ; {t_fin:g}] s")
-        video = _video_apercu(self.video) if apercu else self.video
+        video = video_apercu(self.video) if apercu else self.video
         # La vidéo commence à `video.de` : son historique de caméra aussi.
         debut_video = t0 if self.de is None else self.de
         fin_video = t_fin if self.a is None else self.a

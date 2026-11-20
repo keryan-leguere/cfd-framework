@@ -23,7 +23,9 @@ from cfd_trajcast.core.camera import (
     boite_ensemble,
     cadre_ensemble,
     echelle_ensemble,
-    vers_ned,
+    ned_ensemble,
+    origine_ensemble,
+    titres_axes_ensemble,
 )
 from cfd_trajcast.engine.effets import Ciel, composer_ciel, lueur
 from cfd_trajcast.engine.jets import coques_flamme, fumee, lumiere_jets, phase_active, scintillement
@@ -71,7 +73,7 @@ class MoteurPyVista:
         #: Ciel peint en NumPy derrière un rendu transparent (étoiles) plutôt que par VTK.
         self._ciel_compose = scene.style.ciel_etoiles > 0
         self._plotters: dict[tuple[int, int], tuple[Any, Any, list[tuple[Any, NDArray[np.float64]]]]] = {}
-        self._ensembles: dict[tuple[str, tuple[int, int]], tuple[Any, Any, Any, float]] = {}
+        self._ensembles: dict[tuple[str, tuple[int, int]], tuple[Any, Any, Any, float, NDArray[np.float64]]] = {}
         self._jets: dict[tuple[int, int], dict[str, Any] | None] = {}
 
     def _plotter(self, taille: tuple[int, int]) -> tuple[Any, Any, list[tuple[Any, NDArray[np.float64]]]]:
@@ -246,8 +248,8 @@ class MoteurPyVista:
             tube.set_active_scalars("rgba")
             mesh.copy_from(tube)
 
-    def _plotter_ensemble(self, nom: str, taille: tuple[int, int]) -> tuple[Any, Any, Any, float]:
-        """Vue d'ensemble : scène en coordonnées NED absolues, caméra fixe."""
+    def _plotter_ensemble(self, nom: str, taille: tuple[int, int]) -> tuple[Any, Any, Any, float, NDArray[np.float64]]:
+        """Vue d'ensemble : scène en coordonnées NED (classique ou locale), caméra fixe."""
         cle = (nom, taille)
         if cle in self._ensembles:
             return self._ensembles[cle]
@@ -260,8 +262,9 @@ class MoteurPyVista:
         p = pv.Plotter(off_screen=True, window_size=taille)
         th = THEMES_ENSEMBLE[scene.style.ensemble_theme]
         p.set_background(th["fond"])
-        trace = vers_ned(scene.trace)
-        boite = boite_ensemble(scene.trace, scene.style.sol_altitude)
+        origine = origine_ensemble(scene.trace, params.repere)
+        trace = ned_ensemble(scene.trace, origine)
+        boite = boite_ensemble(scene.trace, scene.style.sol_altitude, origine)
         mini, maxi, bas_sol, marge = boite.mini, boite.maxi, boite.sol, boite.marge
         # Sol (D = 0) sous l'emprise du vol, et trace au sol.
         p.add_mesh(pv.Plane(center=((mini[0] + maxi[0]) / 2, (mini[1] + maxi[1]) / 2, bas_sol),
@@ -275,7 +278,7 @@ class MoteurPyVista:
         parcouru = pv.lines_from_points(trace[:2])
         p.add_mesh(parcouru, color=th["parcouru"], line_width=max(2, round(4 * u)))
         if scene.evenements:
-            points = vers_ned(np.array([pos for _, pos in scene.evenements]))
+            points = ned_ensemble(np.array([pos for _, pos in scene.evenements]), origine)
             p.add_point_labels(points, [nom_e for nom_e, _ in scene.evenements],
                                point_size=max(4, round(10 * u)), font_size=max(8, round(18 * u)),
                                point_color=th["evenement"], text_color=th["texte"], shape_color=th["etiquette"],
@@ -290,7 +293,8 @@ class MoteurPyVista:
         bas_g, haut_g = boite.bas, boite.haut
         n_grad = [len(boite.graduations(i)) for i in range(3)]
         bornes = (bas_g[0], haut_g[0], bas_g[1], haut_g[1], bas_g[2], haut_g[2])
-        p.show_grid(bounds=bornes, xtitle="Nord (m)", ytitle="Est (m)", ztitle="Bas (m)",
+        xtitre, ytitre, ztitre = titres_axes_ensemble(params.repere)
+        p.show_grid(bounds=bornes, xtitle=xtitre, ytitle=ytitre, ztitle=ztitre,
                     n_xlabels=n_grad[0], n_ylabels=n_grad[1], n_zlabels=n_grad[2],
                     color=th["grille"], font_size=max(8, round(14 * u)), fmt="%.0f")
         if echelle > 1:
@@ -300,22 +304,22 @@ class MoteurPyVista:
         c = p.camera
         c.position, c.focal_point, c.up = tuple(position), tuple(vise), tuple(haut)
         c.view_angle = params.champ
-        self._ensembles[cle] = (p, fusee, parcouru, echelle)
+        self._ensembles[cle] = (p, fusee, parcouru, echelle, origine)
         return self._ensembles[cle]
 
     def _image_ensemble(self, k: int, nom: str, taille: tuple[int, int]) -> NDArray[np.uint8]:
-        p, fusee, parcouru, echelle = self._plotter_ensemble(nom, taille)
+        p, fusee, parcouru, echelle, origine = self._plotter_ensemble(nom, taille)
         plan, scene = self.plan, self.scene
         t = float(plan.t_vol[k])
         assert scene.trace is not None and scene.trace_t is not None
         dedans = scene.trace_t <= t
-        points = vers_ned(np.vstack([scene.trace[dedans], plan.positions[k]]))
+        points = ned_ensemble(np.vstack([scene.trace[dedans], plan.positions[k]]), origine)
         if len(points) < 2:
             points = np.vstack([points, points])
         parcouru.copy_from(self._pv.lines_from_points(points))
         matrice = np.eye(4)
         matrice[:3, :3] = echelle * (ENU_VERS_NED @ rot.vers_matrice(plan.attitudes[k]))
-        matrice[:3, 3] = vers_ned(plan.positions[k])
+        matrice[:3, 3] = ned_ensemble(plan.positions[k], origine)
         fusee.user_matrix = matrice
         p.renderer.ResetCameraClippingRange()
         p.render()
@@ -363,7 +367,7 @@ class MoteurPyVista:
         """Libère les contextes OpenGL."""
         for p, _, _ in self._plotters.values():
             p.close()
-        for p, _, _, _ in self._ensembles.values():
+        for p, *_ in self._ensembles.values():
             p.close()
         self._plotters.clear()
         self._ensembles.clear()

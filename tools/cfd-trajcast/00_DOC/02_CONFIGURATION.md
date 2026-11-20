@@ -99,9 +99,14 @@ les longueurs et les champs qui le prévoient.
 | `poursuite` | `distance`, `cadrage`, `azimut`, `elevation`, `lissage`, `champ` |
 | `sol` | `position` (obligatoire, ENU), `champ`, `cadrage`, `champ_min`, `champ_max` |
 | `embarquee` | `position_corps` (FRD), `visee`, `champ` |
-| `ensemble` | `azimut`, `elevation`, `cadrage`, `echelle_fusee`, `part_fusee`, `champ` |
+| `ensemble` | `azimut`, `elevation`, `cadrage`, `echelle_fusee`, `part_fusee`, `champ`, `repere` |
 | `orbite` | `distance`, `cadrage`, `azimut`, `elevation`, `vitesse_angulaire`, `champ` |
 | `images_cles` | `cles` (liste de `{t, azimut, elevation, distance, champ}`), `cadrage`, `lissage` |
+
+`repere` (vue `ensemble`) : `ned` (défaut, NED classique) ou `ned_local` : le même NED,
+origine verticale au point de départ (Bas = 0 au départ, Nord et Est inchangés). Les
+axes restent Nord, Est, Bas (Bas positif vers le sol) ; l'axe s'intitule « Bas local ».
+Vaut pour la vidéo, le schéma SVG et la figure de `cfd-trajcast ensemble`.
 
 ## 6. `disposition` et `sequence`
 

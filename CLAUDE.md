@@ -282,7 +282,14 @@ not part of the Bash framework's runtime:
   figure helpers (`use_style`, `plot_line`, `plot_with_band`, `plot_bar`, `save_figure`, etc.) across
   three profiles (`notebook`/`slides`/`paper`), a dict-driven `batch.py` for multi-source curve
   comparisons (CFD/analytics/experimental data across flight points), a `cfd_plot.anim` submodule
-  (GIF/MP4) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
+  (GIF/MP4 — an MP4-only animation is **streamed** as raw RGBA into ffmpeg, `Mp4Stream`, no PNG per
+  frame; ffmpeg found via `$CFD_PLOT_FFMPEG` → `PATH` → the `imageio-ffmpeg` wheel; time-driven pieces
+  `timeline` (frame instants from duration/speed, holds inserted *exactly*), `PathReveal` (ghost/trail/
+  interpolated head, 2-D or 3-D) and the `animate_path` one-liner with events and a 3-D orbit), a
+  `cfd_plot.axes3d` module (`true_proportions`, `tidy_axes3d` — no minor ticks, white panes, ticks
+  ∝ side length — and `fit_box3d`/`bbox3d`, because Matplotlib draws any 3-D box in a *square* and
+  `bbox_inches="tight"` returns that whole square; `bbox3d` skips labels of out-of-view ticks, which
+  3-D leaves at astronomical positions) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
   optional `pypdf`). `batch_plot` also takes `clean=` (wipe the generated tree first —
   `cfd_plot.cleanup`, which refuses `/`, `$HOME`, a top-level dir and a repo root) and `fold=`
   (bonus sheets gathering siblings: `FoldSpec(kind="y")` puts every Y of one condition on one
@@ -861,6 +868,22 @@ not part of the Bash framework's runtime:
       winding is not trusted), poses default to events thinned on screen, image cropped to its
       content (true proportions). `.rendre()` is a one-view `Film` over the **whole** flight
       (`video.de/a` ignored), telemetry as a right band; a right-corner logo moves left there.
+    - **Paper figure and render-free video of the overview** (`engine/figure_ensemble.py`, the only
+      module importing `cfd_plot`/`mpl_toolkits`; `VueEnsemble.figure()` / `.animer()`;
+      `cfd-trajcast ensemble CONFIG` now writes PDF+SVG+PNG, `--video --sans-rendu` the animated
+      figure, `--schema` the old dependency-free SVG — also the automatic fallback without
+      cfd-plot). Plotted as x = Est, y = Nord, z = Bas with z **inverted**: (Est, Nord, Haut)
+      displayed is right-handed — Nord on x would mirror the flight (tested). Ortho by default,
+      true proportions, `--largeur-cm` is the final width *including* the legend (3 passes of
+      `fit_box3d` + `bbox3d`). Events get an Okabe-Ito colour + marker shape and live in the
+      legend with their instant; default poses closer than one model length are dropped; numbers
+      French (thin space, U+2212, decimal comma); no title (the terminal prints a proposed
+      caption). The animation reuses `instants_de_vol` (video config, ralentis) and
+      `fit_box3d(ax)` zoom-only since the frame size is imposed. `00_DOC/08_FIGURE_ET_ANIMATION.md`.
+    - **`repere: ned | ned_local`** on an `ensemble` view: `ned_local` shifts only the vertical
+      origin to the start point (Bas = 0 at departure, N/E untouched), axes stay classic NED
+      ("Bas local (m)"). `core/camera.origine_ensemble` / `ned_ensemble` /
+      `boite_ensemble(origine=)`; honoured by PyVista, the SVG schema and the figure.
     - J0 findings that bind later milestones: OSMesa is **not** in the VTK wheel (crashes) → EGL,
       then EGL llvmpipe, then xvfb (without `DISPLAY` the engine sets
       `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` itself — `WAYLAND_DISPLAY` must not count,

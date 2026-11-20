@@ -87,15 +87,21 @@ fusee = Maquette.depuis_fichier("fusee.step", axe_nez="-X", axe_haut="+Z", longu
 Film(traj, fusee).rendre("vol.mp4")
 ```
 
-La vue d'ensemble seule — schéma SVG du vol entier (sans moteur 3D) et vidéo MP4 :
+La vue d'ensemble seule — figure paper du vol entier, sa version animée (aucune des deux
+n'a besoin de rendu 3D), schéma SVG sans dépendance, ou vidéo rendue :
 
 ```python
 from cfd_trajcast import VueEnsemble
 
 vue = VueEnsemble.depuis_yaml("CONFIG_ENSEMBLE.yaml")   # n'importe quelle configuration
-vue.svg("vol.svg")                                      # ≈ 0,1 s, vectoriel
-vue.rendre("vol_ensemble.mp4")                          # tout le vol, une seule vue
+vue.figure("vol")                                       # vol.pdf/.svg/.png, style paper de cfd-plot
+vue.animer("vol_anime.mp4")                             # la figure animée, ni OpenGL ni GPU
+vue.svg("vol.svg")                                      # schéma maison, ≈ 0,1 s
+vue.rendre("vol_ensemble.mp4")                          # rendue en 3D (PyVista), tout le vol
 ```
+
+`repere: ned_local` dans la vue d'ensemble met Bas = 0 au point de départ, sur les axes
+du NED classique (`00_DOC/08_FIGURE_ET_ANIMATION.md`).
 
 ## En ligne de commande
 
@@ -106,9 +112,11 @@ cd ex && cfd-trajcast check CONFIG.yaml
 cfd-trajcast rendre CONFIG.yaml --apercu
 cfd-trajcast rendre CONFIG_MULTIVUES.yaml --apercu   # 3 vues + télémétrie + habillage
 cfd-trajcast rendre CONFIG_ENSEMBLE.yaml --apercu    # vue d'ensemble NED + 3 zooms
-cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml           # vue d'ensemble seule : SVG du vol entier, sans rendu
-cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu   # … et sa vidéo MP4, tout le vol
-python vue_ensemble.py                               # la même chose depuis Python
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml           # figure paper du vol entier (PDF, SVG, PNG)
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --sans-rendu --apercu   # … animée, sans rendu 3D
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu   # … ou rendue en 3D (PyVista)
+cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --schema  # schéma SVG maison (sans cfd-plot)
+python vue_ensemble.py [--sans-rendu]                # la même chose depuis Python
 cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu      # style conférence, images clés, ralentis
 bash SCENARIOS/RUN_SCENARIOS.sh                      # avion, panne en spirale, fusée bi-étage
 cfd-trajcast image CONFIG.yaml --t 12.5
@@ -134,6 +142,7 @@ nez/vitesse, à demander seulement si la trajectoire contient une montée.
 | `00_DOC/05_PROPULSION_ET_SCENARIOS.md` | jets par phases, générateur de manœuvres, scénarios |
 | `00_DOC/06_ROCKETPY_ET_PERFORMANCE.md` | RocketPy, cache, rendu parallèle et débit |
 | `00_DOC/07_4K_NUIT_BLENDER.md` | 4K, préréglage nuit (étoiles, lueur, lumière des jets), moteur Blender |
+| `00_DOC/08_FIGURE_ET_ANIMATION.md` | vue d'ensemble : figure paper, animation sans rendu 3D, repère NED local |
 | `00_DOC/04_RENDU_HORS_ECRAN.md` | bilan du jalon J0 : rendu sans écran, mesures |
 | `02_CONTROLE/README.md` | contrôle qualitatif de chaque jalon |
 

@@ -730,7 +730,7 @@ _CLES_VUE = {
     "poursuite": {"mode", "distance", "cadrage", "azimut", "elevation", "lissage", "champ"},
     "sol": {"mode", "position", "champ", "cadrage", "champ_min", "champ_max"},
     "embarquee": {"mode", "position_corps", "visee", "champ"},
-    "ensemble": {"mode", "azimut", "elevation", "cadrage", "echelle_fusee", "part_fusee", "champ"},
+    "ensemble": {"mode", "azimut", "elevation", "cadrage", "echelle_fusee", "part_fusee", "champ", "repere"},
     "orbite": {"mode", "distance", "cadrage", "azimut", "elevation", "vitesse_angulaire", "champ"},
     "images_cles": {"mode", "cles", "cadrage", "lissage"},
 }
@@ -772,9 +772,11 @@ def _vue(nom: str, v: Mapping[str, Any]) -> ParametresVue:
                 **{k: _nombre(v[k], f"{ou}.{k}") for k in ("cadrage", "lissage") if k in v},
             )
         if mode == "ensemble":
-            return ParametresEnsemble(**{
-                k: _nombre(x, f"{ou}.{k}") for k, x in v.items() if k != "mode" and x != "auto"
-            })
+            champs_ensemble: dict[str, Any] = {
+                k: (str(x) if k == "repere" else _nombre(x, f"{ou}.{k}"))
+                for k, x in v.items() if k != "mode" and x != "auto"
+            }
+            return ParametresEnsemble(**champs_ensemble)
         if mode == "embarquee":
             champs: dict[str, Any] = {}
             for k in ("position_corps", "visee"):

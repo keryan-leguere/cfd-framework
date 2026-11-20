@@ -226,7 +226,7 @@ def test_poses_cli() -> None:
 def test_cli_ensemble_svg(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     main(["exemple", str(tmp_path / "ex")])
     cfg = tmp_path / "ex" / "CONFIG_ENSEMBLE.yaml"
-    assert main(["ensemble", str(cfg), "--poses", "Apogée,20", "--taille", "600"]) == EXIT_OK
+    assert main(["ensemble", str(cfg), "--schema", "--poses", "Apogée,20", "--taille", "600"]) == EXIT_OK
     svg = (tmp_path / "ex" / "CONFIG_ENSEMBLE_ensemble.svg").read_text(encoding="utf-8")
     assert re.search(r'viewBox="[^"]+"', svg)
     assert "40.6 s, 20.0 s" in capsys.readouterr().out

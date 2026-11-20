@@ -41,8 +41,10 @@ from cfd_trajcast.core.camera import (
     boite_ensemble,
     cadre_ensemble,
     echelle_ensemble,
+    ned_ensemble,
+    origine_ensemble,
     projeter,
-    vers_ned,
+    titres_axes_ensemble,
 )
 from cfd_trajcast.data.maquette import Maquette
 from cfd_trajcast.data.trajectoire import Trajectoire
@@ -63,7 +65,6 @@ POINTS_TRACE = 4000
 #: Tracé simplifié : un point gardé dès qu'il s'écarte de tant de pixels du précédent.
 PAS_TRACE_PX = 0.6
 POLICE = "DejaVu Sans, Helvetica, Arial, sans-serif"
-AXES = ("Nord (m)", "Est (m)", "Bas (m)")
 
 
 @dataclass(frozen=True)
@@ -232,10 +233,10 @@ def _resoudre_poses(traj: Trajectoire, poses: int | Sequence[float | str] | None
 
 
 def _espacer(instants: tuple[float, ...], traj: Trajectoire, proj: _Projection,
-             longueur: float) -> tuple[float, ...]:
+             longueur: float, origine: Tableau) -> tuple[float, ...]:
     """Poses par défaut : on saute celles qui tomberaient à moins d'une maquette (à l'écran)
     d'une pose déjà retenue — deux événements rapprochés feraient deux maquettes superposées."""
-    positions = vers_ned(traj.etat(np.array(instants))[0])
+    positions = ned_ensemble(traj.etat(np.array(instants))[0], origine)
     ecran = proj(positions)
     f = (proj.cote / 2) / np.tan(np.radians(proj.champ) / 2)
     taille_px = f * longueur / np.maximum(proj.profondeur(positions), 1e-9)
@@ -267,7 +268,8 @@ def _faces_du_fond(boite: BoiteEnsemble, camera: Tableau) -> set[tuple[int, int]
     return fond
 
 
-def _dessiner_boite(d: _Dessin, boite: BoiteEnsemble, proj: _Projection, th: dict[str, str], u: float) -> None:
+def _dessiner_boite(d: _Dessin, boite: BoiteEnsemble, proj: _Projection, th: dict[str, str], u: float,
+                    titres: tuple[str, str, str]) -> None:
     fond = _faces_du_fond(boite, proj.camera)
     trait = max(0.5, 0.8 * u)
     # Grilles sur les faces du fond.
@@ -351,7 +353,7 @@ def _dessiner_boite(d: _Dessin, boite: BoiteEnsemble, proj: _Projection, th: dic
             angle -= 180
         elif angle <= -90:
             angle += 180
-        d.texte(float(milieu[0]), float(milieu[1] + 0.35 * corps), AXES[axe], 1.15 * corps, th["texte"],
+        d.texte(float(milieu[0]), float(milieu[1] + 0.35 * corps), titres[axe], 1.15 * corps, th["texte"],
                 ancre="middle", angle=angle)
 
 
@@ -402,8 +404,9 @@ def schema_ensemble(
     t = np.linspace(trajectoire.t[0], trajectoire.t[-1],
                     max(POINTS_TRACE, int(60 * (trajectoire.t[-1] - trajectoire.t[0]))))
     trace_enu, _ = trajectoire.etat(t)
-    trace = vers_ned(trace_enu)
-    boite = boite_ensemble(trace_enu, sol_altitude)
+    origine = origine_ensemble(trace_enu, params.repere)
+    trace = ned_ensemble(trace_enu, origine)
+    boite = boite_ensemble(trace_enu, sol_altitude, origine)
     camera, vise, haut = cadre_ensemble(trace_enu, params, 1.0, (boite.bas, boite.haut))
     # Projection dans un carré provisoire, puis mise à l'échelle : le plus grand côté de la
     # géométrie (boîte et sol) vaut `taille` pixels.
@@ -422,7 +425,7 @@ def schema_ensemble(
     # Sol, puis grilles du fond (le plancher de la boîte est au-dessus du plan du sol).
     d.ajouter(f'<polygon points="{_points(proj(sol_coins))}" fill="{th["sol"]}" opacity="0.7"/>',
               proj(sol_coins))
-    _dessiner_boite(d, boite, proj, th, u)
+    _dessiner_boite(d, boite, proj, th, u, titres_axes_ensemble(params.repere))
     # Trace au sol, fils à plomb des événements, vol.
     au_sol = trace.copy()
     au_sol[:, 2] = boite.sol
@@ -431,7 +434,8 @@ def schema_ensemble(
               f'stroke-width="{1.5 * u:.2f}" stroke-linejoin="round"/>', xy_sol)
     evenements = [(e.nom, float(e.t)) for e in trajectoire.evenements
                   if trajectoire.t[0] <= e.t <= trajectoire.t[-1]]
-    pos_ev = vers_ned(trajectoire.etat(np.array([te for _, te in evenements]))[0]) if evenements else np.zeros((0, 3))
+    pos_ev = (ned_ensemble(trajectoire.etat(np.array([te for _, te in evenements]))[0], origine)
+              if evenements else np.zeros((0, 3)))
     for p in pos_ev:
         pied = p.copy()
         pied[2] = boite.sol
@@ -446,17 +450,17 @@ def schema_ensemble(
     echelle = echelle_ensemble(trace_enu, maquette.taille, params)
     sommets, faces = _maillage(maquette)
     if poses is None and len(instants_poses) > 1:
-        instants_poses = _espacer(instants_poses, trajectoire, proj, echelle * maquette.taille)
+        instants_poses = _espacer(instants_poses, trajectoire, proj, echelle * maquette.taille, origine)
     if instants_poses:
         positions, attitudes = trajectoire.etat(np.array(instants_poses))
         lumiere = np.array([-0.35, 0.45, -0.82])  # Nord-Ouest, d'en haut (NED)
         lumiere /= np.linalg.norm(lumiere)
         base = _rgb(th["fusee"])
         clair = np.clip(base * 1.9 + 40, 0, 255)
-        ordre = np.argsort(-proj.profondeur(vers_ned(positions)))
+        ordre = np.argsort(-proj.profondeur(ned_ensemble(positions, origine)))
         for k in ordre:
             r = echelle * (ENU_VERS_NED @ rot.vers_matrice(attitudes[k]))
-            monde = vers_ned(positions[k])[None, :] + sommets @ r.T
+            monde = ned_ensemble(positions[k], origine)[None, :] + sommets @ r.T
             tri = monde[faces]
             normales = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
             n = np.linalg.norm(normales, axis=1)
@@ -502,7 +506,7 @@ def schema_ensemble(
         for tp, pp in zip(instants_poses, positions):
             if round(tp, 6) in instants_ev:
                 continue
-            x, y = proj(vers_ned(pp)[None, :])[0]
+            x, y = proj(ned_ensemble(pp, origine)[None, :])[0]
             d.texte(float(x + 12 * u), float(y + 4 * u), _secondes(tp), 12.0 * u, th["grille"])
 
     # Recadrage sur le contenu, puis titres au-dessus et légende en dessous.
@@ -520,7 +524,8 @@ def schema_ensemble(
         entete.append(f'<text x="{x0 + marge:.1f}" y="{y:.1f}" font-size="{corps:.1f}" '
                       f'fill="{couleur}">{escape(texte)}</text>')
     legende = (f"maquette agrandie × {echelle:.0f} · " if echelle > 1 else "") + \
-        f"vol {_secondes(float(trajectoire.t[0]))} → {_secondes(float(trajectoire.t[-1]))} · repère NED"
+        f"vol {_secondes(float(trajectoire.t[0]))} → {_secondes(float(trajectoire.t[-1]))} · " + \
+        ("repère NED local (Bas = 0 au départ)" if params.repere == "ned_local" else "repère NED")
     y1 += 22 * u
     largeur_min = max([_largeur_texte(legende, 13 * u)] + [_largeur_texte(ligne[3], ligne[0]) for ligne in lignes])
     x1 = max(x1, x0 + largeur_min + 2 * marge)
