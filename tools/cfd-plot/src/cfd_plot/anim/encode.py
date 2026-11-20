@@ -46,10 +46,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_PRESET",
+    "ENV_FFMPEG",
     "PRESETS",
     "AnimPreset",
     "build_sequence",
     "ffmpeg_available",
+    "ffmpeg_executable",
     "frames_to_gif",
     "frames_to_mp4",
     "resolve_preset",
@@ -231,13 +233,65 @@ def _numbered_input_dir(sequence: Sequence[Path], workdir: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
+#: Environment variable naming the ffmpeg binary to use (a path, or a name on ``PATH``).
+ENV_FFMPEG = "CFD_PLOT_FFMPEG"
+
+
+def ffmpeg_executable() -> str | None:
+    """The ffmpeg binary to run, or ``None``.
+
+    Looked up in this order:
+
+    1. ``$CFD_PLOT_FFMPEG`` — a path, or a command name resolved on ``PATH``;
+    2. ``ffmpeg`` on ``PATH``;
+    3. the static binary shipped in the ``imageio-ffmpeg`` wheel, if that
+       package is installed.
+
+    The third source is the one that matters on locked-down machines: an
+    air-gapped workstation or a cluster login node rarely has a system ffmpeg,
+    but a pip-installable wheel carrying its own is easy to bring along.  It is
+    used only when importable — ``imageio-ffmpeg`` is not a dependency.
+    """
+    choice = os.environ.get(ENV_FFMPEG, "").strip()
+    if choice:
+        if os.path.isfile(choice) and os.access(choice, os.X_OK):
+            return choice
+        found = shutil.which(choice)
+        if found is None:
+            logger.warning("%s=%r is neither an executable file nor a command on PATH", ENV_FFMPEG, choice)
+        return found
+    found = shutil.which("ffmpeg")
+    if found is not None:
+        return found
+    try:
+        import imageio_ffmpeg  # type: ignore[import-not-found,import-untyped,unused-ignore]
+
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError, OSError):
+        return None
+    return str(exe) if exe and os.path.isfile(exe) else None
+
+
 def ffmpeg_available() -> bool:
-    """``True`` if an ``ffmpeg`` binary is on ``PATH``."""
-    return shutil.which("ffmpeg") is not None
+    """``True`` if an ffmpeg binary can be found (see :func:`ffmpeg_executable`)."""
+    return ffmpeg_executable() is not None
+
+
+def _ffmpeg() -> str:
+    exe = ffmpeg_executable()
+    if exe is None:
+        raise RuntimeError(_NO_FFMPEG)
+    return exe
+
+
+_NO_FFMPEG = (
+    "ffmpeg was not found: none on PATH, no $CFD_PLOT_FFMPEG, and no imageio-ffmpeg wheel. "
+    "Install one of them (apt install ffmpeg / pip install imageio-ffmpeg), or export a GIF instead."
+)
 
 
 def _run_ffmpeg(args: list[str], *, what: str) -> None:
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y", *args]
+    cmd = [_ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", *args]
     logger.debug("ffmpeg: %s", " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -281,6 +335,12 @@ def _ffmpeg_gif(
     )
 
 
+#: yuv420p is what every player and every browser can decode, and it requires
+#: even dimensions — hence the trunc() scale, a no-op when the render is already
+#: even. Shared by the file and the streaming MP4 paths so both agree.
+MP4_VIDEO_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos,format=yuv420p"
+
+
 def _ffmpeg_mp4(link_dir: Path, out: Path, *, fps: int, crf: int) -> None:
     pattern = str(link_dir / "f_%06d.png")
     _run_ffmpeg(
@@ -290,7 +350,7 @@ def _ffmpeg_mp4(link_dir: Path, out: Path, *, fps: int, crf: int) -> None:
             # yuv420p is what every player and every browser can decode, and
             # it requires even dimensions — hence the trunc() scale, which is
             # a no-op when the render is already even.
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos,format=yuv420p",
+            "-vf", MP4_VIDEO_FILTER,
             "-c:v", "libx264",
             "-crf", str(crf),
             "-preset", "slow",
@@ -470,10 +530,7 @@ def frames_to_mp4(
         line plots; raise it to shrink the file.
     """
     if not ffmpeg_available():
-        raise RuntimeError(
-            "MP4 export requires ffmpeg, which was not found on PATH. "
-            "Install it (apt install ffmpeg / brew install ffmpeg) or export a GIF instead."
-        )
+        raise RuntimeError("MP4 export requires ffmpeg. " + _NO_FFMPEG)
 
     spec = resolve_preset(preset)
     fps = int(fps if fps is not None else spec.fps)
@@ -503,7 +560,7 @@ def _choose_backend(backend: str) -> bool:
     """Resolve the *backend* request to "use ffmpeg" (True) or "use Pillow"."""
     if backend == "ffmpeg":
         if not ffmpeg_available():
-            raise RuntimeError("backend='ffmpeg' was requested but no ffmpeg binary is on PATH")
+            raise RuntimeError("backend='ffmpeg' was requested but no ffmpeg binary was found. " + _NO_FFMPEG)
         return True
     if backend == "pillow":
         return False

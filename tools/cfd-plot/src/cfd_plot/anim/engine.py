@@ -32,6 +32,11 @@ What the engine does that a hand-rolled ``savefig`` loop does not
   is derived from the preset's ``width_px`` instead.
 * **Forces an opaque background.**  A transparent PNG quantised into a GIF
   palette leaves grey fringes around every glyph.
+* **Streams long MP4s.**  When the only output is an MP4, frames are rendered
+  to raw RGBA and piped into ffmpeg as they come (:mod:`cfd_plot.anim.stream`)
+  instead of being written as PNGs and encoded at the end — the same video,
+  without a PNG round-trip per frame. GIF, boomerang and ``keep_frames`` need
+  the whole sequence, so they keep the file path. ``stream=False`` forces it.
 * **Guards the figure size.**  Resizing the figure mid-capture silently
   produces frames of different pixel sizes, which the encoders reject much
   later with an unhelpful message; it is caught at ``capture()`` instead.
@@ -44,6 +49,7 @@ session's plotting exactly as it was.
 
 from __future__ import annotations
 
+import io
 import logging
 import sys
 import tempfile
@@ -60,7 +66,16 @@ from PIL import Image
 
 from .._compat import figure_disable_layout
 from ..mpl_template import print_file_report
-from .encode import AnimPreset, _choose_backend, build_sequence, frames_to_gif, frames_to_mp4, resolve_preset
+from .encode import (
+    AnimPreset,
+    _choose_backend,
+    build_sequence,
+    ffmpeg_available,
+    frames_to_gif,
+    frames_to_mp4,
+    resolve_preset,
+)
+from .stream import Mp4Stream
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +107,8 @@ class AnimationResult:
         ``(width, height)`` of every frame.
     preset : str
     backend : str
-        ``"ffmpeg"`` or ``"pillow"`` — which encoder produced the GIF.
+        ``"ffmpeg"`` or ``"pillow"`` — which encoder produced the GIF;
+        ``"ffmpeg-stream"`` when the MP4 was streamed.
     frames_dir : Path or None
         Where the individual PNG frames were kept, if ``keep_frames`` was set.
     fig, axes
@@ -176,6 +192,11 @@ class Animator:
         Print a one-line progress counter to stderr while capturing.
     report : bool
         Print the exported-file table on close, like ``save_figure(report=True)``.
+    stream : bool, optional
+        Pipe frames straight into ffmpeg instead of writing PNGs. ``None``
+        (default) streams whenever it can: MP4 is the only format, no
+        boomerang, no ``keep_frames``, and ffmpeg is found. ``True`` raises if
+        it cannot; ``False`` always writes PNGs.
     """
 
     def __init__(
@@ -199,6 +220,7 @@ class Animator:
         warn_size_mb: float = 10.0,
         progress: bool = False,
         report: bool = False,
+        stream: bool | None = None,
     ) -> None:
         self._fig = fig
         self._spec = resolve_preset(preset)
@@ -223,10 +245,23 @@ class Animator:
         if self._width_px <= 0:
             raise ValueError(f"width_px must be positive, got {self._width_px}")
 
-        if keep_frames is not None:
+        streamable = self._formats == ("mp4",) and not boomerang and keep_frames is None
+        if stream and not streamable:
+            raise ValueError(
+                "stream=True needs MP4 as the only format, no boomerang and no keep_frames "
+                "(GIF palettes, the mirrored half and kept frames all need the whole sequence)"
+            )
+        self._stream_wanted = bool(stream) if stream is not None else streamable and ffmpeg_available()
+        self._stream: Mp4Stream | None = None
+        self._last_rgba: bytes | None = None
+        self._n_streamed = 0
+
+        self._tmp: tempfile.TemporaryDirectory | None = None
+        if self._stream_wanted:
+            self._frames_dir = Path()
+        elif keep_frames is not None:
             self._frames_dir = Path(keep_frames)
             self._frames_dir.mkdir(parents=True, exist_ok=True)
-            self._tmp: tempfile.TemporaryDirectory | None = None
         else:
             self._tmp = tempfile.TemporaryDirectory(prefix="cfd_plot_frames_")
             self._frames_dir = Path(self._tmp.name)
@@ -243,7 +278,7 @@ class Animator:
 
     # -- capture ---------------------------------------------------------
 
-    def capture(self, *, hold: float = 0.0, repeat: int = 1) -> Path:
+    def capture(self, *, hold: float = 0.0, repeat: int = 1) -> Path | None:
         """Render the figure's current state as one frame.
 
         Parameters
@@ -258,8 +293,8 @@ class Animator:
 
         Returns
         -------
-        Path
-            The PNG that was written.
+        Path or None
+            The PNG that was written; ``None`` when streaming (no PNG exists).
         """
         if self._closed:
             raise RuntimeError("this Animator is closed — capture() cannot be called after close()")
@@ -268,6 +303,10 @@ class Animator:
 
         if self._dpi is None:
             self._prepare()
+
+        if self._stream_wanted:
+            self._capture_stream(repeat + round(hold * self._fps))
+            return None
 
         path = self._frames_dir / f"frame_{self._n_captures:06d}.png"
         # The rc_context is the anti-jitter guarantee, and it has to be done
@@ -305,6 +344,53 @@ class Animator:
 
         return path
 
+    def _capture_stream(self, total: int) -> None:
+        buffer = io.BytesIO()
+        with mpl.rc_context({"savefig.bbox": None, "savefig.pad_inches": 0.0}):
+            self._fig.savefig(buffer, format="rgba", dpi=self._dpi, facecolor=self._facecolor,
+                              edgecolor="none", transparent=False)
+        rgba = buffer.getvalue()
+        if self._stream is None:
+            # Agg truncates, it does not round: a 7.3 in figure at 137.7 dpi is 1005 px.
+            assert self._dpi is not None
+            w, h = int(self._fig.get_figwidth() * self._dpi), int(self._fig.get_figheight() * self._dpi)
+            if w * h * 4 != len(rgba):
+                raise RuntimeError(f"unexpected raw frame size: {len(rgba)} bytes for {w}x{h} px")
+            self._size_px = (w, h)
+            figure_disable_layout(self._fig)
+            self._stream = Mp4Stream(self._base.with_suffix(".mp4"), width=w, height=h,
+                                     fps=self._fps, crf=self._crf)
+            total += round(self._hold_first * self._fps)
+        elif len(rgba) != self._stream.width * self._stream.height * 4:
+            w, h = self._size_px or (0, 0)
+            raise RuntimeError(
+                f"frame {self._n_captures} does not match the {w}x{h} px of earlier frames — "
+                "the figure was resized mid-capture. Set the figure size before the first "
+                "capture() and leave it alone."
+            )
+        self._stream.write(rgba, repeat=total)
+        self._last_rgba = rgba
+        self._n_captures += 1
+        if self._progress and _stderr_is_a_terminal():
+            print(f"\rcfd_plot.anim: {self._n_captures} frames captured", end="", file=sys.stderr, flush=True)
+
+    def _close_stream(self, fig: Figure | None, axes: Any) -> AnimationResult:
+        if self._stream is None or self._last_rgba is None:
+            raise ValueError("nothing was captured — call capture() at least once before close()")
+        self._stream.write(self._last_rgba, repeat=round(self._hold_last * self._fps))
+        n_frames = self._stream.n_frames
+        path = self._stream.close()
+        self._encoder_used = "ffmpeg-stream"
+        result = AnimationResult(
+            paths=[path], n_frames=n_frames, n_captures=self._n_captures, fps=self._fps,
+            size_px=self._size_px or (0, 0), preset=self._spec.name, backend=self._encoder_used,
+            fig=fig, axes=axes,
+        )
+        self._warn_if_heavy(result)
+        if self._report:
+            result.report()
+        return result
+
     def _prepare(self) -> None:
         """Compute the render DPI and background, once, before the first frame."""
         fig_w_in = self._fig.get_figwidth()
@@ -336,6 +422,9 @@ class Animator:
 
         if self._progress and _stderr_is_a_terminal():
             print(file=sys.stderr, flush=True)
+
+        if self._stream_wanted:
+            return self._close_stream(fig, axes)
 
         try:
             if not self._sequence:
@@ -425,6 +514,8 @@ class Animator:
             # exception propagate rather than burying it under "nothing was
             # captured".
             self._closed = True
+            if self._stream is not None:
+                self._stream.abort()
             if self._tmp is not None:
                 self._tmp.cleanup()
             return

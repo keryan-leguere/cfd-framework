@@ -99,17 +99,21 @@ from .domains import (
 )
 
 # --- Animation (GIF / MP4) ---------------------------------------------------
+from .axes3d import bbox3d, box3d_corners_px, fit_box3d, tidy_axes3d, true_proportions
 from .anim import (
     PRESETS,
     AnimationResult,
     AnimPreset,
     Animator,
     animate,
+    PathReveal,
     animate_frames,
+    animate_path,
     animate_sweep,
     ffmpeg_available,
     frames_to_gif,
     frames_to_mp4,
+    timeline,
 )
 
 # --- Paper-figure assembly ---------------------------------------------------
@@ -217,6 +221,14 @@ __all__ = [
     "animate",
     "animate_frames",
     "animate_sweep",
+    "animate_path",
+    "tidy_axes3d",
+    "true_proportions",
+    "fit_box3d",
+    "bbox3d",
+    "box3d_corners_px",
+    "PathReveal",
+    "timeline",
     "ffmpeg_available",
     "frames_to_gif",
     "frames_to_mp4",

@@ -1301,7 +1301,11 @@ animate_sweep(alpha, cn, "polar", formats=("gif", "mp4"))   # one render, two fi
 
 GIF encoding uses **ffmpeg** when it is installed (two-pass `palettegen`/`paletteuse`)
 and falls back to a pure-Pillow global-palette encoder when it is not — same stability,
-larger files. MP4 requires ffmpeg and raises a message saying so. Use MP4 for
+larger files. MP4 requires ffmpeg and raises a message saying so. ffmpeg is looked up in
+`$CFD_PLOT_FFMPEG` (a path or a command name), then on `PATH`, then in the
+`imageio-ffmpeg` wheel when that package is installed — an air-gapped workstation rarely
+has a system ffmpeg, but a wheel carrying one is easy to bring along
+(`ffmpeg_executable()` says which one won). Use MP4 for
 colour-mapped fields, where GIF must dither a continuous colormap into 256 entries and
 the dither noise defeats its own compression; on line plots the two are comparable.
 
@@ -1318,6 +1322,64 @@ the dither noise defeats its own compression; on line plots the two are comparab
 
 A runnable walkthrough of all six lives in
 [`01_EXEMPLE/demo_animation.py`](01_EXEMPLE/demo_animation.py).
+
+### Long MP4s are streamed
+
+When MP4 is the only format, frames go straight from Agg to ffmpeg's standard input as
+raw RGBA (`Mp4Stream`) instead of being written as PNGs and encoded at the end — the
+same video through the same filter, without a zlib round-trip per frame, which is most of
+the time on a 1 800-frame video. GIF (one palette for the whole sequence), `boomerang`
+(plays it twice) and `keep_frames` need the full sequence and keep the file path;
+`stream=False` forces it, `stream=True` raises if it cannot stream. `result.backend` is
+then `"ffmpeg-stream"`.
+
+### Animating in time: trajectories, 2-D or 3-D
+
+`animate_sweep` walks *indices*. A physical process is animated by *time*: frame *k*
+shows the state at `t0 + k·speed/fps`, interpolated, whatever the sampling — a trajectory
+sampled every millisecond during the burn and every 100 ms in coast would otherwise race
+through one and crawl through the other.
+
+```python
+from cfd_plot import animate_path
+
+animate_path(t, x, y, z, "flight.mp4",
+             events={"burnout": 4.0, "apogee": 40.6}, event_hold=1.0,   # markers + legend, pause
+             duration=20, equal=True,                                   # 20 s of video, true proportions
+             view=(20, -60), orbit=40,                                  # 3-D view turning 40° overall
+             xlabel="x (m)", ylabel="y (m)", zlabel="z (m)", profile="paper")
+```
+
+Without `z` it is a 2-D path on ordinary axes. The building blocks are public, for when
+the figure is yours (a rocket mesh flying along, a side panel):
+
+| Piece | Does |
+|:---|:---|
+| `timeline(t0, t1, fps=, duration= \| speed=, holds={t: s})` | instant (and hold) of every frame; a held instant is inserted **exactly**, never snapped to the nearest frame |
+| `PathReveal(ax, t, x, y[, z], trail=)` | faint ghost of the whole path, the trail flown so far (or the last `trail` seconds), an interpolated head; `update(t)` |
+| `lock_limits(ax, mins, maxs, equal=)` | fixed limits — locked *after* the artists exist, since a 3-D `plot` of one point autoscales to a degenerate box |
+
+### 3-D axes for a paper
+
+The style profiles are written for 2-D axes, and three of their choices go wrong in 3-D:
+`xtick.minor.visible` draws a grid line per *minor* tick on every pane (the panes turn
+grey), a box in true proportion gets as many ticks on its short side as on its long one
+(the labels collide), and the default panes are tinted. Matplotlib also draws any 3-D box
+inside a **square**, so a tall box is either cut or lost in white, and
+`bbox_inches="tight"` cannot help — a 3-D axes reports its whole square as its extent.
+
+```python
+from cfd_plot import bbox3d, fit_box3d, tidy_axes3d, true_proportions
+
+true_proportions(ax, mins, maxs)          # limits + box aspect from the spans: nothing stretched
+tidy_axes3d(ax, nbins=8)                  # no minor ticks, white panes, ticks ∝ side length
+fit_box3d(ax, width=8 / 2.54)             # fill the square; projected box exactly 8 cm wide
+fig.savefig("box.pdf", bbox_inches=bbox3d(fig))   # crop to box + tick/axis labels + legends + texts
+```
+
+`fit_box3d(ax)` without `width` only adjusts the zoom — for a video frame, whose size is
+imposed. `bbox3d` ignores the labels of ticks outside the view, which a 3-D axis leaves at
+stale, sometimes astronomical positions.
 
 ---
 
