@@ -157,11 +157,47 @@ def fit_box3d(ax: Any, width: float | None = None, *, fill: float = 0.9, iterati
     return zoom
 
 
+def _clipped_out(ax: Any, text: Any) -> bool:
+    """A 3-D text clipped to the view limits (``axlim_clip``, Matplotlib ≥ 3.10) and outside them.
+
+    Matplotlib skips drawing it, but its window extent is still computed at its projected
+    position, which, once the view is zoomed in, can be kilometres of data away.
+    """
+    if not getattr(text, "_axlim_clip", False) or not hasattr(text, "get_position_3d"):
+        return False
+    point = text.get_position_3d()
+    limits = (ax.get_xlim(), ax.get_ylim(), ax.get_zlim())
+    return any(not min(lim) <= float(v) <= max(lim) for v, lim in zip(point, limits))
+
+
+def _text3d_extent(ax: Any, text: Any, renderer: Any) -> list[Bbox]:
+    """Window extent of a 3-D text **where it is drawn**.
+
+    Outside ``draw``, a ``Text3D`` holds its *data* x, y as its 2-D position, so its
+    plain ``get_window_extent`` lands that many pixels away (millions, for metres).
+    It is measured at its projected position, then put back.
+    """
+    from mpl_toolkits.mplot3d import proj3d
+
+    if not text.get_visible() or not text.get_text():
+        return []
+    position = text.get_position_3d()
+    x, y, z = (np.array([float(v)]) for v in position)
+    xs, ys, _ = proj3d.proj_transform(x, y, z, ax.get_proj())
+    try:
+        text.set_position((float(xs[0]), float(ys[0])))
+        bb = text.get_window_extent(renderer)
+    finally:
+        text.set_position_3d(position)
+    return [bb] if bb.width > 0 or bb.height > 0 else []
+
+
 def bbox3d(fig: Any, *, pad: float = 0.04) -> Bbox:
     """Extent (inches) of what is drawn, for ``fig.savefig(..., bbox_inches=bbox3d(fig))``.
 
-    Per 3-D axes: the projected box, the visible tick labels, axis labels and
-    title; plus every figure-level legend and text, and the 2-D axes as they
+    Per 3-D axes: the projected box, the visible tick labels, axis labels,
+    title and 3-D texts (except those ``axlim_clip`` hides outside the view
+    limits); plus every figure-level legend and text, and the 2-D axes as they
     are. *pad* is added on each side, in inches.
     """
     fig.canvas.draw()
@@ -193,7 +229,12 @@ def bbox3d(fig: Any, *, pad: float = 0.04) -> Bbox:
             add(axis.label)
         add(ax.title)
         for text in ax.texts:
-            add(text)
+            if _clipped_out(ax, text):
+                continue
+            if hasattr(text, "get_position_3d"):
+                boxes.extend(_text3d_extent(ax, text, renderer))
+            else:
+                add(text)
         legend = ax.get_legend()
         if legend is not None:
             add(legend)

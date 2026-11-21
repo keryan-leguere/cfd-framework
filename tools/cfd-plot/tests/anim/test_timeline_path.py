@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from matplotlib.colors import to_hex
 
-from cfd_plot import tidy_axes3d, true_proportions
+from cfd_plot import bbox3d, tidy_axes3d, true_proportions
 from cfd_plot.anim import PathReveal, animate_path, ffmpeg_available, timeline
 
 from .conftest import FAST
@@ -144,3 +144,33 @@ class TestAnimatePath:
         marker = result.axes.get_legend().legend_handles[0]
         assert to_hex(marker.get_color()) == marker.get_color()
         plt.close(result.fig)
+
+
+class TestBbox3d:
+    def test_ignores_3d_texts_clipped_outside_a_zoomed_view(self):
+        import matplotlib
+
+        if tuple(int(v) for v in matplotlib.__version__.split(".")[:2]) < (3, 10):
+            pytest.skip("axlim_clip needs Matplotlib 3.10")
+        fig = plt.figure(figsize=(4, 4), layout="none")  # a layout engine would move the axes
+        ax = fig.add_subplot(projection="3d")
+        true_proportions(ax, (0, 0, 0), (1, 1, 1))
+        ax.text(0.5, 0.5, 0.5, "in", axlim_clip=True)
+        seul = bbox3d(fig)
+        ax.text(5000.0, 0.5, 0.5, "far away", axlim_clip=True)
+        assert bbox3d(fig).bounds == pytest.approx(seul.bounds)  # not drawn, does not count
+        ax.texts[1]._axlim_clip = False  # drawn, so it counts
+        assert bbox3d(fig).width > 2 * seul.width
+        plt.close(fig)
+
+    def test_3d_text_counts_where_it_is_drawn(self):
+        """A Text3D's own extent sits at its *data* x, y: metres read as pixels."""
+        fig = plt.figure(figsize=(4, 4), layout="none")
+        ax = fig.add_subplot(projection="3d")
+        true_proportions(ax, (0, 0, 0), (5000, 5000, 5000))
+        seul = bbox3d(fig)
+        ax.text(2500, 2500, 2500, "centre")
+        box = bbox3d(fig)
+        assert box.bounds == pytest.approx(seul.bounds)  # inside the box: changes nothing
+        assert ax.texts[0].get_position_3d() == (2500, 2500, 2500)  # put back
+        plt.close(fig)
