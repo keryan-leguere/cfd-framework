@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,10 @@ from cfd_trajcast.core import rotations as rot
 from cfd_trajcast.core.reperes import matrice_vers_enu
 from cfd_trajcast.core.vol_reference import VolReference
 from cfd_trajcast.paths import EXEMPLE_DIR
+
+# Les tests ne demandent jamais de fenêtre Matplotlib : avec PyQt5 installé (extra gui) et un
+# écran, pyplot prendrait le backend Qt et chargerait Qt hors de toute préparation (gui/_qt.py).
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 VOL = VolReference()
 T = np.round(np.arange(0.0, VOL.t_apogee + 10.0, 0.05), 6)

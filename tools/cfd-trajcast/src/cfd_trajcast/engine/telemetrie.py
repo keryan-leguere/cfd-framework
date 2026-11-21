@@ -36,7 +36,7 @@ from cfd_trajcast.core.reperes import matrice_vers_enu
 from cfd_trajcast.data.configuration import ConfigTelemetrie
 from cfd_trajcast.data.trajectoire import Trajectoire
 
-__all__ = ["G0", "PanneauTelemetrie", "Serie", "chemin_police", "formater", "series"]
+__all__ = ["G0", "PanneauTelemetrie", "Serie", "calculs", "chemin_police", "formater", "series"]
 
 Tableau = NDArray[np.float64]
 
@@ -75,7 +75,8 @@ class Serie:
     etendue_min: float = 0.0
 
 
-def _calculs(traj: Trajectoire) -> dict[str, Callable[[], Tableau]]:
+def calculs(traj: Trajectoire) -> dict[str, Callable[[], Tableau]]:
+    """Les grandeurs calculées (``CALCULEES``), en SI, sur les instants de la trajectoire (évaluées à la demande)."""
     def incidence() -> Tableau:
         v = traj.vitesse
         norme = np.linalg.norm(v, axis=1)
@@ -112,7 +113,7 @@ def _calculs(traj: Trajectoire) -> dict[str, Callable[[], Tableau]]:
 
 def series(traj: Trajectoire, cfg: ConfigTelemetrie) -> list[Serie]:
     """Les lignes du panneau : calculées, ou lues dans une colonne de la trajectoire."""
-    calculs = _calculs(traj)
+    fonctions = calculs(traj)
     out = []
     for i, g in enumerate(cfg.grandeurs):
         if g.colonne is not None:
@@ -123,7 +124,7 @@ def series(traj: Trajectoire, cfg: ConfigTelemetrie) -> list[Serie]:
                 )
             brut, source = traj.donnees[g.colonne], f"colonne {g.colonne}"
         else:
-            brut, source = calculs[g.cle](), "calculée"
+            brut, source = fonctions[g.cle](), "calculée"
         out.append(Serie(cle=g.cle, libelle=g.libelle, t=traj.t,
                          valeurs=np.asarray(brut, dtype=float) * g.facteur, unite=g.unite,
                          source=source, couleur=g.couleur or PALETTE[i % len(PALETTE)],

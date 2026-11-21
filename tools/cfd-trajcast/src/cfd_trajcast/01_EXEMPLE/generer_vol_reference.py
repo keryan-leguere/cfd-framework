@@ -8,6 +8,12 @@
 Le vol est analytique (``cfd_trajcast.core.vol_reference``) : propulsion rectiligne
 4 s à 100 m/s², puis balistique ; nez dans la vitesse, roulis de 90 °/s.
 
+* ``vol_vent_cdg.csv`` : le vol de référence avec ce que l'interface (``cfd-trajcast gui``)
+  sait montrer en plus : un vent ``VN, VE, VZ`` (m/s, VZ > 0 vers le haut, vitesse de
+  l'air) qui dépend de l'altitude — il tourne avec elle, avec un ascendant vers 2 500 m —,
+  le CDG ``Xcg`` (m depuis le nez, compté vers le culot) qui avance pendant la combustion,
+  la ``masse`` (kg) et la ``poussee`` (N). Le vent est **affiché**, pas intégré : la
+  trajectoire reste celle du vol de référence.
 * ``vol_virage.csv`` : le même vol dont la route horizontale tourne de 70° vers la
   droite entre 6 et 20 s (de quoi éprouver le lissage des caméras). Vitesse intégrée
   au pas de 1 ms ; attitude **construite** pour ce fichier d'exemple (nez dans la
@@ -51,6 +57,26 @@ def main() -> None:
             df.to_csv(f, index=False, float_format="%.10g")
         print(f"{nom} : {len(df)} lignes")
     ecrire_virage(vol)
+    ecrire_vent_cdg(vol, enu, entete)
+
+
+def ecrire_vent_cdg(vol: VolReference, enu: pd.DataFrame, entete: str) -> None:
+    h = enu["z"].to_numpy()
+    t = enu["t"].to_numpy()
+    combustion = np.clip(t / vol.duree_propulsion, 0.0, 1.0)
+    df = enu.assign(
+        VN=4.0 + 12.0 * h / 8000.0,
+        VE=-6.0 + 18.0 * np.sin(np.pi * h / 9000.0),
+        VZ=1.5 * np.exp(-(((h - 2500.0) / 600.0) ** 2)),
+        Xcg=1.38 + 0.24 * (1.0 - combustion),          # m depuis le nez : le CDG avance en brûlant
+        masse=61.0 + 25.0 * (1.0 - combustion),
+        poussee=np.where(t < vol.duree_propulsion, 9800.0, 0.0),
+    )
+    with open(ICI / "vol_vent_cdg.csv", "w", encoding="utf-8") as f:
+        f.write(entete)
+        f.write("# + vent VN VE VZ (m/s, VZ > 0 vers le haut, vitesse de l'air), Xcg (m depuis le nez), masse, poussee\n")
+        df.to_csv(f, index=False, float_format="%.10g")
+    print(f"vol_vent_cdg.csv : {len(df)} lignes")
 
 
 #: Virage : +70° de route entre 6 et 20 s de vol, profil en douceur.

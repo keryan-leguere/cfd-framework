@@ -14,6 +14,9 @@ DEST="${1:-WHEELS_PY39}"
 
 STANDARD=(numpy pandas matplotlib pillow pyyaml rich)              # supposés présents sur la cible
 NON_STANDARD=(vtk pyvista trimesh imageio imageio-ffmpeg cascadio)
+# Interface (cfd-trajcast gui) : PyQt5 tire PyQt5-Qt5 (Qt embarqué, ~60 Mo) et PyQt5-sip ;
+# pyvistaqt tire qtpy. Mettre GUI=0 pour s'en passer.
+if [ "${GUI:-1}" = 1 ]; then NON_STANDARD+=(PyQt5 pyvistaqt); fi
 PLATEFORMES=()
 for p in manylinux_2_28 manylinux_2_27 manylinux_2_24 manylinux_2_17 manylinux2014 \
          manylinux_2_12 manylinux2010 linux; do

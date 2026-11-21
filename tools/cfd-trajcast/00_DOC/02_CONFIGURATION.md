@@ -196,3 +196,33 @@ incidence_totale, facteur_de_charge, cap, pente, roulis, tangage, lacet) ou
 Blender demande `pip install bpy`, qui exige une version exacte de Python (bpy 5.x :
 3.13). Les vues `ensemble` restent dessinées par PyVista ; le ciel, les étoiles et la
 lueur sont les mêmes avec les deux moteurs. Débits mesurés : `07_4K_NUIT_BLENDER.md`.
+
+## 12. `vent`
+
+Facultatif. Le vent rencontré le long du vol, lu dans trois colonnes de la trajectoire
+(une valeur par instant), converti en ENU à la lecture. Il donne à la télémétrie
+`incidence`, `derapage`, `vitesse_air` et `vent_horizontal`, et à l'interface
+(`cfd-trajcast gui`) les flèches de vent, le panneau Vent et le repère aérodynamique.
+
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `colonnes` | — (obligatoire) | `[VN, VE, VZ]` : composantes Nord, Est, verticale, dans cet ordre |
+| `vz` | — (obligatoire) | `haut` (VZ > 0 : l'air monte) ou `bas` (NED strict : VZ > 0, l'air descend) |
+| `sens` | `vers` | `vers` : vitesse de l'air (là où il va) ; `depuis` : convention météo (d'où il vient) |
+| `unite` | `m/s` | `m/s`, `km/h` ou `kt` |
+
+## 13. `cdg`
+
+Facultatif. Le CDG de l'engin, variable au cours du vol. Les positions de la
+trajectoire sont **celles du CDG** : la maquette est placée autour de lui et glisse
+quand il avance. Les repères locaux de l'interface sont dessinés au CDG.
+
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `colonnes` | — (obligatoire) | une colonne (`Xcg`, le long de l'axe de l'engin) ou trois (`[Xcg, Ycg, Zcg]`, axes de la CAO) |
+| `unite` | `m` | `m`, `km`, `mm` ou `ft` — longueurs de l'engin réel |
+| `reference` | `nez` | `nez`, `culot` (point le plus avant / arrière de la maquette, sur son axe) ou `origine` (l'`origine` de la maquette) |
+| `axe` | `vers_culot` | une colonne : sens dans lequel Xcg croît, `vers_culot` ou `vers_nez` |
+
+En trois colonnes, les axes sont ceux de la CAO, convertis par `axe_nez` et `axe_haut`
+de la maquette. Exemple complet : `01_EXEMPLE/CONFIG_GUI.yaml`.

@@ -1,6 +1,8 @@
 02_CONTROLE/J*/*
 !02_CONTROLE/J*/MANIFESTE.txt
 !02_CONTROLE/J*/prototypes/
+02_CONTROLE/G*/*
+!02_CONTROLE/G*/MANIFESTE.txt
 __pycache__/
 *.egg-info/
 .pytest_cache/

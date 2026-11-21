@@ -10,6 +10,7 @@
     cfd-trajcast ensemble CONFIG.yaml --video --sans-rendu   … et cette figure animée en MP4
     cfd-trajcast ensemble CONFIG.yaml --video   … ou la vue d'ensemble rendue en 3D (PyVista)
     cfd-trajcast ensemble CONFIG.yaml --schema  le schéma SVG maison (aucune dépendance)
+    cfd-trajcast gui [CONFIG.yaml]           interface interactive : naviguer dans le vol
     cfd-trajcast exporter CONFIG.yaml        la trajectoire lue (RocketPy compris) en CSV
     cfd-trajcast diagnostic                  ffmpeg, extras, fenêtres de rendu possibles
     cfd-trajcast exemple [DEST]              recopier l'exemple (Aim9 + vol de référence)
@@ -21,6 +22,7 @@ Codes de retour : ``0`` conforme (alertes permises), ``1`` erreur d'entrée
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -149,6 +151,10 @@ def build_parser() -> argparse.ArgumentParser:
     ens.add_argument("-j", "--processus", type=int, default=0, metavar="N",
                      help="processus de rendu en parallèle (0 : automatique, 1 : en série)")
     ens.add_argument("--sans-cache", action="store_true", help="refaire la simulation RocketPy")
+    gui = sous.add_parser("gui", help="interface interactive : vue d'ensemble, temps, télémétrie, repères, vent")
+    gui.add_argument("config", type=Path, nargs="?", help="fichier YAML (facultatif : Fichier \u203a Ouvrir)")
+    gui.add_argument("--moteur", choices=("mpl", "vtk"), default="mpl",
+                     help="vue 3D : Matplotlib (défaut, sans OpenGL) ou VTK (OpenGL)")
     exporter = sous.add_parser("exporter", help="écrire la trajectoire lue en CSV (conventions internes)")
     exporter.add_argument("config", type=Path, help="fichier YAML")
     exporter.add_argument("--sortie", type=Path, help="fichier CSV (défaut : <config>_trajectoire.csv)")
@@ -280,6 +286,16 @@ def _ensemble(args: argparse.Namespace, out: Console, err: Console) -> int:
     return EXIT_OK
 
 
+def _gui(args: argparse.Namespace, err: Console) -> int:
+    from cfd_trajcast.gui import ErreurInterface, lancer
+
+    try:
+        return lancer(args.config, moteur=args.moteur)
+    except ErreurInterface as exc:
+        err.print(panneau_erreur(str(exc), indice="cfd-trajcast diagnostic"))
+        return EXIT_ERREUR_ENTREE
+
+
 def _exporter(args: argparse.Namespace, out: Console, err: Console) -> int:
     try:
         cfg = charger_configuration(args.config)
@@ -333,6 +349,11 @@ def _exemple(dest: Path, force: bool, out: Console, err: Console) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Point d'entrée ; renvoie le code de retour."""
     args = build_parser().parse_args(argv)
+    if args.commande != "gui":
+        # Sans interface, Matplotlib n'a besoin d'aucun Qt. Laissé à lui-même, il choisit le
+        # backend Qt dès que PyQt5 est installé (extra gui) et qu'un écran existe : Qt se charge,
+        # et avec un LD_LIBRARY_PATH d'OpenFOAM, deux Qt se croisent et tout s'arrête.
+        os.environ.setdefault("MPLBACKEND", "Agg")
     out = Console(highlight=False)
     err = Console(stderr=True, highlight=False)
     if args.commande == "check":
@@ -341,6 +362,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rendre(args, out, err)
     if args.commande == "image":
         return _image(args, out, err)
+    if args.commande == "gui":
+        return _gui(args, err)
     if args.commande == "ensemble":
         return _ensemble(args, out, err)
     if args.commande == "exporter":

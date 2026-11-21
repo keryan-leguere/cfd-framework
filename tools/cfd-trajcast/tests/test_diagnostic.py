@@ -142,3 +142,19 @@ def test_sonde_reelle_import_casse(tmp_path: Path) -> None:
     s = diag.sonder_fenetre("EGL (GPU par défaut)", {"PYTHONPATH": str(tmp_path)})
     assert not s.ok and s.etape == "import"
     assert "volontairement cassé" in s.detail and "Traceback" in s.trace
+
+
+def test_interface_absente_dit_quoi_installer(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(diag, "_version_installee", lambda dist: None)
+    sondes = diag.sonder_interface()
+    assert [s.nom for s in sondes] == ["PyQt5", "pyvistaqt"]
+    assert not any(s.ok for s in sondes) and "[gui]" in sondes[0].detail
+    # Facultative : l'interface ne change pas le verdict du rendu.
+    assert all(s.categorie == "interface" for s in sondes)
+
+
+def test_sonde_qt_hors_ecran(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("PyQt5")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    ok, detail = diag._sous_processus("cfd_trajcast.gui.sonde_qt", "SONDE_QT:")
+    assert ok and "offscreen" in detail and "Qt 5." in detail

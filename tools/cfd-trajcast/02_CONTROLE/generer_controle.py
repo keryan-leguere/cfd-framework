@@ -628,7 +628,101 @@ def controle_j6(sortie: Path) -> list[str]:
     return lignes
 
 
-JALONS = {"J1": controle_j1, "J2": controle_j2, "J3": controle_j3, "J3b": controle_j3b, "J4": controle_j4,
+def controle_g(sortie: Path) -> list[str]:
+    """Interface (G0–G6) : fenêtre à trois instants, vue VTK, assistant, exports."""
+    from cfd_trajcast.gui import application
+
+    app = application()
+    from PyQt5.QtCore import QSettings
+
+    # Réglages de la fenêtre écrits dans le dossier du contrôle, pas dans ~/.config de l'utilisateur.
+    for fmt in (QSettings.NativeFormat, QSettings.IniFormat):
+        QSettings.setPath(fmt, QSettings.UserScope, str(sortie / "reglages"))
+    from cfd_trajcast.gui.assistant import AssistantCsv
+    from cfd_trajcast.gui.fenetre import FenetrePrincipale
+
+    def attendre(n: int = 30) -> None:
+        for _ in range(n):
+            app.processEvents()
+            time.sleep(0.02)
+
+    lignes = [f"Jalon G — interface interactive (cfd-trajcast gui), plateforme Qt « {app.platformName()} »", ""]
+    f = FenetrePrincipale()
+    f.resize(1800, 1050)
+    f.show()
+    f.ouvrir(EXEMPLE_DIR / "CONFIG_GUI.yaml")
+    f.telemetrie.cocher(["altitude", "incidence", "derapage", "vitesse_air", "Xcg", "masse"])
+    poses = [(3.0, {"corps", "ned"}, False, "propulsion : CDG qui avance, corps et NED"),
+             (12.0, {"corps", "ned", "aero", "trajectoire"}, True, "les quatre repères et le vent"),
+             (40.565, {"aero", "trajectoire"}, True, "apogée : repères aérodynamique et trajectoire")]
+    for t, reperes, vent, quoi in poses:
+        for nom, case in f.affichage.reperes.items():
+            case.setChecked(nom in reperes)
+        f.affichage.vent.setChecked(vent)
+        f.navigation.aller(t)
+        attendre()
+        nom = f"fenetre_t{t:05.1f}.png".replace(".", "_", 1)
+        f.grab().save(str(sortie / nom))
+        lignes.append(f"  {nom} : t = {t:g} s, {quoi}")
+    f.vent.raise_()
+    attendre()
+    f.grab().save(str(sortie / "fenetre_dock_vent.png"))
+    lignes.append("  fenetre_dock_vent.png : onglet Vent (hodographe, vent vertical, point courant)")
+    f.vue.exporter(sortie / "export_vue.pdf")
+    from cfd_trajcast.engine.courbes import exporter_figure
+
+    exporter_figure(f.telemetrie.canevas.figure, sortie / "export_courbes.pdf")
+    lignes.append("  export_vue.pdf, export_courbes.pdf : exports de la vue et des courbes")
+    f.zoomer("engin")
+    f.navigation.aller(25.0)
+    attendre()
+    f.grab().save(str(sortie / "fenetre_zoom_engin.png"))
+    f.vue.exporter(sortie / "export_vue_zoom.pdf")
+    lignes.append(f"  fenetre_zoom_engin.png, export_vue_zoom.pdf : t = 25 s, « Cadrer l'engin » "
+                  f"(zoom × {f.vue.zoom:.1f}), boîte cubique centrée sur le CDG, qui le suit")
+    f.zoomer("entier")
+    if f.choisir_moteur("vtk"):
+        f.navigation.aller(12.0)
+        attendre()
+        f.grab().save(str(sortie / "fenetre_vtk.png"))
+        lignes.append(f"  fenetre_vtk.png : même instant, vue VTK ({f._sonde[1] if f._sonde else ''})")
+        f.zoomer("engin")
+        f.navigation.aller(25.0)
+        attendre()
+        f.grab().save(str(sortie / "fenetre_vtk_zoom_engin.png"))
+        lignes.append("  fenetre_vtk_zoom_engin.png : t = 25 s, « Cadrer l'engin » en VTK")
+    else:
+        lignes.append(f"  (vue VTK indisponible ici : {f._sonde[1] if f._sonde else '?'})")
+    # Libérer la fenêtre (et sa vue VTK) maintenant, pas au hasard d'un ramasse-miettes plus tard :
+    # un QtInteractor détruit après coup, pendant un import de vtk, fait planter le processus.
+    import gc
+
+    f.close()
+    f.deleteLater()
+    attendre(5)
+    del f
+    gc.collect()
+    a = AssistantCsv(csv=EXEMPLE_DIR / "vol_vent_cdg.csv")
+    a.show()
+    a.next()
+    attendre(10)
+    a.grab().save(str(sortie / "assistant_trajectoire.png"))
+    a.next()
+    a.next()
+    attendre(10)
+    a.grab().save(str(sortie / "assistant_vent_cdg.png"))
+    a.close()
+    lignes += ["  assistant_trajectoire.png, assistant_vent_cdg.png : pages préremplies de l'assistant CSV", "",
+               "À regarder",
+               "  - la maquette glisse autour du CDG (t = 3 s) : le CDG reste sur la trajectoire",
+               "  - repères au CDG : couleurs de la légende, axes nommés, NED vertical vers le bas",
+               "  - flèches de vent qui tournent avec l'altitude ; ascendant visible vers 2 500 m",
+               "  - courbes : curseur à l'instant courant, valeurs de la liste égales aux courbes",
+               "  - VTK : même scène, même repère, image non miroir (Est, Nord, haut direct)"]
+    return lignes
+
+
+JALONS = {"G": controle_g, "J1": controle_j1, "J2": controle_j2, "J3": controle_j3, "J3b": controle_j3b, "J4": controle_j4,
           "J4b": controle_j4b, "J5": controle_j5, "J6": controle_j6}
 
 

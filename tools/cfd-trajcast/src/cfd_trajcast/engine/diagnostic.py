@@ -44,6 +44,7 @@ __all__ = [
     "cause_probable",
     "diagnostiquer",
     "sonder_fenetre",
+    "sonder_interface",
     "sonder_versions",
 ]
 
@@ -79,7 +80,7 @@ _REPERTOIRES_EGL = ("/usr/share/glvnd/egl_vendor.d", "/etc/glvnd/egl_vendor.d")
 class Sonde:
     """Résultat d'un essai.
 
-    ``categorie`` : python, version, extra, systeme, fenetre ou rendu ;
+    ``categorie`` : python, version, extra, systeme, fenetre, rendu ou interface ;
     ``etape`` : dernière étape atteinte par un essai de fenêtre ;
     ``trace`` : erreur complète (fin du stderr) d'un essai raté.
     """
@@ -243,6 +244,45 @@ def _export_pour(nom: str) -> str:
 
 # --- ensemble -----------------------------------------------------------------
 
+def _sous_processus(module: str, prefixe: str, delai: float = 60.0) -> tuple[bool, str]:
+    """Lance ``python -m module`` ; (réussi, ligne de résultat ou erreur)."""
+    try:
+        r = subprocess.run([sys.executable, "-m", module], capture_output=True, text=True,
+                           timeout=delai, check=False)
+    except subprocess.TimeoutExpired:
+        return False, f"pas de réponse en {delai:.0f} s"
+    ligne = next((x[len(prefixe):].strip() for x in r.stdout.splitlines() if x.startswith(prefixe)), "")
+    if r.returncode == 0:
+        return True, ligne
+    erreur = next((x.strip() for x in reversed(r.stderr.splitlines())
+                   if x.strip() and "XDG_SESSION_TYPE" not in x and "vblank_mode" not in x), "")
+    raison = ligne or (_raison_code(r.returncode))
+    return False, f"{raison} : {erreur[-180:]}" if erreur else raison
+
+
+def sonder_interface() -> list[Sonde]:
+    """L'interface (extra [gui]) : bibliothèques, fenêtre Qt, vue VTK interactive.
+
+    Facultative : ces sondes ne changent pas le code de sortie du diagnostic.
+    """
+    sondes = []
+    for dist in ("PyQt5", "pyvistaqt"):
+        v = _version_installee(dist)
+        sondes.append(Sonde(dist, v is not None, v or "absent : pip install 'cfd-trajcast[gui]'", "interface"))
+    if not sondes[0].ok:
+        return sondes
+    ok, detail = _sous_processus("cfd_trajcast.gui.sonde_qt", "SONDE_QT:")
+    if not ok and "xcb" in detail:
+        detail += " — bibliothèques système du greffon xcb (libxcb-xinerama0, libxkbcommon-x11-0…)"
+    sondes.append(Sonde("fenêtre Qt", ok, detail, "interface"))
+    if ok and sondes[1].ok:
+        ok_vtk, detail_vtk = _sous_processus("cfd_trajcast.gui.sonde_vtk", "SONDE_VTK:")
+        if not ok_vtk:
+            detail_vtk += " — l'interface reste utilisable avec la vue Matplotlib"
+        sondes.append(Sonde("vue VTK interactive", ok_vtk, detail_vtk, "interface"))
+    return sondes
+
+
 def cause_probable(sondes: Sequence[Sonde]) -> str | None:
     """Ce qu'il faut corriger en premier quand aucune fenêtre ne marche (sinon ``None``)."""
     fenetres = [s for s in sondes if s.categorie == "fenetre"]
@@ -290,4 +330,4 @@ def diagnostiquer() -> list[Sonde]:
     sondes.append(Sonde("DISPLAY", bool(os.environ.get("DISPLAY")),
                         os.environ.get("DISPLAY", "non défini"), "systeme"))
     fenetres = [sonder_fenetre(nom, env) for nom, env in FENETRES.items()]
-    return sondes + fenetres + [sonder_rendu(fenetres)]
+    return sondes + fenetres + [sonder_rendu(fenetres)] + sonder_interface()

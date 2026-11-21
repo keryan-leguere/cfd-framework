@@ -24,19 +24,26 @@ AUTORISE: dict[str, frozenset[str]] = {
     "data": frozenset({"core"}),
     "engine": frozenset({"core", "data"}),
     "report": frozenset({"core", "data", "engine"}),
-    "cli": frozenset({"core", "data", "engine", "report"}),
+    "gui": frozenset({"core", "data", "engine", "report"}),
+    "cli": frozenset({"core", "data", "engine", "report", "gui"}),
 }
 #: core ne connaît que NumPy.
 PERMISES_DANS_CORE = {"numpy", "math", "dataclasses", "__future__", "collections", "typing", "functools"}
+#: Les modules de l'interface : seuls à importer Qt.
+_GUI = {p.relative_to(SOURCE).as_posix() for p in (SOURCE / "gui").glob("*.py")}
 #: Bibliothèque → seuls modules (relatifs à SOURCE) autorisés à l'importer.
 CONFINEES = {
-    "pyvista": {"engine/rendu/pyvista_.py"},
-    "vtk": {"engine/rendu/pyvista_.py"},
-    "vtkmodules": {"engine/rendu/pyvista_.py"},
+    "PyQt5": _GUI,
+    "qtpy": _GUI,
+    "pyvistaqt": {"engine/rendu/pyvista_interactif.py", "gui/sonde_vtk.py"},
+    "pyvista": {"engine/rendu/pyvista_.py", "engine/rendu/pyvista_interactif.py", "gui/sonde_vtk.py"},
+    "vtk": {"engine/rendu/pyvista_.py", "engine/rendu/pyvista_interactif.py"},
+    "vtkmodules": {"engine/rendu/pyvista_.py", "engine/rendu/pyvista_interactif.py"},
     "bpy": {"engine/rendu/blender.py"},
     "mathutils": {"engine/rendu/blender.py"},
-    "matplotlib": {"engine/telemetrie.py", "engine/figure_ensemble.py"},
-    "mpl_toolkits": {"engine/figure_ensemble.py"},
+    "matplotlib": {"engine/telemetrie.py", "engine/figure_ensemble.py", "engine/vue3d_mpl.py",
+                   "engine/courbes.py", "gui/canevas.py"},
+    "mpl_toolkits": {"engine/figure_ensemble.py", "engine/vue3d_mpl.py"},
     "cfd_plot": {"engine/figure_ensemble.py"},
     "cascadio": {"data/maquette.py"},
     "trimesh": {"data/maquette.py"},

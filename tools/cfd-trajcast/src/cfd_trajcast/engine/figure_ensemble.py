@@ -60,9 +60,16 @@ __all__ = [
     "AnimationEnsemble",
     "ErreurFigure",
     "FigureEnsemble",
+    "SceneEnsemble",
     "animation_ensemble",
+    "axes_ensemble",
     "cfd_plot_disponible",
+    "decor_ensemble",
+    "en_trace",
     "figure_ensemble",
+    "marqueurs_ensemble",
+    "nombre_fr",
+    "ombrer",
 ]
 
 Tableau = NDArray[np.float64]
@@ -190,6 +197,10 @@ class _Scene:
 
     def position(self, t: float | Tableau) -> Tableau:
         return _trace(ned_ensemble(self.traj.etat(np.atleast_1d(np.asarray(t, dtype=float)))[0], self.origine))
+
+    def vers_trace(self, points_enu: Tableau) -> Tableau:
+        """Points ENU → coordonnées tracées (x = Est, y = Nord, z = Bas, origine du repère)."""
+        return _trace(ned_ensemble(points_enu, self.origine))
 
     def fusee(self, t: float) -> tuple[Tableau, Tableau]:
         """Triangles (n, 3, 3) en coordonnées tracées, et leur gris (n,) ombré."""
@@ -355,7 +366,8 @@ def figure_ensemble(
     du vol). ``legende`` : encadré des éléments et des événements, à droite de la boîte.
     """
     cp = _cfd_plot()
-    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
 
     if projection not in PROJECTIONS:
         raise ErreurFigure(f"projection : {', '.join(PROJECTIONS)}")
@@ -371,7 +383,10 @@ def figure_ensemble(
         instants = scene.espacer(instants)
 
     with cp.style_context("paper"):
-        fig = plt.figure(figsize=(6.0, 6.0))
+        # Figure + canevas Agg, jamais pyplot : pyplot choisirait le backend Qt dès que PyQt5 est
+        # installé (interface) et chargerait Qt sans en avoir besoin (cf. gui/_qt.py).
+        fig = Figure(figsize=(6.0, 6.0))
+        FigureCanvasAgg(fig)
         fig.set_layout_engine("none")
         ax = _axes(cp, fig, scene, (0.0, 0.0, 1.0, 1.0), projection)
         trace_sol = _decor(ax, scene)
@@ -420,7 +435,6 @@ def figure_ensemble(
                 fig.savefig(sortie, format=fmt, dpi=DPI_PNG, bbox_inches=emprise)
                 fichiers.append(sortie)
         taille = (emprise.width / _CM, emprise.height / _CM)
-        plt.close(fig)
     return FigureEnsemble(
         fichiers=tuple(fichiers), poses=instants, echelle=scene.echelle, repere=params.repere,
         projection=projection, legende=_legende_proposee(scene, instants, projection),
@@ -452,7 +466,8 @@ def animation_ensemble(
     donne l'instant, l'altitude et la vitesse.
     """
     cp = _cfd_plot()
-    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
     from matplotlib.lines import Line2D
 
     t_vol = np.asarray(instants, dtype=float)
@@ -466,7 +481,8 @@ def animation_ensemble(
     chemin = Path(chemin)
 
     with cp.style_context("paper"):
-        fig = plt.figure(figsize=(largeur_px / dpi, hauteur_px / dpi), dpi=dpi)
+        fig = Figure(figsize=(largeur_px / dpi, hauteur_px / dpi), dpi=dpi)
+        FigureCanvasAgg(fig)
         fig.set_layout_engine("none")
         ax = _axes(cp, fig, scene, (0.0, 0.07, 0.66, 0.90), "ortho", ecart_titre_bas=44.0)
         cp.fit_box3d(ax, fill=0.80)  # taille imposée : seul le zoom s'ajuste
@@ -525,10 +541,28 @@ def animation_ensemble(
                 anim.capture()
                 if progression is not None:
                     progression(k + 1, len(t_vol))
-        plt.close(fig)
     resultat = anim.result
     assert resultat is not None
     return AnimationEnsemble(
         chemin=resultat.paths[0], images=resultat.n_frames, ips=fps, duree=resultat.duration_s,
         taille=resultat.size_px, encodeur=resultat.backend, repere=params.repere,
     )
+
+
+def ombrer(triangles_trace: Tableau) -> Tableau:
+    """Couleurs RGBA ``(n, 4)`` des triangles (coordonnées tracées) : Lambert à deux faces, en gris."""
+    tri = np.asarray(triangles_trace, dtype=float)[..., [1, 0, 2]]  # retour en NED pour la lumière
+    normales = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    n = np.linalg.norm(normales, axis=1)
+    normales = normales / np.where(n > 0, n, 1.0)[:, None]
+    gris = 0.30 + 0.55 * np.abs(normales @ _LUMIERE) ** 1.2
+    return np.column_stack([gris, gris, gris * 1.04, np.ones_like(gris)]).clip(0, 1)
+
+
+# Noms publics des briques de la scène, pour la vue interactive (engine/vue3d_mpl.py).
+SceneEnsemble = _Scene
+axes_ensemble = _axes
+decor_ensemble = _decor
+marqueurs_ensemble = _marqueurs
+en_trace = _trace
+nombre_fr = _nombre

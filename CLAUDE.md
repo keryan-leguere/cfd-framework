@@ -289,7 +289,9 @@ not part of the Bash framework's runtime:
   `cfd_plot.axes3d` module (`true_proportions`, `tidy_axes3d` — no minor ticks, white panes, ticks
   ∝ side length — and `fit_box3d`/`bbox3d`, because Matplotlib draws any 3-D box in a *square* and
   `bbox_inches="tight"` returns that whole square; `bbox3d` skips labels of out-of-view ticks, which
-  3-D leaves at astronomical positions) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
+  3-D leaves at astronomical positions, measures each `Text3D` at its *projected* position — outside
+  `draw` it holds its data x, y as its 2-D position, metres read as pixels — and skips those
+  `axlim_clip` hides) and a `cfd_plot.pdf` one (multipage reports, contact sheets; clickable outline needs the
   optional `pypdf`). `batch_plot` also takes `clean=` (wipe the generated tree first —
   `cfd_plot.cleanup`, which refuses `/`, `$HOME`, a top-level dir and a repo root) and `fold=`
   (bonus sheets gathering siblings: `FoldSpec(kind="y")` puts every Y of one condition on one
@@ -884,6 +886,35 @@ not part of the Bash framework's runtime:
       origin to the start point (Bas = 0 at departure, N/E untouched), axes stay classic NED
       ("Bas local (m)"). `core/camera.origine_ensemble` / `ned_ensemble` /
       `boite_ensemble(origine=)`; honoured by PyVista, the SVG schema and the figure.
+    - **Interactive GUI** (`cfd-trajcast gui [CONFIG]`, `00_DOC/09_INTERFACE.md`, milestones G0–G6,
+      control `02_CONTROLE/generer_controle.py --jalon G`): PyQt5 (wheel; PyQt4 is impossible on
+      Python 3.9), extra `[gui]` = PyQt5 + pyvistaqt (+ local cfd-plot). New layer `gui/` (same level as
+      `cli`, the only one importing PyQt5/qtpy; `cli` may import it, lazily). All logic is Qt-free and
+      tested headless: `core/reperes_locaux.py` (FRD, NED local, aero frame with α = atan2(w,u),
+      β = asin(v/V) from v_air = v_ground − wind, kinematic frame), `data/vent.py` + `data/cdg.py`
+      (YAML sections `vent` — `vz: haut|bas` **mandatory**, `sens: vers|depuis` — and `cdg` — 1 column
+      along the axis or 3 in CAD axes, `reference: nez|culot|origine`), `engine/etat_vol.py`
+      (`EtatVol`: every CSV column + computed series; a CSV column named like a computed one gets
+      the key `"<nom> (fichier)"`; trajectory positions **are** the CDG: vertices placed by
+      `pos + R·e·(s − cdg)`), `engine/vue3d_mpl.py` (`VueMpl`, any `Figure`), `engine/courbes.py`,
+      `engine/rendu/pyvista_interactif.py` (`VueVtk`, double-click to seek). **Zoom** (`zoomer`,
+      `cadrer_engin`, `vue_entiere`, `suivre_engin`, same contract on both views): in Matplotlib it
+      narrows the axis *limits* — longest side first, so a near-vertical flight seen up close gets a
+      cubic box (refit via `fit_box3d`, cached per box shape) — keeping one scale on all axes; the wheel zooms
+      toward the flight point under the cursor and one least-squares step keeps it there exactly
+      (ortho is linear); Matplotlib's own right-drag zoom is disabled (it can stretch one axis);
+      overflow is clipped with `axlim_clip` on Matplotlib ≥ 3.10 only, the ground polygon by hand. Hard-won traps:
+      (1) an OpenFOAM `LD_LIBRARY_PATH` makes the loader mix system Qt with the wheel's Qt
+      (abort) → `gui/_qt.preparer_qt()` preloads the wheel's Qt libs with RTLD_GLOBAL before any
+      PyQt5 import; (2) with PyQt5 installed, **pyplot picks the Qt backend by itself** and
+      loaded Qt into figure/video commands → `engine` never uses pyplot (`Figure` +
+      `FigureCanvasAgg`), the CLI sets `MPLBACKEND=Agg` except for `gui`, `tests/conftest.py`
+      too; (3) VTK in Qt under XWayland ran at 2 fps until `vblank_mode=0`. VTK is only offered
+      after a subprocess probe (`python -m cfd_trajcast.gui.sonde_vtk`; broken OpenGL kills the
+      process), video export runs in a subprocess (`gui/tache_video.py` via QProcess, cancel =
+      kill). Qt tests run `offscreen` with QSettings redirected (NativeFormat too — otherwise
+      they write to the user's `~/.config`; asserted). mypy: three PyQt5-stub error codes are
+      disabled for `cfd_trajcast.gui.*` only.
     - J0 findings that bind later milestones: OSMesa is **not** in the VTK wheel (crashes) → EGL,
       then EGL llvmpipe, then xvfb (without `DISPLAY` the engine sets
       `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` itself — `WAYLAND_DISPLAY` must not count,

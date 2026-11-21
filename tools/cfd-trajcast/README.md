@@ -65,6 +65,9 @@ Sont supposés **déjà installés** : `numpy`, `pandas`, `matplotlib`, `pillow`
    python3 -m pip check
    ```
 
+   Interface (`cfd-trajcast gui`) : `python3 -m pip install --no-index --find-links WHEELS_PY39
+   PyQt5 pyvistaqt` et `python3 -m pip install tools/cfd-plot` (`00_DOC/09_INTERFACE.md`).
+
 3. Lanceur en `#!/usr/bin/env python3` et complétion bash (pour tous les paquets de
    `tools/`) : `python3 tools/installation/installer_lanceurs.py`, à relancer après
    chaque `pip install`.
@@ -106,7 +109,8 @@ du NED classique (`00_DOC/08_FIGURE_ET_ANIMATION.md`).
 ## En ligne de commande
 
 ```bash
-cfd-trajcast diagnostic         # rendu hors écran possible ? ffmpeg ? extras ?
+cfd-trajcast diagnostic         # rendu hors écran possible ? ffmpeg ? extras ? interface ?
+cfd-trajcast gui CONFIG_GUI.yaml   # interface : naviguer dans le vol, télémétrie, repères, vent
 cfd-trajcast exemple ex/        # AIM-9 + vol de référence analytique
 cd ex && cfd-trajcast check CONFIG.yaml
 cfd-trajcast rendre CONFIG.yaml --apercu
@@ -143,6 +147,7 @@ nez/vitesse, à demander seulement si la trajectoire contient une montée.
 | `00_DOC/06_ROCKETPY_ET_PERFORMANCE.md` | RocketPy, cache, rendu parallèle et débit |
 | `00_DOC/07_4K_NUIT_BLENDER.md` | 4K, préréglage nuit (étoiles, lueur, lumière des jets), moteur Blender |
 | `00_DOC/08_FIGURE_ET_ANIMATION.md` | vue d'ensemble : figure paper, animation sans rendu 3D, repère NED local |
+| `00_DOC/09_INTERFACE.md` | interface interactive (`cfd-trajcast gui`) : vent, CDG, repères, exports, installation |
 | `00_DOC/04_RENDU_HORS_ECRAN.md` | bilan du jalon J0 : rendu sans écran, mesures |
 | `02_CONTROLE/README.md` | contrôle qualitatif de chaque jalon |
 

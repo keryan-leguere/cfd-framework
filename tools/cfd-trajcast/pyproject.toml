@@ -32,6 +32,9 @@ step = ["cascadio>=0.1"]
 rocketpy = ["rocketpy>=1.2; python_version >= '3.10'"]   # RocketPy exige Python ≥ 3.10
 # Moteur Blender : une roue bpy par version de Python (bpy 5.x : 3.13 exactement).
 blender = ["bpy>=5.0; python_version == '3.13'"]
+# Interface interactive (cfd-trajcast gui) : Qt 5 en roue (Qt embarqué), vue VTK dans Qt.
+# Demande aussi cfd-plot, qui n'est pas sur PyPI : pip install tools/cfd-plot du dépôt.
+gui = ["PyQt5>=5.15", "pyvistaqt>=0.11"]
 tout = ["cascadio>=0.1", "rocketpy>=1.2; python_version >= '3.10'"]
 dev = [
     "pytest>=8.0",
@@ -83,6 +86,20 @@ warn_unused_configs = true
 module = ["cascadio", "trimesh", "trimesh.*", "imageio_ffmpeg", "rocketpy", "rocketpy.*", "bpy", "bpy.*",
           "mathutils"]
 ignore_missing_imports = true
+
+# pyvistaqt et qtpy n'ont pas de stubs. Ceux de PyQt5 (livrés dans la roue) ignorent les
+# énumérations rangées sur Qt.* (Qt.LeftDockWidgetArea…), typent comme optionnels des retours
+# qui ne le sont jamais (menuBar(), addMenu()) et refusent les propriétés en mots-clés
+# (QAction(..., checkable=True)) : ces trois codes sont coupés dans gui/, et seulement là.
+[[tool.mypy.overrides]]
+module = ["pyvistaqt", "pyvistaqt.*", "qtpy", "qtpy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["cfd_trajcast.gui.*"]
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disable_error_code = ["attr-defined", "union-attr", "call-overload"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

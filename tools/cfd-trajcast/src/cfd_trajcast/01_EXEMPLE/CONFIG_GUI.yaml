@@ -1,0 +1,48 @@
+# Interface interactive : cfd-trajcast gui CONFIG_GUI.yaml
+# Le vol de référence avec un vent (VN, VE, VZ) et un CDG qui avance pendant la combustion.
+# Les sections vent et cdg servent aussi aux autres commandes (télémétrie : incidence,
+# dérapage, vitesse air, xcg), mais seule l'interface dessine repères et flèches.
+etude:
+  titre: "Vol de référence — AIM-9, vent et CDG"
+
+trajectoire:
+  source: csv
+  fichier: vol_vent_cdg.csv
+  repere: ENU                      # positions du CDG : x Est, y Nord, z Haut ; origine à la rampe
+  unites: { temps: s, longueur: m }
+  attitude:
+    type: quaternion
+    colonnes: [qw, qx, qy, qz]
+    ordre: wxyz
+    sens: corps_vers_reference
+    corps: FRD
+  evenements:
+    - { t: 3.744,  nom: "Mach 1" }
+    - { t: 4.0,    nom: "Fin de propulsion" }
+    - { t: 40.565, nom: "Apogée" }
+
+maquette:
+  fichier: MAQUETTE/Aim9.stl
+  unite: mm
+  axe_nez: "-X"
+  axe_haut: "+Z"
+  origine: [19.05, 0, 0]
+  longueur_imposee: 2.87
+
+vent:
+  colonnes: [VN, VE, VZ]           # Nord, Est, vertical
+  vz: haut                         # VZ > 0 : l'air monte (bas : convention NED)
+  sens: vers                       # vitesse de l'air ; depuis : convention météo
+  unite: m/s
+
+cdg:
+  colonnes: [Xcg]                  # une colonne le long de l'axe, ou [Xcg, Ycg, Zcg] en axes CAO
+  unite: m
+  reference: nez                   # nez, culot ou origine (de la maquette)
+  axe: vers_culot                  # Xcg compté depuis le nez vers le culot
+
+vues:
+  ensemble:
+    mode: ensemble
+    elevation: 20
+    repere: ned_local

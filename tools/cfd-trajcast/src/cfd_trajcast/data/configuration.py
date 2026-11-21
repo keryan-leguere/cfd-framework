@@ -27,6 +27,7 @@ from cfd_trajcast.core.camera import (
 )
 from cfd_trajcast.core.disposition import COINS, TELEMETRIE, Disposition, Incrustation, vues_citees
 from cfd_trajcast.core.temps import Ralenti
+from cfd_trajcast.data.cdg import DeclarationCdg
 from cfd_trajcast.data.maquette import DeclarationMaquette, ErreurMaquette
 from cfd_trajcast.data.rocketpy_ import (
     DECLARATION_ROCKETPY,
@@ -40,6 +41,7 @@ from cfd_trajcast.data.trajectoire import (
     Evenement,
     Trajectoire,
 )
+from cfd_trajcast.data.vent import DeclarationVent
 
 __all__ = [
     "CALCULEES",
@@ -503,6 +505,9 @@ class Configuration:
     style: ConfigStyle = ConfigStyle()
     propulsion: ConfigPropulsion | None = None
     moteur: ConfigMoteur = ConfigMoteur()
+    #: Vent (colonnes VN, VE, VZ de la trajectoire) et CDG variable : facultatifs.
+    vent: DeclarationVent | None = None
+    cdg: DeclarationCdg | None = None
     a_venir: tuple[str, ...] = ()
     remarques: tuple[str, ...] = ()
 
@@ -1169,7 +1174,7 @@ def configuration_depuis_dict(d: Mapping[str, Any], base: Path, chemin: Path | N
     racine = _dict(d, "configuration")
     _cles(racine, "configuration",
           {"etude", "trajectoire", "maquette", "video", "vues", "disposition", "sequence",
-           "telemetrie", "montage", "style", "propulsion", "moteur", *SECTIONS_A_VENIR},
+           "telemetrie", "montage", "style", "propulsion", "moteur", "vent", "cdg", *SECTIONS_A_VENIR},
           {"trajectoire", "maquette"})
     etude = _dict(racine.get("etude", {}) or {}, "etude")
     _cles(etude, "etude", {"titre", "sous_titre"})
@@ -1200,6 +1205,8 @@ def configuration_depuis_dict(d: Mapping[str, Any], base: Path, chemin: Path | N
             propulsion=(_propulsion(_dict(racine["propulsion"], "propulsion"))
                         if racine.get("propulsion") else None),
             moteur=_moteur(_dict(racine.get("moteur", {}) or {}, "moteur")),
+            vent=_vent(_dict(racine["vent"], "vent")) if racine.get("vent") else None,
+            cdg=_cdg(_dict(racine["cdg"], "cdg")) if racine.get("cdg") else None,
             a_venir=tuple(s for s in SECTIONS_A_VENIR if s in racine),
             remarques=tuple(remarques),
         )
@@ -1207,6 +1214,16 @@ def configuration_depuis_dict(d: Mapping[str, Any], base: Path, chemin: Path | N
         if isinstance(exc, ErreurConfiguration):
             raise
         raise ErreurConfiguration(str(exc)) from None
+
+
+def _vent(d: Mapping[str, Any]) -> DeclarationVent:
+    _cles(d, "vent", {"colonnes", "vz", "sens", "unite"}, {"colonnes", "vz"})
+    return DeclarationVent.depuis_dict(dict(d))
+
+
+def _cdg(d: Mapping[str, Any]) -> DeclarationCdg:
+    _cles(d, "cdg", {"colonnes", "unite", "reference", "axe"}, {"colonnes"})
+    return DeclarationCdg.depuis_dict(dict(d))
 
 
 def charger_configuration(chemin: str | Path) -> Configuration:

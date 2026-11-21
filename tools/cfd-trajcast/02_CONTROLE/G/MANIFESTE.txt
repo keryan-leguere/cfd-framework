@@ -1,0 +1,21 @@
+Jalon G — interface interactive (cfd-trajcast gui), plateforme Qt « xcb »
+
+  fenetre_t003_0.png : t = 3 s, propulsion : CDG qui avance, corps et NED
+  fenetre_t012_0.png : t = 12 s, les quatre repères et le vent
+  fenetre_t040_6.png : t = 40.565 s, apogée : repères aérodynamique et trajectoire
+  fenetre_dock_vent.png : onglet Vent (hodographe, vent vertical, point courant)
+  export_vue.pdf, export_courbes.pdf : exports de la vue et des courbes
+  fenetre_zoom_engin.png, export_vue_zoom.pdf : t = 25 s, « Cadrer l'engin » (zoom × 3.5), boîte cubique centrée sur le CDG, qui le suit
+  fenetre_vtk.png : même instant, vue VTK (xcb | AMD Radeon Graphics (radeonsi, renoir, ACO, DRM 3.57, 6.8.0-149-generic) | non vide)
+  fenetre_vtk_zoom_engin.png : t = 25 s, « Cadrer l'engin » en VTK
+  assistant_trajectoire.png, assistant_vent_cdg.png : pages préremplies de l'assistant CSV
+
+À regarder
+  - la maquette glisse autour du CDG (t = 3 s) : le CDG reste sur la trajectoire
+  - repères au CDG : couleurs de la légende, axes nommés, NED vertical vers le bas
+  - flèches de vent qui tournent avec l'altitude ; ascendant visible vers 2 500 m
+  - courbes : curseur à l'instant courant, valeurs de la liste égales aux courbes
+  - VTK : même scène, même repère, image non miroir (Est, Nord, haut direct)
+
+Généré le 2026-11-21 10:48 en 11.3 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=':0'
