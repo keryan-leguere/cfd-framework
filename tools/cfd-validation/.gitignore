@@ -10,3 +10,7 @@ SORTIE_INTEGRATION/
 VALIDATION_INTEGRATION/
 # Copie de l’exemple faite par « cfd-validation exemple » (destination par défaut)
 01_EXEMPLE_VALIDATION/
+# Module f2py du projet Fortran d'exemple (python construire.py)
+*.so
+# Pièces des scripts de 01_EXEMPLE/MODELE_AERO/VALIDATION/
+SORTIE/

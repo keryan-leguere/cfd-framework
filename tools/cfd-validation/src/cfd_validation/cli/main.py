@@ -166,7 +166,7 @@ def _exemple(args: argparse.Namespace, sortie: _Sortie) -> int:
     dest: Path = args.dest
     if dest.exists():
         _echec(sortie, f"{dest} existe déjà", indice="Choisissez un autre dossier : rien n'est écrasé.")
-    shutil.copytree(EXEMPLE_DIR, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(EXEMPLE_DIR, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.so", "SORTIE", "SORTIE_INTEGRATION"))
     sortie.out.print(f"Exemple recopié dans [cyan]{dest}[/]. Pour le lancer :\n\n    cd {dest} && bash RUN_EXEMPLE.sh\n")
     return EXIT_OK
 

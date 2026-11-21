@@ -56,6 +56,29 @@ Sans colonne d'entrée (`entrees` omis, ou `--sorties` seul en ligne de
 commande), les lignes sont appariées dans l'ordre, la i-ème contre la i-ème,
 sans vérification ni attribution des échecs.
 
+## Test de lecture de table
+
+Le code, appelé sur chaque nœud de chaque table (1D à 5D), rend-il la valeur
+de la table ? La valeur lue est prise par une **sonde** placée dans le code
+juste après la lecture ; la table de référence est celle que le code contient.
+
+```python
+from cfd_validation import TableReference, valider_lecture_tables
+
+res = valider_lecture_tables(
+    [TableReference("CX", modele.lire("aertab.tcx"),
+                    {"mach": modele.lire("aertab.tmach"), "alpha": modele.lire("aertab.talpha")},
+                    sonde="valid_tab_cx")],
+    evaluer=modele.calculer_df,             # DataFrame d'entrées → DataFrame avec les sondes
+    defauts={"mach": 0.8, "alpha": 0.0, ...},
+    combinaisons={"beta": [-5, 0, 5]},      # option : la lecture n'en dépend pas
+    sortie="LECTURE_TABLES",
+)
+```
+
+Exemple complet sur un code Fortran encapsulé par f2py :
+`src/cfd_validation/01_EXEMPLE/MODELE_AERO/` (`VALIDATION/01_LECTURE_TABLES/`, tous les tests par `bash VALIDATION/RUN_VALIDATION.sh`).
+
 ## Documentation
 
 - `00_DOC/01_PRINCIPE.md` : vérification et validation, oracles, et ce que
@@ -63,7 +86,10 @@ sans vérification ni attribution des échecs.
   NASA-STD-7009A, IEEE 29119-3) ;
 - `00_DOC/02_TEST_INTEGRATION.md` : appariement, critère, mesures,
   attribution, pièces, lecture des figures ;
-- `src/cfd_validation/01_EXEMPLE/` : l'exemple exécutable (`bash RUN_EXEMPLE.sh`).
+- `00_DOC/03_LECTURE_TABLES.md` : sondes, déclaration d'une table,
+  orientation, inversion, combinaisons, pièces, lecture de la figure ;
+- `src/cfd_validation/01_EXEMPLE/` : l'exemple exécutable (`bash RUN_EXEMPLE.sh`),
+  et `MODELE_AERO/`, un code Fortran 77 encapsulé par f2py et sa validation.
 
 ## Architecture
 

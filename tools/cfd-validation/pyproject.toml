@@ -23,6 +23,9 @@ dependencies = [
 #   pip install -e ../cfd-plot
 # Sans lui, rapport terminal, journal, CSV et JSON sont produits quand même.
 figures = ["matplotlib>=3.5"]
+# Encapsulation f2py du modèle Fortran d'exemple (01_EXEMPLE/MODELE_AERO/PYTHON) :
+# numpy.f2py passe par meson + ninja (le backend distutils n'existe plus en 3.12).
+f2py = ["meson", "ninja"]
 # Lecture des fichiers Parquet/Feather par la commande ``cfd-validation integration``.
 parquet = ["pyarrow"]
 dev = [
@@ -42,7 +45,16 @@ cfd-validation = "cfd_validation.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cfd_validation = ["01_EXEMPLE/*.py", "01_EXEMPLE/*.md", "01_EXEMPLE/*.sh", "01_EXEMPLE/*.yaml"]
+cfd_validation = [
+    "01_EXEMPLE/*.py", "01_EXEMPLE/*.md", "01_EXEMPLE/*.sh", "01_EXEMPLE/*.yaml",
+    # Projet Fortran d'exemple : sources, doc, encapsulation — jamais le module compilé (*.so)
+    "01_EXEMPLE/MODELE_AERO/*.md", "01_EXEMPLE/MODELE_AERO/SOURCES/*",
+    "01_EXEMPLE/MODELE_AERO/DOC/*", "01_EXEMPLE/MODELE_AERO/PYTHON/*.py",
+    "01_EXEMPLE/MODELE_AERO/PYTHON/*.md", "01_EXEMPLE/MODELE_AERO/PYTHON/*.sh", "01_EXEMPLE/MODELE_AERO/OUTILS/*.py",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION/*.md",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION/*.sh",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION/*/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION/*/*.md",
+]
 
 [tool.ruff]
 target-version = "py39"

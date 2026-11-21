@@ -43,3 +43,13 @@ Fichiers :
 Les pièces sont écrites dans `SORTIE_INTEGRATION/<scénario>/` : `integration.log`
 (le rapport complet), `resume.json`, `lignes.csv`, `ecarts.csv` et `FIGURES/`.
 Les tables factices sont dans `SORTIE_INTEGRATION/DONNEES/`.
+
+## Un vrai code Fortran : `MODELE_AERO/`
+
+Les scripts ci-dessus simulent le code en Python. `MODELE_AERO/` est un projet
+Fortran 77 complet : `SOURCES/` (tables carrées en dur dans un `BLOCK DATA`,
+initialisation puis calcul par deux `ENTRY` balisées `Cf2py`), `DOC/`, et
+`PYTHON/`, l'encapsulation f2py — `bash construire.sh` produit le module,
+`ModeleAero().calculer_df(df)` rend le DataFrame augmenté des six
+coefficients — et `VALIDATION/`, le test de lecture de table qui passe par
+elle (`bash RUN_VALIDATION.sh`, un récapitulatif à la fin). Voir `MODELE_AERO/README.md`.

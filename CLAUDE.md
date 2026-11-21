@@ -581,7 +581,7 @@ not part of the Bash framework's runtime:
   NASA-STD-7009A / IEEE 29119-3; `00_DOC/01_PRINCIPE.md` maps each requirement to the piece that
   answers it (section numbers only where certain — DO-178C §11.13–11.16). Layers `core` (NumPy
   only) → `data` → `engine` → `report` → `cli`, AST-enforced (`tests/test_architecture.py`);
-  `integration.py` is the façade outside the layers. mypy strict. First control:
+  `integration.py` is the façade outside the layers. mypy strict. First control (second one below: table reading):
     - **Integration test** — `valider_integration(reference, test, entrees=, sorties=, …)` /
       `cfd-validation integration REF TEST --config X.yaml` (exit 0 conform, 1 input error,
       2 non-conform). Rows are paired **on input values** by default (order may differ;
@@ -614,6 +614,67 @@ not part of the Bash framework's runtime:
       (10 inputs × 15 outputs incl. CN/Cn and CM/Cm, 3 000 cases, regression tied to
       `braquage_profondeur ≥ 15`), `INTEGRATION.yaml`,
       `RUN_EXEMPLE.sh` (uses `python -m cfd_validation`).
+    - **Table-reading test** (second control) — `valider_lecture_tables(tables, evaluer, defauts,
+      combinaisons=…, sortie=…)` (`00_DOC/03_LECTURE_TABLES.md`): calls the code on every node of
+      every table (1D…5D) and compares the value it read — a **probe** written in the Fortran right
+      after each table lookup — to the table itself (the oracle, read from the COMMON the BLOCK DATA
+      fills, never a separate copy). `TableReference(nom, valeurs, axes={col: grille}, sonde,
+      vers_entrees=, fixes=, rtol/atol/justification)`; default criterion bit-for-bit (weights are
+      exactly 0/1 on a node), declared tolerances flagged as such. **Orientation = declaration order**
+      (axes in Fortran index order, shape checked, a permutation suggested on mismatch — a *square*
+      table cannot be checked by shape, the values reveal a transposition). Nodes walked in Fortran
+      memory order (first index fastest = `DATA` order). Point built as `defauts` → `fixes` → table
+      columns (directly when named like an input, else `vers_entrees(df_axes) -> {input: values}`,
+      the inverse relation; an axis that is not an input without it is refused). `combinaisons`:
+      every node replayed for the product of the values of inputs the table neither drives nor
+      fixes (combination 0 = defaults); `BilanTable.dependances()` names the input whose failure rate varies across its values (over the full product, combination 0 excluded — a default outside the combined values would otherwise get a rate of its own), else "lecture fausse". Proven on the real compiled code with 3 injected Fortran faults (wrong grid for CY; CX probe after the propulsion increment — passes at defaults, caught only by combinations as « dépend de ipropu »; DM/DN swapped at the 5D call). A NaN probe = NON_FINI.
+      Layers: `core/noeuds.py`, `data/tables.py`, `engine/lecture_tables.py`,
+      `report/lecture_tables.py` (coordinates of a failing point in **one** column so 5D fits 80
+      cols; one justification footnote per distinct tolerance), `report/figures_tables.py` (one
+      panel per table, 6/page: x = node rank, y = value, blue dots = table, vermilion crosses = code
+      for all combinations, ring = out of tolerance, triangle = probe not reached, thin lines at
+      changes of the slowest axis; crosses always on top and smaller than the dots so each keeps a blue
+      rim — user request: the crosses must stay visible on dense tables —, only distinct (node, value)
+      pairs drawn, > 2000 markers rasterized; **SVG only** by default, `FORMATS_TABLES`, user request),
+      façade `lecture_tables.py`. Pieces: `TABLES/`, `RESULTATS/` (`valeur_TAB`, `valeur_CODE`,
+      `ecart`, `ulp`, `marge`, `statut`, `conforme`, `%.17g`), `FIGURES/`, `resume.json`,
+      `lecture_tables.log` (SHA-256 of the others). Tests: `tests/test_lecture_tables.py` (fake
+      Python "code", no compiler, incl. 5D).
+    - **`01_EXEMPLE/MODELE_AERO/`** — a real Fortran 77 code wrapped for Python, the bench
+      the validation runs on (package data, explicit globs in `pyproject.toml`; the built `*.so`
+      and `VALIDATION/SORTIE/` are never shipped nor copied by `cfd-validation exemple`).
+      `SOURCES/`: `aero_dim.inc` (COMMON /AERTAB/ — six square 7×7 tables + 1D propulsion ΔCX(Mach)
+      on a deliberately narrower grid — and /AERTB5/ — 5D ΔCm of control surfaces in polar angles,
+      `TDCMG(Mach, alphaT, phiA, DM, DN)`, 5⁵ nodes, independent of phiA at alphaT = 0 since atan2
+      returns 0 there), `aero_probe.inc` (COMMON /PROBE/ `VALID_TAB_<TABLE>`, hard-coded Fortran by
+      user decision, always active), `aero_tables.f` (BLOCK DATA, **generated** by
+      `OUTILS/generer_tables.py`, `--verifier` = drift check), `aero_interp.f` (bilinear and 32-corner
+      `INTE5D`, weights written `(1−T)`/`T` so nodes come back bit-exact; saturation → IERR 2),
+      `aero_modele.f` (`SUBROUTINE AERO` with `ENTRY AERINI(XREF,YREF,ZREF,LREF,IERR)` — the init
+      carries the user's constants, kept in SAVE — and `ENTRY AERCAL(MACH…IPROPU, DM, DN, CX…CN,
+      IERR)`; alphaT/phiA computed from α, β; each table value copied to its probe *before*
+      propulsion/control/transport; `Cf2py intent(in/out)` lines right after each ENTRY). Sources
+      must stay **ASCII** (f2py fails on one accent). User decisions: no Makefile, no Fortran
+      tests — verification goes through Python. `PYTHON/`: `construire.sh` (plain bash, user request — `bash construire.sh [NOM [DOSSIER]]`,
+      `FFLAGS`/`FC` env; one `python -m numpy.f2py -c --backend meson` call in a temp dir, needs
+      meson+ninja = extra `[f2py]`, the interpreter's bin dir prepended to PATH; refuses non-ASCII
+      sources; a module's name is baked into the binary, so two builds to compare get two names and
+      load side by side with separate Fortran state), `modele_f2py.py` (`ModeleF2py`, generic: argument names parsed from each phase's f2py
+      `__doc__` → attributes → `phase(**args)`; `calculer_df` columns = init then calc args, init
+      columns optional with re-init on change; `SONDES` = COMMON blocks reset to NaN before each call
+      and returned as columns; `lire("bloc.var")` copies any COMMON variable; Fortran SAVE state is
+      process-global, so each object re-inits when the library's last init is not its own),
+      `modele_aero.py` (`ModeleAero`, 5 class attributes). `VALIDATION/` holds **one directory per
+      test** (user request) + `RUN_VALIDATION.sh` (explicit `TESTS=(dir|script|options)` list; script
+      contract: accepts `--sortie DIR`, writes `resume.json`, exits 0/2; extra options forwarded;
+      outputs in `VALIDATION/SORTIE/`) + `recapituler.py` (stdlib; `SORTIE/RECAP.txt`, one line per
+      test, % of conforming values never rounded up to 100, « TOUT EST À 100 % »; exit 0/1).
+      `01_LECTURE_TABLES/01_lecture_tables.py`: the 8
+      tables declared from the COMMON, DCXP with `fixes={"ipropu": 1}`, DCMG with the polar inverse
+      and a justified `rtol=1e-12` (round trip lands within ~13 ULP); `--combinaisons`, `--defaut`
+      (one CM value falsified → exit 2). Tests in `tests/test_modele_aero.py` (build into tmp at -O0
+      and -O3 -ffast-math; probes, `lire`, and the three script scenarios; skipped without
+      gfortran/meson/ninja).
 - **`tools/cfd-doe/`** — CFD design of experiments. Phase 1 (done): reduce the input domain
   (`alpha, beta, DL, DM, DN`, degrees) to the **sub-domains actually worth computing**, from the
   trajectory type and the vehicle's symmetries; phase 2 (done): fill them — `cfd-doe remplir`. CLI `cfd-doe domaine ETUDE.yaml | --traj … --sym … --alpha
