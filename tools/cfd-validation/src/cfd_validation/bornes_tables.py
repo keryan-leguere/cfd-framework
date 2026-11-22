@@ -6,7 +6,7 @@
         [TableReference("CX", modele.lire("aertab.tcx"),
                         {"mach": modele.lire("aertab.tmach"), "alpha": modele.lire("aertab.talpha")},
                         sonde="valid_tab_cx", bornes={"mach": "sature", "alpha": "extrapole"})],
-        evaluer=modele.calculer_df,
+        evaluer=modele.calcul_aero_elementaire,
         defauts={"mach": 0.8, "alpha": 0.0, ...},
         sortie="BORNES_TABLES",
     )

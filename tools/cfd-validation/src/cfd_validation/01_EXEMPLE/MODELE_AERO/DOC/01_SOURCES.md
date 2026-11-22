@@ -2,7 +2,7 @@
 
 Un modèle aérodynamique **factice** en Fortran 77, écrit comme les codes qu'on
 reçoit vraiment : tables en dur, `COMMON`, `BLOCK DATA`, un sous-programme à
-deux points d'entrée `ENTRY`. Il sert de banc d'essai à `cfd-validation` ; ses
+trois points d'entrée `ENTRY`. Il sert de banc d'essai à `cfd-validation` ; ses
 valeurs n'ont aucune prétention physique au-delà des signes et des symétries.
 
 ## 1. Ce que fait le modèle
@@ -17,7 +17,11 @@ Les constantes du calcul sont données une fois, à l'initialisation :
 | `XREF, YREF, ZREF`   | point de référence des moments des tables, FRD  | m     |
 | `LREF`               | longueur de référence des moments               | m     |
 
-Puis, à chaque point :
+| Entrée de `AERCFG`   | Sens                                            | Unité |
+|----------------------|-------------------------------------------------|-------|
+| `BIAICX`             | biais additif sur `CX` (0 si `AERCFG` n'est jamais appelée) | – |
+
+Ni l'une ni l'autre n'a de code de retour. Puis, à chaque point :
 
 | Entrée de `AERCAL` | Sens                                     | Unité |
 |--------------|------------------------------------------|-------|
@@ -53,13 +57,14 @@ SOURCES/
 ├── aero_probe.inc   COMMON /PROBE/ : les sondes de validation VALID_TAB_*
 ├── aero_tables.f    BLOCK DATA AERTBD : toutes les valeurs, en dur (généré)
 ├── aero_interp.f    CHERCH, INTE1D, INTE2D, INTE5D : recherche de maille, interpolation
-└── aero_modele.f    SUBROUTINE AERO, ENTRY AERINI, ENTRY AERCAL ; fonction CROISS
+└── aero_modele.f    SUBROUTINE AERO, ENTRY AERINI, AERCFG, AERCAL ; fonction CROISS
 ```
 
 Graphe d'appel :
 
 ```
 AERINI ──► CROISS                       (contrôle des grilles)
+AERCFG                                  (biais sur CX, gardé en SAVE)
 AERCAL ──► INTE2D ──► CHERCH            (6 coefficients, 2 tables chacun en x/y)
        ├─► INTE1D ──► CHERCH            (propulsion, si IPROPU = 1)
        └─► INTE5D ──► CHERCH ×5         (gouvernes, en angles polaires)
@@ -71,15 +76,16 @@ AERCAL ──► INTE2D ──► CHERCH            (6 coefficients, 2 tables ch
 l'incluent tous deux, si bien que le `COMMON` ne peut pas diverger d'une unité
 à l'autre.
 
-## 3. Deux phases, un seul sous-programme
+## 3. Trois phases, un seul sous-programme
 
 ```fortran
-      CALL AERINI(XREF, YREF, ZREF, LREF, IERR)            ! une fois
+      CALL AERINI(XREF, YREF, ZREF, LREF)                  ! une fois
+      CALL AERCFG(BIAICX)                                  ! une fois (facultatif)
       CALL AERCAL(MACH, ALPHA, BETA, XG, YG, ZG, IPROPU, DM, DN,   ! à chaque point
      &            CX, CY, CZ, CL, CM, CN, IERR)
 ```
 
-`AERINI` et `AERCAL` sont deux `ENTRY` de `SUBROUTINE AERO`. Ils partagent les
+`AERINI`, `AERCFG` et `AERCAL` sont trois `ENTRY` de `SUBROUTINE AERO`. Ils partagent les
 variables locales de `AERO`, et ce qui est en `SAVE` survit d'un appel à
 l'autre : c'est ce qui lie les phases.
 
@@ -88,15 +94,22 @@ l'autre : c'est ce qui lie les phases.
   strictement croissantes (`CROISS`) et que `LREF > 0`, garde les constantes en
   `SAVE` (`SXREF`, `SYREF`, `SZREF`, `ULREF = 1/LREF`), puis lève le drapeau
   `INIT`. Un second appel remplace les constantes : c'est ce qui permet de les
-  changer sans toucher aux sources ni recompiler.
+  changer sans toucher aux sources ni recompiler. **Pas de code de retour** :
+  une grille non croissante ou `LREF ≤ 0` laisse `INIT` faux, et c'est
+  `AERCAL` qui le dit (`IERR = 1`).
+- **Configuration (`AERCFG`)** : garde le biais sur `CX` en `SAVE` (`SBIACX`,
+  0 par `DATA` tant qu'elle n'est pas appelée). Indépendante de `AERINI` :
+  une réinitialisation ne remet pas le biais à zéro. Pas de code de retour.
 - **Calcul (`AERCAL`)** : refuse de calculer si `INIT` est faux (`IERR = 1`),
   ou si `IPROPU` n'est ni 0 ni 1 (`IERR = 3`) — les six sorties valent alors 0.
   Sinon, dans l'ordre :
   1. interpolation des six coefficients au point de référence ;
   2. ajout de l'incrément propulsif à `CX` si `IPROPU = 1` ;
-  3. angles polaires (alphaT, phiA) depuis (α, β), lecture de la table des
+  3. ajout du biais de configuration à `CX` (après les sondes : il ne change
+     aucune lecture de table) ;
+  4. angles polaires (alphaT, phiA) depuis (α, β), lecture de la table des
      gouvernes et ajout de son incrément à `CM` ;
-  4. transport des moments au CDG (§ 5).
+  5. transport des moments au CDG (§ 5).
 
   Chaque valeur lue dans une table est recopiée dans sa sonde (§ 8) **avant**
   les étapes qui la transforment.
@@ -213,7 +226,7 @@ Cm(G) = Cm(R) + rz·CX − rx·CZ
 Cn(G) = Cn(R) + rx·CY − ry·CX
 ```
 
-Les forces ne dépendent pas du CDG. L'incrément propulsif est ajouté à `CX`
+Les forces ne dépendent pas du CDG. L'incrément propulsif et le biais sont ajoutés à `CX`
 **avant** le transport : il entre dans `Cm` et `Cn` dès que `ZG` ou `YG` ne
 sont pas nuls.
 
@@ -221,27 +234,27 @@ sont pas nuls.
 
 | `IERR` | Phase    | Sens                                      | Sorties       |
 |--------|----------|-------------------------------------------|---------------|
-| 0      | les deux | nominal                                   | calculés      |
-| 1      | `AERCAL` | appelé avant `AERINI`                     | 0             |
+| 0      | `AERCAL` | nominal                                   | calculés      |
+| 1      | `AERCAL` | non initialisé : `AERINI` pas appelée, ou refusée (grille non strictement croissante, `LREF ≤ 0`) | 0 |
 | 2      | `AERCAL` | point hors d'une table : saturé ou extrapolé selon l'axe | calculés |
 | 3      | `AERCAL` | `IPROPU` ni 0 ni 1                        | 0             |
-| 11     | `AERINI` | grille non strictement croissante         | –             |
-| 12     | `AERINI` | `LREF ≤ 0`                                | –             |
 
 ## 7. Directives f2py
 
-Après chaque `ENTRY`, deux lignes disent à f2py quels arguments sont des
-entrées et lesquels des sorties :
+Après chaque `ENTRY`, une ou deux lignes disent à f2py quels arguments sont
+des entrées et lesquels des sorties ; les phases d'init n'ont que des entrées :
 
 ```fortran
-      ENTRY AERINI(XREF, YREF, ZREF, LREF, IERR)
+      ENTRY AERINI(XREF, YREF, ZREF, LREF)
 Cf2py intent(in) XREF, YREF, ZREF, LREF
-Cf2py intent(out) IERR
+      ...
+      ENTRY AERCFG(BIAICX)
+Cf2py intent(in) BIAICX
 ```
 
 Elles commencent par `C` : pour un compilateur Fortran ce sont des
 commentaires, le code reste compilable tel quel. f2py en tire une fonction
-Python par point d'entrée, `ierr = aerini(xref, yref, zref, lref)` et
+Python par point d'entrée, `aerini(xref, yref, zref, lref)`, `aercfg(biaicx)` et
 `cx, cy, cz, cl, cm, cn, ierr = aercal(mach, …, dm, dn)`, et expose chaque
 `COMMON` comme un attribut : `aerolib.aertab`, `aerolib.aertb5`, `aerolib.probe`. La suite est dans
 `PYTHON/README.md`.

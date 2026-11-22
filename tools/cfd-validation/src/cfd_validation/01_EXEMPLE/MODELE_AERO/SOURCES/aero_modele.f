@@ -1,12 +1,18 @@
 C----------------------------------------------------------------------
-C     AERO_MODELE.F -- modele aerodynamique factice, deux phases
+C     AERO_MODELE.F -- modele aerodynamique factice, trois phases
 C
-C     Une seule unite de programme, deux points d'entree (ENTRY) :
+C     Une seule unite de programme, trois points d'entree (ENTRY) :
 C
-C       CALL AERINI(XREF, YREF, ZREF, LREF, IERR)
+C       CALL AERINI(XREF, YREF, ZREF, LREF)
 C            initialisation : constantes du calcul, controle des tables.
 C            A appeler avant tout calcul ; un rappel remplace les
-C            constantes precedentes.
+C            constantes precedentes. Pas de code de retour : une
+C            initialisation refusee laisse le modele non initialise,
+C            et AERCAL rend alors IERR = 1.
+C
+C       CALL AERCFG(BIAICX)
+C            configuration : biais ajoute a CX (0 tant que AERCFG
+C            n'a pas ete appele). Pas de code de retour.
 C
 C       CALL AERCAL(MACH, ALPHA, BETA, XG, YG, ZG, IPROPU, DM, DN,
 C                   CX, CY, CZ, CL, CM, CN, IERR)
@@ -16,6 +22,9 @@ C     Entrees de AERINI
 C       XREF, YREF, ZREF  point de reference des moments des tables,
 C                         axes corps FRD                         (m)
 C       LREF              longueur de reference des moments       (m)
+C     Entree de AERCFG
+C       BIAICX            biais additif sur CX, applique apres la
+C                         propulsion et avant le transport          (-)
 C     Entrees de AERCAL
 C       MACH        nombre de Mach                              (-)
 C       ALPHA       incidence                                   (deg)
@@ -28,15 +37,12 @@ C       CX, CY, CZ  coefficients de force, axes corps FRD
 C       CL, CM, CN  coefficients de moment au centre de gravite,
 C                   adimensionnes par LREF
 C       IERR        0  calcul nominal
-C                   1  AERCAL appele avant AERINI    (sorties = 0)
+C                   1  modele non initialise : AERINI pas appele,
+C                      ou refuse (grille non strictement croissante,
+C                      LREF <= 0)                    (sorties = 0)
 C                   2  point hors des tables : sorties calculees
 C                      selon la consigne de chaque axe (ci-dessous)
 C                   3  IPROPU ni 0 ni 1               (sorties = 0)
-C     Sortie de AERINI
-C       IERR        0  initialisation faite
-C                   11 grille non strictement croissante
-C                   12 longueur de reference <= 0
-C
 C     Consignes hors grille (aero_interp.f, ISATU / IEXTR) :
 C       Mach, braquages DM et DN, propulsion   saturation au bord
 C       alpha, beta, alphaT                    extrapolation lineaire
@@ -45,12 +51,12 @@ C                                              de [-180, 180] : atan2)
 C     alphaT ne peut pas sortir par le bas (acos >= 0).
 C
 C     Les variables locales en SAVE gardent leur valeur d'un appel a
-C     l'autre : c'est ce qui lie les deux phases.
+C     l'autre : c'est ce qui lie les phases.
 C
 C     Les lignes "Cf2py" sont des commentaires pour un compilateur
 C     Fortran ; f2py les lit pour savoir quels arguments sont des
 C     entrees et lesquels des sorties (fonctions Python rendues :
-C     ierr = aerini(xref, yref, zref, lref)
+C     aerini(xref, yref, zref, lref), aercfg(biaicx),
 C     cx, cy, cz, cl, cm, cn, ierr = aercal(mach, ..., dn)).
 C
 C     Sondes de validation : chaque valeur lue dans une table est
@@ -64,14 +70,14 @@ C----------------------------------------------------------------------
 C
 C     Arguments des points d'entree
       INTEGER IERR, IPROPU
-      DOUBLE PRECISION XREF, YREF, ZREF, LREF
+      DOUBLE PRECISION XREF, YREF, ZREF, LREF, BIAICX
       DOUBLE PRECISION MACH, ALPHA, BETA, XG, YG, ZG, DM, DN
       DOUBLE PRECISION CX, CY, CZ, CL, CM, CN
 C
 C     Etat conserve entre les phases
       LOGICAL INIT
-      DOUBLE PRECISION SXREF, SYREF, SZREF, ULREF
-      SAVE INIT, SXREF, SYREF, SZREF, ULREF
+      DOUBLE PRECISION SXREF, SYREF, SZREF, ULREF, SBIACX
+      SAVE INIT, SXREF, SYREF, SZREF, ULREF, SBIACX
 C
 C     Locales
       INTEGER IS, ISAT
@@ -91,30 +97,24 @@ C
       DATA INIT / .FALSE. /
 C     Consignes de la table des gouvernes : Mach, alphaT, phiA, DM, DN
       DATA IEXG / ISATU, IEXTR, ISATU, ISATU, ISATU /
-      DATA SXREF, SYREF, SZREF, ULREF / 4 * 0.0D0 /
+      DATA SXREF, SYREF, SZREF, ULREF, SBIACX / 5 * 0.0D0 /
 C
 C     Appel direct de AERO : sans objet
-      WRITE (*, '(A)') ' AERO : appeler AERINI puis AERCAL'
+      WRITE (*, '(A)') ' AERO : appeler AERINI, AERCFG puis AERCAL'
       RETURN
 C
 C======================================================================
 C     Phase 1 : initialisation
 C======================================================================
-      ENTRY AERINI(XREF, YREF, ZREF, LREF, IERR)
+      ENTRY AERINI(XREF, YREF, ZREF, LREF)
 Cf2py intent(in) XREF, YREF, ZREF, LREF
-Cf2py intent(out) IERR
 C
       INIT = .FALSE.
-      IERR = 0
-      IF (.NOT. CROISS(TMACH,  NM)) IERR = 11
-      IF (.NOT. CROISS(TALPHA, NA)) IERR = 11
-      IF (.NOT. CROISS(TBETA,  NB)) IERR = 11
-      IF (.NOT. CROISS(TMACHP, NP)) IERR = 11
-      IF (IERR .NE. 0) RETURN
-      IF (LREF .LE. 0.0D0) THEN
-         IERR = 12
-         RETURN
-      END IF
+      IF (.NOT. CROISS(TMACH,  NM)) RETURN
+      IF (.NOT. CROISS(TALPHA, NA)) RETURN
+      IF (.NOT. CROISS(TBETA,  NB)) RETURN
+      IF (.NOT. CROISS(TMACHP, NP)) RETURN
+      IF (LREF .LE. 0.0D0) RETURN
       SXREF = XREF
       SYREF = YREF
       SZREF = ZREF
@@ -123,7 +123,16 @@ C
       RETURN
 C
 C======================================================================
-C     Phase 2 : calcul
+C     Phase 2 : configuration
+C======================================================================
+      ENTRY AERCFG(BIAICX)
+Cf2py intent(in) BIAICX
+C
+      SBIACX = BIAICX
+      RETURN
+C
+C======================================================================
+C     Phase 3 : calcul
 C======================================================================
       ENTRY AERCAL(MACH, ALPHA, BETA, XG, YG, ZG, IPROPU, DM, DN,
      &             CX, CY, CZ, CL, CM, CN, IERR)
@@ -179,7 +188,11 @@ C     2. Propulsion : increment de CX fonction du Mach seul
          ISAT = MAX(ISAT, IS)
       END IF
 C
-C     3. Gouvernes : increment de CM tabule en angles polaires
+C     3. Configuration : biais sur CX (apres la sonde, avant le
+C        transport, qui le voit donc dans CM et CN)
+      CX = CX + SBIACX
+C
+C     4. Gouvernes : increment de CM tabule en angles polaires
 C        cos(alphaT) = cos(alpha) cos(beta)
 C        phiA = atan2(sin(beta), sin(alpha) cos(beta))
 C        (phiA vaut 0 a alphaT = 0, ou il n'est pas defini : la table
@@ -200,7 +213,7 @@ C        doit y etre independante de phiA)
       ISAT = MAX(ISAT, IS)
       CM = CM + DCMG
 C
-C     4. Transport des moments du point de reference au CDG :
+C     5. Transport des moments du point de reference au CDG :
 C        M(G) = M(R) + (R - G) x F, adimensionne par LREF
       RX = (SXREF - XG) * ULREF
       RY = (SYREF - YG) * ULREF

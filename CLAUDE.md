@@ -704,8 +704,12 @@ not part of the Bash framework's runtime:
       per-axis out-of-grid consigne in `CHERCH(…, IEXT, …)` (`ISATU`/`IEXTR` in `aero_dim.inc`;
       user request: mixed behaviour — Mach/DM/DN/propulsion saturate, α/β/alphaT extrapolate,
       IERR 2 either way),
-      `aero_modele.f` (`SUBROUTINE AERO` with `ENTRY AERINI(XREF,YREF,ZREF,LREF,IERR)` — the init
-      carries the user's constants, kept in SAVE — and `ENTRY AERCAL(MACH…IPROPU, DM, DN, CX…CN,
+      `aero_modele.f` (`SUBROUTINE AERO` with `ENTRY AERINI(XREF,YREF,ZREF,LREF)` — the init
+      carries the user's constants, kept in SAVE; **init entries have no return code** (user
+      assumption: a refused init leaves INIT false → AERCAL IERR 1) —, `ENTRY AERCFG(BIAICX)` (bias
+      added to CX after the probes, before moment transport; validation gives it a constant
+      `DEFAUTS["biaicx"] = 0.005`; exercises several init phases, `PHASES_INIT = ("aerini", "aercfg")`,
+      all re-called in order when any of their args changes) and `ENTRY AERCAL(MACH…IPROPU, DM, DN, CX…CN,
       IERR)`; alphaT/phiA computed from α, β; each table value copied to its probe *before*
       propulsion/control/transport; `Cf2py intent(in/out)` lines right after each ENTRY). Sources
       must stay **ASCII** (f2py fails on one accent). User decisions: no Makefile, no Fortran
@@ -716,14 +720,21 @@ not part of the Bash framework's runtime:
       with a `modele` fixture; in-source build refused; `CMakePresets.json` (`defaut`, `o3`);
       `gitignore.exemple` is a template, not active. `PYTHON/`: `construire.sh` (plain bash, user request — `bash construire.sh [NOM [DOSSIER]]`,
       `FFLAGS`/`FC` env; one `python -m numpy.f2py -c --backend meson` call in a temp dir, needs
-      meson+ninja = extra `[f2py]`, the interpreter's bin dir prepended to PATH; refuses non-ASCII
-      sources; a module's name is baked into the binary, so two builds to compare get two names and
-      load side by side with separate Fortran state), `modele_f2py.py` (`ModeleF2py`, generic: argument names parsed from each phase's f2py
-      `__doc__` → attributes → `phase(**args)`; `calculer_df` columns = init then calc args, init
-      columns optional with re-init on change; `SONDES` = COMMON blocks reset to NaN before each call
-      and returned as columns; `lire("bloc.var")` copies any COMMON variable; Fortran SAVE state is
-      process-global, so each object re-inits when the library's last init is not its own),
-      `modele_aero.py` (`ModeleAero`, 5 class attributes). `VALIDATION/` holds **one directory per
+      meson+ninja = extra `[f2py]`, the interpreter's bin dir prepended to PATH; sources are a
+      **directory** (`DOSSIER_SOURCES` + `MOTIFS` `*.f *.F *.for *.f90 *.F90`, user request — every
+      matching file is compiled), `INCLUDES` a list of dirs; refuses non-ASCII sources and includes; a module's name is baked into the binary, so two builds to compare get two names and
+      load side by side with separate Fortran state), `modele_f2py.py` (`ModeleF2py`, generic, **holds no argument value** — user request, no
+      `CONSTANTES`: argument names parsed from each phase's f2py `__doc__`; `calcul_elementaire(df)`
+      needs one column per argument, init args included, and re-calls the init phases only when a
+      row changes their values — last init tracked per library at module level, since Fortran SAVE
+      state is process-global; `calcul_point(**point)`; `SONDES` = COMMON blocks reset to NaN before
+      each call and returned as columns; `lire("bloc.var")` copies any COMMON variable),
+      `modele_aero.py` (`ModeleAero`, the model's overlay, user design: `__init__()` takes no model
+      argument; `calcul_aero_elementaire(df)` = the Fortran args as is — **what validation calls**;
+      `calcul_aero(df)` = standard `PARAMETRES` (CDG in mm body FLU, `propulsion` bool, `xref…lref`
+      optional from `DEFAUTS`) → `vers_elementaire` → elementary → `completer_sorties` (`etat`,
+      `modele`, `version`, `bibliotheque` — where extra output columns go); Fortran-convention
+      columns mixed into standard ones are refused). `VALIDATION/` holds **one directory per
       test** (user request) + `RUN_VALIDATION.sh` (explicit `TESTS=(dir|script|options)` list; script
       contract: accepts `--sortie DIR`, writes `resume.json`, exits 0/2; extra options forwarded;
       outputs in `VALIDATION/SORTIE/`) + `tables_modele.py` (the model's 8 tables declared once —

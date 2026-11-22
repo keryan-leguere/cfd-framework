@@ -39,8 +39,13 @@ from modele_aero import ModeleAero  # noqa: E402
 
 __all__ = ["DEFAUTS", "LIBELLES", "POLAIRES", "PYTHON", "ModeleAero", "charger_modele", "declarer_tables", "metadonnees", "polaire_vers_cartesien"]
 
-#: Valeur de chaque entrée du modèle quand la table ne la pilote pas.
+#: Valeur de chaque argument Fortran (AERINI puis AERCAL) quand la table ne le pilote pas.
+#: Les tests passent par ModeleAero.calcul_aero_elementaire : tous les arguments sont là,
+#: constantes d'init comprises.
 DEFAUTS: dict[str, Any] = {
+    "xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2,  # AERINI : point de référence des moments, longueur
+    "biaicx": 0.005,                                      # AERCFG : biais sur CX, constant ; appliqué après
+                                                          # les sondes, il ne change aucune lecture de table
     "mach": 0.8, "alpha": 0.0, "beta": 0.0,
     "xg": 1.2, "yg": 0.0, "zg": 0.0,          # CDG au point de référence : rien à transporter
     "ipropu": 0, "dm": 0.0, "dn": 0.0,
@@ -157,6 +162,6 @@ def metadonnees(modele: ModeleAero, scenario: str) -> dict[str, str]:
     return {
         "code": "modele_aero (exemple cfd-validation)",
         "module": f"{modele.bibliotheque.__name__} — sha256 {sha}…",
-        "constantes": ", ".join(f"{k}={getattr(modele, k)}" for k in modele.arguments_init),
+        "constantes": ", ".join(f"{k}={DEFAUTS[k]}" for k in modele.arguments_init),
         "scénario": scenario,
     }

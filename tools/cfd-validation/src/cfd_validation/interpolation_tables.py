@@ -3,7 +3,7 @@
     from cfd_validation import Polaires, valider_interpolation_tables
 
     res = valider_interpolation_tables(
-        tables, evaluer=modele.calculer_df, defauts={...},
+        tables, evaluer=modele.calcul_aero_elementaire, defauts={...},
         polaires={"DCMG": Polaires(abscisses=["alphat"], noeuds={"mach": [1.0]})},
         libelles={"alpha": ("α", "°")},
         sortie="INTERPOLATION_TABLES",

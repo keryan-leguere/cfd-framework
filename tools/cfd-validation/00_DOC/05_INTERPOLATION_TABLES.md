@@ -178,7 +178,7 @@ superposée de CM.
 from cfd_validation import Polaires, valider_interpolation_tables
 
 res = valider_interpolation_tables(
-    tables, evaluer=modele.calculer_df, defauts=DEFAUTS,
+    tables, evaluer=modele.calcul_aero_elementaire, defauts=DEFAUTS,
     fractions=(0.25, 0.5, 0.75), centres=True,
     polaires={"DCMG": Polaires(...)}, libelles=LIBELLES, superposer=True, n_jobs=4,
     identifiant="VAL-TAB-03", metadonnees={...}, sortie="INTERPOLATION_TABLES",

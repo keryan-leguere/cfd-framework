@@ -1,21 +1,22 @@
 """Encapsulation générique d'un code Fortran à phases (ENTRY) compilé par f2py.
 
-Rien ici ne connaît le modèle aéro : pour un autre code, on écrit une
-sous-classe de quatre lignes (voir ``modele_aero.py``)::
+Rien ici ne connaît le modèle aéro. Une sous-classe désigne le module et ses
+phases (voir ``modele_aero.py``)::
 
     class MonCode(ModeleF2py):
         BIBLIOTHEQUE = "moncode"            # module produit par construire.sh
-        PHASES_INIT = ("monini",)           # appelées dans l'ordre, à l'init
+        PHASES_INIT = ("monini", "moncfg")  # appelées dans l'ordre, avant le calcul (sans code de retour)
         PHASE_CALCUL = "moncal"             # appelée à chaque point
-        CONSTANTES = {"lref": 0.2}          # valeurs par défaut des args d'init
+
+et ajoute par-dessus ce qui est propre au code (conversions, sorties en plus).
 
 Les noms d'arguments ne sont écrits nulle part : ils sont lus dans la
 docstring que f2py génère pour chaque phase (``bibliotheque.moncal.__doc__``),
-en minuscules, dans l'ordre d'appel. Ce sont eux qui deviennent
-
-- les attributs de l'objet (``modele.lref``, ``modele.mach``) ;
-- les mots-clés de l'appel (``moncal(**arguments)``) ;
-- les colonnes du DataFrame d'entrée, puis de sortie (``calculer_df``).
+en minuscules, dans l'ordre d'appel. Ce sont eux qui deviennent les colonnes
+du DataFrame d'entrée de ``calcul_elementaire`` — **tous**, ceux des phases
+d'init compris : l'objet ne garde aucune valeur d'argument, il n'y a pas de
+constante cachée. Les phases d'init sont rappelées quand une ligne change
+leurs valeurs.
 
 **Sondes** (``SONDES = ("probe",)``) : blocs COMMON que le code remplit en
 cours de calcul pour la validation (une valeur lue dans une table, avant que le
@@ -26,10 +27,9 @@ précédent. ``lire("aertab.tcx")`` rend une copie de n'importe quelle variable
 de COMMON — les tables et leurs grilles, telles que le code les voit.
 
 L'état Fortran (variables SAVE, COMMON) est **global au processus** : deux
-objets sur la même bibliothèque partagent les mêmes constantes Fortran. Avant
-chaque calcul, l'objet vérifie que la dernière initialisation faite sur la
-bibliothèque est la sienne, et la refait sinon. C'est aussi ce qui permet à
-une colonne d'argument d'init de varier d'une ligne à l'autre.
+objets sur la même bibliothèque partagent le même état. La dernière
+initialisation faite sur chaque bibliothèque est suivie au niveau du module,
+et refaite dès qu'un point en demande une autre.
 
 Python 3.9+, numpy, pandas.
 """
@@ -201,7 +201,7 @@ _INIT_COURANTE: dict[str, tuple[tuple[str, tuple[Any, ...]], ...]] = {}
 
 
 class ModeleF2py:
-    """Un code Fortran à phases, appelé comme une fonction de Python ou sur un DataFrame.
+    """Un code Fortran à phases, appelé sur un DataFrame qui porte **tous** ses arguments.
 
     Paramètres
     ----------
@@ -211,28 +211,20 @@ class ModeleF2py:
     dossier
         Où chercher le module par son nom. Défaut : ``DOSSIER`` de la
         sous-classe, sinon ``sys.path``.
-    **constantes
-        Arguments des phases d'init (``lref=0.25``), qui priment sur
-        ``CONSTANTES``. Chacun devient un attribut de l'objet ; un nom qui n'est
-        l'argument d'aucune phase d'init est refusé.
+
+    L'objet ne garde aucune valeur d'argument : construire l'objet charge le
+    module et lit les signatures, rien de plus. Les phases d'init sont
+    appelées par le calcul, avec les valeurs de la ligne.
     """
 
     BIBLIOTHEQUE: ClassVar[str] = ""
     DOSSIER: ClassVar[str | Path | None] = None
     PHASES_INIT: ClassVar[tuple[str, ...]] = ()
     PHASE_CALCUL: ClassVar[str] = ""
-    CONSTANTES: ClassVar[Mapping[str, Any]] = {}
-    # Sortie entière qui signale une erreur de phase d'init (None : pas de contrôle).
-    SORTIE_ERREUR_INIT: ClassVar[str | None] = "ierr"
     # Blocs COMMON de sondes, lus après chaque calcul (voir le module).
     SONDES: ClassVar[tuple[str, ...]] = ()
 
-    def __init__(
-        self,
-        bibliotheque: ModuleType | str | None = None,
-        dossier: str | Path | None = None,
-        **constantes: Any,
-    ) -> None:
+    def __init__(self, bibliotheque: ModuleType | str | None = None, dossier: str | Path | None = None) -> None:
         if isinstance(bibliotheque, ModuleType):
             self.bibliotheque = bibliotheque
         else:
@@ -245,19 +237,8 @@ class ModeleF2py:
 
         self.signatures_init = tuple(self._signature(p) for p in self.PHASES_INIT)
         self.signature_calcul = self._signature(self.PHASE_CALCUL)
-        self.resultat: dict[str, Any] = {}
         self.sondes = self._sondes()
-
-        valeurs = {**self.CONSTANTES, **constantes}
-        inconnues = sorted(set(valeurs) - set(self.arguments_init))
-        if inconnues:
-            raise ErreurModele(
-                f"{', '.join(inconnues)} : pas un argument des phases d'init "
-                f"({', '.join(self.arguments_init) or 'aucun'})"
-            )
-        for nom, valeur in valeurs.items():
-            setattr(self, nom, valeur)
-        self.initialiser()
+        self._types = {a.nom: a for s in (*self.signatures_init, self.signature_calcul) for a in s.entrees}
 
     # -- description -------------------------------------------------------
 
@@ -320,40 +301,33 @@ class ModeleF2py:
 
     @property
     def colonnes_entree(self) -> tuple[str, ...]:
-        """Colonnes reconnues par ``calculer_df`` : init puis calcul, dans l'ordre des phases."""
+        """Colonnes lues par ``calcul_elementaire`` : init puis calcul, dans l'ordre des phases."""
         return tuple(dict.fromkeys(self.arguments_init + self.arguments_calcul))
 
+    @property
+    def colonnes_obligatoires(self) -> tuple[str, ...]:
+        """Les arguments non optionnels pour f2py (les dimensions ``[n]`` qu'il déduit ne le sont pas)."""
+        return tuple(n for n in self.colonnes_entree if not self._types[n].optionnel)
+
+    @property
+    def colonnes_sortie(self) -> tuple[str, ...]:
+        """Sorties de la phase de calcul, puis sondes."""
+        return (*self.signature_calcul.noms_sorties, *self.sondes)
+
     def decrire(self) -> str:
-        """Les phases telles que f2py les expose, et les constantes en vigueur."""
+        """Les phases telles que f2py les expose."""
         lignes = [f"Bibliothèque {self.bibliotheque.__name__}"]
         for s in self.signatures_init:
             lignes.append(f"  init    {s}")
         lignes.append(f"  calcul  {self.signature_calcul}")
         if self.sondes:
             lignes.append(f"  sondes  {', '.join(self.sondes)}")
-        if self.arguments_init:
-            valeurs = ", ".join(f"{n}={getattr(self, n, '?')!r}" for n in self.arguments_init)
-            lignes.append(f"  constantes : {valeurs}")
         return "\n".join(lignes)
 
     def __repr__(self) -> str:
-        valeurs = ", ".join(f"{n}={getattr(self, n, '?')!r}" for n in self.arguments_init)
-        return f"{type(self).__name__}({self.bibliotheque.__name__}, {valeurs})"
+        return f"{type(self).__name__}({self.bibliotheque.__name__})"
 
     # -- appels ------------------------------------------------------------
-
-    def _arguments(self, signature: Signature) -> dict[str, Any]:
-        """Les mots-clés de l'appel, pris dans les attributs de l'objet."""
-        args: dict[str, Any] = {}
-        manquants = []
-        for a in signature.entrees:
-            if hasattr(self, a.nom):
-                args[a.nom] = getattr(self, a.nom)
-            elif not a.optionnel:
-                manquants.append(a.nom)
-        if manquants:
-            raise ErreurModele(f"{signature.nom} : argument(s) non renseigné(s) : {', '.join(manquants)}")
-        return args
 
     @staticmethod
     def _nommer(signature: Signature, brut: Any) -> dict[str, Any]:
@@ -364,103 +338,87 @@ class ModeleF2py:
         valeurs = (brut,) if len(noms) == 1 else tuple(brut)
         return dict(zip(noms, valeurs))
 
-    def _cle_init(self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
-        return tuple((s.nom, tuple(self._arguments(s).values())) for s in self.signatures_init)
+    @staticmethod
+    def _arguments(signature: Signature, point: Mapping[str, Any]) -> dict[str, Any]:
+        """Les mots-clés d'une phase, pris dans le point (les optionnels absents sont laissés à f2py)."""
+        manquants = [a.nom for a in signature.entrees if not a.optionnel and a.nom not in point]
+        if manquants:
+            raise ErreurModele(f"{signature.nom} : argument(s) non renseigné(s) : {', '.join(manquants)}")
+        return {a.nom: point[a.nom] for a in signature.entrees if a.nom in point}
 
-    def initialiser(self) -> dict[str, dict[str, Any]]:
-        """Appelle les phases d'init dans l'ordre, avec les attributs courants.
+    def _initialiser(self, point: Mapping[str, Any]) -> None:
+        """Toutes les phases d'init, dans l'ordre, si l'une a changé d'arguments depuis la dernière init.
 
-        Rend les sorties de chaque phase ; lève ``ErreurModele`` si l'une signale
-        une erreur (``verifier_init``).
+        Toutes, et pas seulement celle qui change : une phase peut remettre à
+        zéro ce qu'une autre a posé, l'ordre d'appel est celui de ``PHASES_INIT``.
         """
-        rendus: dict[str, dict[str, Any]] = {}
-        _INIT_COURANTE.pop(self.bibliotheque.__name__, None)
-        for s in self.signatures_init:
-            sorties = self._nommer(s, getattr(self.bibliotheque, s.nom)(**self._arguments(s)))
-            self.verifier_init(s, sorties)
-            rendus[s.nom] = sorties
-        _INIT_COURANTE[self.bibliotheque.__name__] = self._cle_init()
-        return rendus
+        cle = tuple((s.nom, tuple(self._arguments(s, point).values())) for s in self.signatures_init)
+        nom = self.bibliotheque.__name__
+        if _INIT_COURANTE.get(nom) == cle:
+            return
+        _INIT_COURANTE.pop(nom, None)
+        for s in self.signatures_init:  # pas de code de retour : une init refusée se lit au calcul
+            getattr(self.bibliotheque, s.nom)(**self._arguments(s, point))
+        _INIT_COURANTE[nom] = cle
 
-    def verifier_init(self, signature: Signature, sorties: Mapping[str, Any]) -> None:
-        """Lève ``ErreurModele`` si la phase d'init a échoué. À surcharger au besoin.
+    def calcul_point(self, **point: Any) -> dict[str, Any]:
+        """Un point : ``{argument: valeur}`` pour tous les arguments, init compris.
 
-        Par défaut : la sortie ``SORTIE_ERREUR_INIT`` (``ierr``), si la phase en a
-        une, doit valoir 0.
-        """
-        nom = self.SORTIE_ERREUR_INIT
-        if nom is not None and nom in sorties and int(sorties[nom]) != 0:
-            args = ", ".join(f"{k}={v!r}" for k, v in self._arguments(signature).items())
-            raise ErreurModele(f"{signature.nom}({args}) : {nom} = {int(sorties[nom])}")
-
-    def _assurer_init(self) -> None:
-        if _INIT_COURANTE.get(self.bibliotheque.__name__) != self._cle_init():
-            self.initialiser()
-
-    def calculer(self, **point: Any) -> dict[str, Any]:
-        """Un point : les mots-clés deviennent des attributs, puis la phase de calcul est appelée.
-
-        Rend ``{sortie: valeur}`` (aussi gardé dans ``self.resultat``). Un argument
-        d'init passé ici déclenche une nouvelle initialisation.
+        Les phases d'init sont appelées si leurs arguments diffèrent de la
+        dernière init faite sur la bibliothèque, puis la phase de calcul. Rend
+        ``{sortie: valeur}``, sondes comprises.
         """
         inconnus = sorted(set(point) - set(self.colonnes_entree))
         if inconnus:
             raise ErreurModele(
                 f"{', '.join(inconnus)} : pas un argument du modèle ({', '.join(self.colonnes_entree)})"
             )
-        for nom, valeur in point.items():
-            setattr(self, nom, valeur)
-        self._assurer_init()
+        self._initialiser(point)
         s = self.signature_calcul
+        args = self._arguments(s, point)
         for nom, (bloc, reelle) in self.sondes.items():
             if reelle:
                 setattr(bloc, nom, np.nan)
-        self.resultat = self._nommer(s, getattr(self.bibliotheque, s.nom)(**self._arguments(s)))
+        resultat = self._nommer(s, getattr(self.bibliotheque, s.nom)(**args))
         for nom, (bloc, _) in self.sondes.items():
-            self.resultat[nom] = np.asarray(getattr(bloc, nom)).item()
-        return self.resultat
+            resultat[nom] = np.asarray(getattr(bloc, nom)).item()
+        return resultat
 
     # -- DataFrame ---------------------------------------------------------
 
-    def calculer_df(self, entrees: pd.DataFrame) -> pd.DataFrame:
-        """Une ligne par point : rend le DataFrame d'entrée augmenté des sorties.
+    def calcul_elementaire(self, entrees: pd.DataFrame) -> pd.DataFrame:
+        """Une ligne par point, **tous** les arguments Fortran en colonnes : rend l'entrée augmentée des sorties.
 
-        Colonnes lues : celles qui portent le nom d'un argument (``colonnes_entree``).
-        Les arguments de calcul sont obligatoires ; ceux d'init sont facultatifs
-        (absents : la valeur de l'attribut ; présents : réinitialisation à chaque
-        changement de valeur). Les autres colonnes sont recopiées telles quelles.
-        Les sorties sont ajoutées dans l'ordre de la docstring, puis les sondes ;
-        une sortie tableau devient ``nom_1 … nom_n``.
+        Colonnes lues : ``colonnes_entree`` (init puis calcul), toutes
+        obligatoires sauf les dimensions que f2py déduit. Les phases d'init sont
+        rappelées quand une ligne change leurs valeurs : un DataFrame à constantes
+        fixes ne les appelle qu'une fois. Les autres colonnes sont recopiées
+        telles quelles. Les sorties sont ajoutées dans l'ordre de la docstring,
+        puis les sondes ; une sortie tableau devient ``nom_1 … nom_n``.
         """
         s = self.signature_calcul
-        tableaux = [a.nom for a in s.entrees if a.tableau]
+        tableaux = [n for n in self.colonnes_entree if self._types[n].tableau]
         if tableaux:
-            raise ErreurModele(f"{s.nom} : entrée(s) tableau, pas de colonne possible : {', '.join(tableaux)}")
-        manquantes = [a.nom for a in s.entrees if not a.optionnel and a.nom not in entrees.columns]
+            raise ErreurModele(f"entrée(s) tableau, pas de colonne possible : {', '.join(tableaux)}")
+        manquantes = [n for n in self.colonnes_obligatoires if n not in entrees.columns]
         if manquantes:
             raise ErreurModele(
                 f"colonne(s) absente(s) : {', '.join(manquantes)} "
-                f"(attendues : {', '.join(self.colonnes_entree)})"
+                f"(attendues : {', '.join(self.colonnes_obligatoires)})"
             )
-        lues = [n for n in self.colonnes_entree if n in entrees.columns]
-        types = {a.nom: a for sig in (*self.signatures_init, s) for a in sig.entrees}
-        sauvegarde = {n: getattr(self, n) for n in self.arguments_init if hasattr(self, n)}
-
-        colonnes: dict[str, list[Any]] = {}
-        try:
-            for numero, valeurs in enumerate(zip(*(entrees[n].tolist() for n in lues))):
-                point = {n: _convertir(types[n], v, numero) for n, v in zip(lues, valeurs)}
-                for nom, valeur in _aplatir(self.calculer(**point)).items():
-                    colonnes.setdefault(nom, []).append(valeur)
-        finally:
-            for nom, valeur in sauvegarde.items():
-                setattr(self, nom, valeur)
-
-        if not colonnes:  # DataFrame vide : colonnes de sortie quand même
-            colonnes = {n: [] for n in (*s.noms_sorties, *self.sondes)}
-        doublons = sorted(set(colonnes) & set(entrees.columns))
+        doublons = sorted(set(self.colonnes_sortie) & set(entrees.columns))
         if doublons:
             raise ErreurModele(f"colonne(s) de sortie déjà présentes en entrée : {', '.join(doublons)}")
+        lues = [n for n in self.colonnes_entree if n in entrees.columns]
+
+        colonnes: dict[str, list[Any]] = {}
+        for numero, valeurs in enumerate(zip(*(entrees[n].tolist() for n in lues))):
+            point = {n: _convertir(self._types[n], v, numero) for n, v in zip(lues, valeurs)}
+            for nom, valeur in _aplatir(self.calcul_point(**point)).items():
+                colonnes.setdefault(nom, []).append(valeur)
+
+        if not colonnes:  # DataFrame vide : colonnes de sortie quand même
+            colonnes = {n: [] for n in self.colonnes_sortie}
         sortie = entrees.copy()
         for nom, liste in colonnes.items():
             dtype = "float64" if self.sondes.get(nom, (None, False))[1] else _dtype(s, nom)

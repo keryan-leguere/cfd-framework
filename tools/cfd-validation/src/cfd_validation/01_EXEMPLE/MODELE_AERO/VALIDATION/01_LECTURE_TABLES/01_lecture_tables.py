@@ -53,7 +53,7 @@ def main() -> int:
     scenario = "defaut" if args.defaut else "combinaisons" if args.combinaisons else "nominal"
     res = valider_lecture_tables(
         declarer_tables(modele, cm_faussee=args.defaut),
-        evaluer=modele.calculer_df,
+        evaluer=modele.calcul_aero_elementaire,
         defauts=DEFAUTS,
         combinaisons=COMBINAISONS if args.combinaisons else None,
         identifiant="VAL-TAB-01",

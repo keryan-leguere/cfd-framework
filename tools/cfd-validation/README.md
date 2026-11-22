@@ -69,7 +69,7 @@ res = valider_lecture_tables(
     [TableReference("CX", modele.lire("aertab.tcx"),
                     {"mach": modele.lire("aertab.tmach"), "alpha": modele.lire("aertab.talpha")},
                     sonde="valid_tab_cx")],
-    evaluer=modele.calculer_df,             # DataFrame d'entrées → DataFrame avec les sondes
+    evaluer=modele.calcul_aero_elementaire,             # DataFrame d'entrées → DataFrame avec les sondes
     defauts={"mach": 0.8, "alpha": 0.0, ...},
     combinaisons={"beta": [-5, 0, 5]},      # option : la lecture n'en dépend pas
     sortie="LECTURE_TABLES",
@@ -85,7 +85,7 @@ demande ? Le rapport donne, pour chaque face, l'attendu et l'**observé** :
 
 ```python
 TableReference("CX", ..., bornes={"mach": "sature", "alpha": "extrapole"})
-res = valider_bornes_tables(tables, evaluer=modele.calculer_df, defauts={...}, sortie="BORNES_TABLES")
+res = valider_bornes_tables(tables, evaluer=modele.calcul_aero_elementaire, defauts={...}, sortie="BORNES_TABLES")
 ```
 
 ## Test d'interpolation de table, et les polaires
@@ -105,7 +105,7 @@ Elles montrent les trois tests de table d'un coup d'œil.
 from cfd_validation import Polaires, valider_interpolation_tables
 
 res = valider_interpolation_tables(
-    tables, evaluer=modele.calculer_df, defauts={...},
+    tables, evaluer=modele.calcul_aero_elementaire, defauts={...},
     polaires={"DCMG": Polaires(abscisses=["alphat"], noeuds={"mach": [1.0], "dn": [0.0]})},
     libelles={"alpha": (r"$\alpha$", "°")},
     sortie="INTERPOLATION_TABLES",

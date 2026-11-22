@@ -6,7 +6,7 @@
         [TableReference("CX", modele.lire("aertab.tcx"),
                         {"mach": modele.lire("aertab.tmach"), "alpha": modele.lire("aertab.talpha")},
                         sonde="valid_tab_cx")],
-        evaluer=modele.calculer_df,
+        evaluer=modele.calcul_aero_elementaire,
         defauts={"mach": 0.8, "alpha": 0.0, "beta": 0.0, ...},
         sortie="LECTURE_TABLES",
     )
@@ -82,7 +82,7 @@ def valider_lecture_tables(
     evaluer
         ``f(df) -> df`` : un point d'entrée du modèle par ligne (colonnes = les
         clés de ``defauts``), rendu dans le même ordre avec la colonne de sonde
-        de chaque table. Pour un code f2py : ``ModeleF2py.calculer_df``.
+        de chaque table. Pour un code f2py : ``ModeleF2py.calcul_elementaire``.
     defauts
         La valeur de **chaque** entrée du modèle hors colonnes de la table ;
         ses clés sont la liste des entrées.

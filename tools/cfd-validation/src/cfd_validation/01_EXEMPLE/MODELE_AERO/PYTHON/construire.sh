@@ -8,7 +8,8 @@
 # Arguments : [NOM [DOSSIER]]. Variables : FFLAGS (défaut -O2), FC (défaut gfortran),
 # CFD_VALIDATION_PYTHON (interpréteur qui a numpy, défaut python3).
 #
-# Pour un autre code : modifier SOURCES et INCLUDES ci-dessous.
+# Pour un autre code : modifier DOSSIER_SOURCES (et au besoin MOTIFS, INCLUDES) ci-dessous.
+# Tout fichier du dossier qui répond à un motif est compilé : n'y laisser que le code livré.
 #
 # f2py lit les directives « Cf2py intent(in/out) » placées après chaque ENTRY ; chaque
 # phase devient une fonction du module. Le nom du module est figé dans le binaire
@@ -20,12 +21,9 @@ ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RACINE="$(dirname "$ICI")"
 
 # -- ce qui change d'un code à l'autre ---------------------------------------
-SOURCES=(
-    "$RACINE/SOURCES/aero_modele.f"
-    "$RACINE/SOURCES/aero_interp.f"
-    "$RACINE/SOURCES/aero_tables.f"
-)
-INCLUDES=("$RACINE/SOURCES")
+DOSSIER_SOURCES="$RACINE/SOURCES"                  # les sources Fortran, en un dossier
+MOTIFS=("*.f" "*.F" "*.for" "*.f90" "*.F90")      # ce qui y est compilé
+INCLUDES=("$DOSSIER_SOURCES")                      # dossiers des INCLUDE (-I), ici le même
 # -----------------------------------------------------------------------------
 
 NOM="${1:-aerolib}"
@@ -36,11 +34,27 @@ export FFLAGS="${FFLAGS:--O2}"
 # meson et ninja installés par pip vivent à côté de l'interpréteur, pas forcément sur PATH
 export PATH="$(dirname "$(command -v "$PY")"):$PATH"
 
-for f in "${SOURCES[@]}"; do
-    [[ -f "$f" ]] || { echo "source introuvable : $f" >&2; exit 1; }
+[[ -d "$DOSSIER_SOURCES" ]] || { echo "dossier des sources introuvable : $DOSSIER_SOURCES" >&2; exit 1; }
+shopt -s nullglob
+SOURCES=()
+for motif in "${MOTIFS[@]}"; do
+    SOURCES+=("$DOSSIER_SOURCES"/$motif)
 done
+shopt -u nullglob
+# ordre stable, sans doublon (un système de fichiers insensible à la casse rend *.f et *.F deux fois)
+mapfile -t SOURCES < <(printf '%s\n' "${SOURCES[@]}" | sort -u)
+if [[ ${#SOURCES[@]} -eq 0 || -z "${SOURCES[0]}" ]]; then
+    echo "aucune source ${MOTIFS[*]} dans $DOSSIER_SOURCES" >&2
+    exit 1
+fi
+echo "sources ($DOSSIER_SOURCES) : $(for f in "${SOURCES[@]}"; do printf '%s ' "$(basename "$f")"; done)"
 # f2py lit les sources en ASCII : un seul accent dans un commentaire fait échouer la lecture.
-if LC_ALL=C grep -n $'[\x80-\xff]' "${SOURCES[@]}"; then
+# Les INCLUDE sont lus aussi : on les vérifie avec.
+INCLUS=()
+for d in "${INCLUDES[@]}"; do
+    shopt -s nullglob; INCLUS+=("$d"/*.inc "$d"/*.h "$d"/*.fi); shopt -u nullglob
+done
+if LC_ALL=C grep -n $'[\x80-\xff]' "${SOURCES[@]}" "${INCLUS[@]}"; then
     echo "caractères non ASCII ci-dessus : f2py les refuse" >&2
     exit 1
 fi

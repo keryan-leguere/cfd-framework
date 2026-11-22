@@ -57,10 +57,10 @@ def cm_en_palier(modele: ModeleAero):  # type: ignore[no-untyped-def]
     talpha = modele.lire("aertab.talpha")
 
     def evaluer(df: pd.DataFrame) -> pd.DataFrame:
-        sortie = modele.calculer_df(df)
+        sortie = modele.calcul_aero_elementaire(df)
         proche = talpha[np.abs(df["alpha"].to_numpy()[:, None] - talpha[None, :]).argmin(axis=1)]
         dans = (df["alpha"] >= talpha[0]) & (df["alpha"] <= talpha[-1])
-        arrondi = modele.calculer_df(df.assign(alpha=np.where(dans, proche, df["alpha"])))
+        arrondi = modele.calcul_aero_elementaire(df.assign(alpha=np.where(dans, proche, df["alpha"])))
         sortie["valid_tab_cm"] = arrondi["valid_tab_cm"].to_numpy()
         return sortie
 
@@ -88,7 +88,7 @@ def main() -> int:
     scenario = "defaut" if args.defaut else "nominal"
     res = valider_interpolation_tables(
         declarer_tables(modele),
-        evaluer=cm_en_palier(modele) if args.defaut else modele.calculer_df,
+        evaluer=cm_en_palier(modele) if args.defaut else modele.calcul_aero_elementaire,
         defauts=DEFAUTS,
         fractions=args.fractions,
         polaires=POLAIRES,

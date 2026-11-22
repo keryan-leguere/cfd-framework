@@ -48,8 +48,8 @@ Les tables factices sont dans `SORTIE_INTEGRATION/DONNEES/`.
 
 Les scripts ci-dessus simulent le code en Python. `MODELE_AERO/` est un projet
 Fortran 77 complet : `SOURCES/` (tables carrées en dur dans un `BLOCK DATA`,
-initialisation puis calcul par deux `ENTRY` balisées `Cf2py`), `DOC/`, et
+initialisation, configuration puis calcul par trois `ENTRY` balisées `Cf2py`), `DOC/`, et
 `PYTHON/`, l'encapsulation f2py — `bash construire.sh` produit le module,
-`ModeleAero().calculer_df(df)` rend le DataFrame augmenté des six
+`ModeleAero().calcul_aero(df)` rend le DataFrame augmenté des six
 coefficients — et `VALIDATION/`, les tests de lecture, de bornes et d'interpolation des tables (avec leurs polaires) qui passent par
 elle (`bash RUN_VALIDATION.sh`, un récapitulatif à la fin). Voir `MODELE_AERO/README.md`.

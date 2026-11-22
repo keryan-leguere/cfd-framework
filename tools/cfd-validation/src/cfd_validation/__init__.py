@@ -19,14 +19,14 @@ nœud de chaque table, rend-il la valeur de la table ? ::
 
     from cfd_validation import TableReference, valider_lecture_tables
 
-    res = valider_lecture_tables(tables, evaluer=modele.calculer_df, defauts={...})
+    res = valider_lecture_tables(tables, evaluer=modele.calcul_aero_elementaire, defauts={...})
 
 Troisième contrôle : le **test des bornes de table**. Appelé au-delà des bornes,
 le code sature-t-il ou extrapole-t-il comme la consigne de chaque axe le demande ? ::
 
     from cfd_validation import valider_bornes_tables
 
-    res = valider_bornes_tables(tables, evaluer=modele.calculer_df, defauts={...})
+    res = valider_bornes_tables(tables, evaluer=modele.calcul_aero_elementaire, defauts={...})
 
 Quatrième contrôle : le **test d'interpolation de table**. Entre les nœuds, le
 code rend-il l'interpolation multilinéaire de la table ? Il trace aussi les
@@ -34,7 +34,7 @@ code rend-il l'interpolation multilinéaire de la table ? Il trace aussi les
 d'un coup d'œil ::
 
     from cfd_validation import valider_interpolation_tables
-    res = valider_interpolation_tables(tables, evaluer=modele.calculer_df, defauts={...})
+    res = valider_interpolation_tables(tables, evaluer=modele.calcul_aero_elementaire, defauts={...})
 """
 
 from __future__ import annotations

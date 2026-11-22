@@ -3,7 +3,7 @@
     from cfd_validation import Polaires, tracer_polaires_tables
 
     fichiers = tracer_polaires_tables(
-        tables, evaluer=modele.calculer_df, defauts={...}, sortie="POLAIRES",
+        tables, evaluer=modele.calcul_aero_elementaire, defauts={...}, sortie="POLAIRES",
         polaires={"DCMG": Polaires(abscisses=["alphat"], noeuds={"mach": [1.0], "dn": [0.0]})},
         libelles={"alpha": ("α", "°")},
     )

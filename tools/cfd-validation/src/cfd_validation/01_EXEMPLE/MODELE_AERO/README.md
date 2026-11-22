@@ -5,8 +5,8 @@ sources, la documentation, l'encapsulation Python et la validation qui passe
 par elle. Le modèle est **factice** mais a la forme des vrais : Mach, α, β,
 CDG, propulsion et braquages en entrée, six coefficients en sortie, tables
 carrées en dur dans un `BLOCK DATA` (six 2D, une 1D, une 5D en angles
-polaires), initialisation (constantes du calcul) puis calcul par deux
-`ENTRY`, une sonde de validation après chaque lecture de table, et une consigne
+polaires), initialisation (constantes du calcul), configuration (biais sur CX) puis
+calcul par trois `ENTRY`, une sonde de validation après chaque lecture de table, et une consigne
 hors grille par axe (saturation en Mach, extrapolation linéaire en α et β).
 
 ```
@@ -16,7 +16,7 @@ MODELE_AERO/
 │   ├── aero_probe.inc       COMMON /PROBE/ : sondes de validation
 │   ├── aero_tables.f        BLOCK DATA : les tables en dur (généré)
 │   ├── aero_interp.f        interpolation 1D / 2D / 5D avec saturation
-│   └── aero_modele.f        AERO : ENTRY AERINI (init), ENTRY AERCAL (calcul)
+│   └── aero_modele.f        AERO : ENTRY AERINI (init), AERCFG (biais sur CX), AERCAL (calcul)
 ├── DOC/
 │   └── 01_SOURCES.md        ce que font les sources, conventions, codes d'erreur
 ├── PYTHON/                encapsulation f2py (voir PYTHON/README.md)
@@ -52,8 +52,9 @@ bash RUN_VALIDATION.sh        # tous les tests, puis « TOUT EST À 100 % » ou 
 ```python
 from modele_aero import ModeleAero
 
-modele = ModeleAero(lref=0.2)              # appelle aerini(xref, yref, zref, lref)
-sortie = modele.calculer_df(df)            # colonnes mach … dn → + cx … cn, ierr, sondes
+modele = ModeleAero()                      # charge aerolib
+sortie = modele.calcul_aero(df)            # paramètres standard → + cx … cn, ierr, sondes, etat, modele…
+brut = modele.calcul_aero_elementaire(df_f)  # xref … lref, biaicx, mach … dn (le Fortran tel quel) → + sorties, sondes
 ```
 
 ## Avec CMake

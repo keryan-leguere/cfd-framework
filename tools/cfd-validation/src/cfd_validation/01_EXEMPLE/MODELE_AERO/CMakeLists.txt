@@ -88,7 +88,11 @@ verifier_module(cfd_validation "les tests de VALIDATION/ en ont besoin (pip inst
 
 # -- construire le module ----------------------------------------------------------
 set(MODULE "${DOSSIER_PYTHON}/${MODELE_NOM}${EXT_SUFFIX}")
-file(GLOB SOURCES_FORTRAN CONFIGURE_DEPENDS "${RACINE}/SOURCES/*.f" "${RACINE}/SOURCES/*.inc")
+# Les motifs de PYTHON/construire.sh (MOTIFS), plus les INCLUDE
+file(GLOB SOURCES_FORTRAN CONFIGURE_DEPENDS
+    "${RACINE}/SOURCES/*.f" "${RACINE}/SOURCES/*.F" "${RACINE}/SOURCES/*.for"
+    "${RACINE}/SOURCES/*.f90" "${RACINE}/SOURCES/*.F90"
+    "${RACINE}/SOURCES/*.inc" "${RACINE}/SOURCES/*.h" "${RACINE}/SOURCES/*.fi")
 message(STATUS "Module      : ${MODULE}")
 
 add_custom_command(

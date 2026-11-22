@@ -195,7 +195,7 @@ Les coordonnées d'un point en échec tiennent dans **une** colonne
 from cfd_validation import TableReference, valider_lecture_tables
 
 res = valider_lecture_tables(
-    tables, evaluer=modele.calculer_df, defauts=DEFAUTS,
+    tables, evaluer=modele.calcul_aero_elementaire, defauts=DEFAUTS,
     combinaisons=None, identifiant="VAL-TAB-01", metadonnees={...},
     sortie="LECTURE_TABLES", figures=True, nettoyer=False,
 )

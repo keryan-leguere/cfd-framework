@@ -137,7 +137,7 @@ scénarios :
 from cfd_validation import valider_bornes_tables
 
 res = valider_bornes_tables(
-    tables, evaluer=modele.calculer_df, defauts=DEFAUTS,
+    tables, evaluer=modele.calcul_aero_elementaire, defauts=DEFAUTS,
     ecart=0.10, ecarts=None, consigne_defaut="sature",
     identifiant="VAL-TAB-02", metadonnees={...}, sortie="BORNES_TABLES",
 )

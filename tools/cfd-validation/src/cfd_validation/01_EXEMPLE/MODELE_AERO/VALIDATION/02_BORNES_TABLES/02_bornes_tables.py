@@ -48,7 +48,7 @@ def main() -> int:
     scenario = "defaut" if args.defaut else "nominal"
     res = valider_bornes_tables(
         declarer_tables(modele, consigne_cx_alpha="sature" if args.defaut else None),
-        evaluer=modele.calculer_df,
+        evaluer=modele.calcul_aero_elementaire,
         defauts=DEFAUTS,
         ecart=args.ecart,
         identifiant="VAL-TAB-02",

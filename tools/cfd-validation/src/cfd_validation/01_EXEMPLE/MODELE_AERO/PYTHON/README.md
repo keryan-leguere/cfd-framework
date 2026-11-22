@@ -7,8 +7,8 @@ appelle la phase de calcul sur un point ou sur un DataFrame.
 PYTHON/
 ├── construire.sh     sources Fortran → module aerolib*.so (un appel à f2py)
 ├── modele_f2py.py    ModeleF2py : la mécanique, sans rien du modèle aéro
-├── modele_aero.py    ModeleAero : les 4 lignes propres à ce code
-└── exemple_appel.py  un point, un DataFrame, une constante qui varie
+├── modele_aero.py    ModeleAero : la surcouche propre à ce code (conversions, sorties en plus)
+└── exemple_appel.py  paramètres standard, arguments Fortran, une constante qui varie
 ```
 
 ## 1. Construire le module
@@ -20,6 +20,11 @@ FFLAGS="-O3 -ffast-math" bash construire.sh aerolib_o3  # une autre compilation,
 FC=ifx bash construire.sh aerolib /ailleurs             # autre compilateur, autre dossier
 ```
 
+Les sources sont **un dossier** : `DOSSIER_SOURCES` (ici `../SOURCES`), dont
+tout fichier `*.f *.F *.for *.f90 *.F90` est compilé (`MOTIFS`), et `INCLUDES`
+la liste des dossiers des `INCLUDE`. Ajouter un fichier au dossier suffit ; n'y
+laisser que le code livré.
+
 C'est un script bash de quelques lignes : un appel à `python -m numpy.f2py -c
 --backend meson`, dans un dossier temporaire, avec `FC` et `FFLAGS`. L'interpréteur
 est `CFD_VALIDATION_PYTHON` (`python3` par défaut) ; son dossier passe en tête du
@@ -29,7 +34,8 @@ f2py a exposé :
 
 ```
   cx,cy,cz,cl,cm,cn,ierr = aercal(mach,alpha,beta,xg,yg,zg,ipropu,dm,dn)
-  ierr = aerini(xref,yref,zref,lref)
+  aercfg(biaicx)
+  aerini(xref,yref,zref,lref)
   COMMON /aertab/
   …
 ```
@@ -54,75 +60,80 @@ construisent sous deux noms (`aerolib_o0`, `aerolib_o3`) et se chargent côte
 
 ## 2. Appeler le modèle
 
+Deux couches, deux fichiers.
+
+**`ModeleF2py`** (`modele_f2py.py`) est générique et ne connaît rien du modèle
+aéro. Il charge le module, lit les signatures, appelle les phases et lit les
+sondes. **Il ne garde aucune valeur d'argument** : pas de constante cachée dans
+l'objet, tout vient du DataFrame.
+
+1. les arguments de chaque phase sont **lus dans la docstring f2py**
+   (`aerolib.aercal.__doc__`), en minuscules, dans l'ordre ;
+2. `calcul_elementaire(df)` prend **une colonne par argument**, init puis calcul
+   (`modele.colonnes_entree` : `xref, yref, zref, lref, biaicx, mach, … dn`), toutes
+   obligatoires sauf les dimensions que f2py déduit ;
+3. pour chaque ligne, les phases d'init (`PHASES_INIT`, ici `aerini` puis
+   `aercfg`) sont toutes rappelées, dans l'ordre, **si l'un de leurs arguments a
+   changé** depuis la dernière init faite sur la bibliothèque, puis la phase de
+   calcul, par mots-clés ;
+4. la sortie est le DataFrame d'entrée (index et autres colonnes compris),
+   augmenté des sorties dans l'ordre de la docstring (`cx … cn, ierr`) puis des
+   sondes. `calcul_point(**point)` fait la même chose pour un point.
+
+Une valeur non entière dans une colonne entière (`ipropu = 0.5`) est refusée,
+pas tronquée ; une sortie déjà présente en entrée aussi. Les phases d'init
+n'ont **pas de code de retour** : une init refusée se lit dans les sorties du
+calcul (ici `ierr = 1`).
+
+**`ModeleAero`** (`modele_aero.py`) est la surcouche propre à ce code :
+
 ```python
 from modele_aero import ModeleAero
 
-modele = ModeleAero()                 # aerini(xref=1.2, yref=0, zref=0, lref=0.2)
-modele = ModeleAero(lref=0.25)        # une constante changée, sans toucher au Fortran
-modele.calculer(mach=0.8, alpha=5.0, beta=0.0, xg=1.1, yg=0.0, zg=0.0, ipropu=1, dm=0.0, dn=0.0)
-# {'cx': -0.28…, 'cy': 0.0, …, 'ierr': 0}
-
-sortie = modele.calculer_df(df)       # df : colonnes mach … dn (+ ce qu'on veut)
-modele.lire("aertab.tcx")             # une variable de COMMON (table, grille), copiée
+modele = ModeleAero()                          # charge aerolib, rien d'autre
+brut = modele.calcul_aero_elementaire(df_f)    # arguments Fortran tels quels → sorties + sondes
+sortie = modele.calcul_aero(df)                # paramètres standard → sorties + colonnes en plus
 ```
 
-Le déroulé, pour une phase quelconque :
+| Fonction | Entrée | Sortie |
+|----------|--------|--------|
+| `calcul_aero_elementaire` | les arguments de AERINI, AERCFG et AERCAL, unités et conventions du Fortran (CDG en m, axes FRD, `ipropu` 0/1) | + `cx … cn`, `ierr`, sondes |
+| `calcul_aero` | `ModeleAero.PARAMETRES` : CDG en mm en axes FLU (`xg_mm`, `yg_mm`, `zg_mm`), `propulsion` booléen ; `xref … lref`, `biaicx` facultatifs (`DEFAUTS`) | + les arguments élémentaires calculés, les sorties, et `etat`, `modele`, `version`, `bibliotheque` |
 
-1. les arguments de la phase sont **lus dans la docstring f2py**
-   (`aerolib.aercal.__doc__`), en minuscules, dans l'ordre ;
-2. chacun est pris dans un **attribut de l'objet** du même nom
-   (`self.mach`, `self.lref`) ;
-3. la phase est appelée par **mots-clés** : `aercal(**arguments)` ;
-4. les sorties sont associées à leurs noms : `{"cx": …, "ierr": …}`.
+`calcul_aero` = `vers_elementaire` (conversions : unités, signes, valeurs par
+défaut) → `calcul_aero_elementaire` → `completer_sorties` (tout ce qu'on veut
+retrouver en plus dans le vecteur de sortie). Une colonne en convention Fortran
+(`xg`, `ipropu`) mêlée aux paramètres standard est refusée : on passe par l'un
+ou par l'autre. **La validation passe par `calcul_aero_elementaire`** : elle
+teste le code, pas la surcouche.
 
-`__init__` écrit les constantes en attributs (`CONSTANTES` de la classe, puis
-les mots-clés passés) et appelle les phases d'init ; une sortie `ierr` non
-nulle lève `ErreurModele`. `calculer(**point)` écrit le point en attributs
-puis appelle la phase de calcul.
-
-**DataFrame** (`calculer_df`). Les colonnes portent les noms des arguments,
-init puis calcul, dans l'ordre des phases (`modele.colonnes_entree`) :
-
-| colonne                     | rôle                                                                       |
-|-----------------------------|----------------------------------------------------------------------------|
-| `mach` … `ipropu`           | arguments de `aercal`, obligatoires                                        |
-| `xref` … `lref`             | arguments de `aerini`, facultatifs : absents, l'attribut ; présents, réinit à chaque changement de valeur |
-| toute autre (`cas`, …)      | recopiée telle quelle                                                      |
-
-La sortie est le DataFrame d'entrée (index compris), augmenté des sorties
-dans l'ordre de la docstring : `cx, cy, cz, cl, cm, cn, ierr`. Une valeur
-non entière dans une colonne entière (`ipropu = 0.5`) est refusée, pas
-tronquée.
-
-**L'état Fortran est global au processus.** Les variables `SAVE` d'AERINI
-sont les mêmes pour tous les objets construits sur `aerolib`. Chaque objet
-note la dernière initialisation faite sur sa bibliothèque et la refait si ce
-n'est plus la sienne : deux objets aux `lref` différentes donnent chacun le
-bon résultat, au prix d'une réinit à chaque alternance.
+**L'état Fortran est global au processus.** Les variables `SAVE` d'AERINI sont
+les mêmes pour tous les objets construits sur `aerolib`. La dernière init faite
+sur chaque bibliothèque est suivie au niveau du module : deux objets, ou deux
+lignes, aux `lref` différentes donnent chacun le bon résultat, au prix d'une
+réinit à chaque alternance.
 
 **Sondes** (`SONDES = ("probe",)`). Blocs COMMON que le code remplit en
 cours de calcul pour la validation : chaque valeur lue dans une table y est
 recopiée (`VALID_TAB_CX` …, voir `DOC/01_SOURCES.md` § 8). Avant chaque appel,
 leurs variables réelles sont remises à **NaN** ; après l'appel, elles sont
 rendues avec les sorties, sous leur nom f2py (`valid_tab_cx`), en colonnes
-`float64` dans `calculer_df`. Une sonde que l'appel n'a pas atteinte vaut donc
-NaN, jamais la valeur de l'appel précédent. Les variables sont lues dans la
-docstring f2py du bloc ; une sonde tableau ou homonyme d'une sortie est
-refusée.
+`float64`. Une sonde que l'appel n'a pas atteinte vaut donc NaN, jamais la
+valeur de l'appel précédent. Les variables sont lues dans la docstring f2py du
+bloc ; une sonde tableau ou homonyme d'une sortie est refusée.
 
 **`lire("bloc.variable")`** rend une copie d'une variable de COMMON (casse
 indifférente), avec la forme et l'ordre d'indices du Fortran : `TCX(NM, NA)`
-donne `(7, 7)`, `[i, j]` valant `TCX(I+1, J+1)`. C'est là que le test de
-lecture de table prend ses tables et leurs grilles : telles que le code les
-voit.
+donne `(7, 7)`, `[i, j]` valant `TCX(I+1, J+1)`. C'est là que les tests de
+table prennent leurs tables et leurs grilles : telles que le code les voit.
 
 ## 3. Pour un autre code
 
 1. après chaque `ENTRY` (ou en tête de chaque `SUBROUTINE` appelée de
-   l'extérieur), une ligne `Cf2py intent(in)` et une ligne
-   `Cf2py intent(out)` ;
-2. dans `construire.sh`, `SOURCES` et `INCLUDES` ;
-3. une sous-classe :
+   l'extérieur), une ligne `Cf2py intent(in)`, et une ligne `Cf2py intent(out)`
+   pour la phase de calcul (les phases d'init n'ont pas de code de retour) ;
+2. dans `construire.sh`, `DOSSIER_SOURCES` (et au besoin `MOTIFS`, `INCLUDES`) ;
+3. une sous-classe, sur le modèle de `ModeleAero` :
 
 ```python
 class MonCode(ModeleF2py):
@@ -130,11 +141,15 @@ class MonCode(ModeleF2py):
     DOSSIER = Path(__file__).resolve().parent
     PHASES_INIT = ("monini",)          # 0, 1 ou plusieurs, dans l'ordre d'appel
     PHASE_CALCUL = "moncal"
-    CONSTANTES = {"lref": 0.2}         # défauts des arguments d'init
     SONDES = ("probe",)                # COMMON de sondes, s'il y en a
+
+    def calcul_elementaire_moncode(self, df):   # les arguments Fortran tels quels
+        return self.calcul_elementaire(df)
+
+    def calcul_moncode(self, df):               # paramètres standard → conversions → sorties en plus
+        return self.completer(self.calcul_elementaire(self.convertir(df)))  # convertir, completer : à écrire
 ```
 
-`verifier_init` se surcharge si l'erreur d'init ne se lit pas dans une sortie
-`ierr` (`SORTIE_ERREUR_INIT = None` désactive le contrôle). Limites : une
-seule phase de calcul ; pas d'entrée tableau dans `calculer_df` (refusée,
-nommée) ; une sortie tableau devient `nom_1 … nom_n`.
+Limites :
+une seule phase de calcul ; pas d'entrée tableau en colonne (refusée, nommée) ;
+une sortie tableau devient `nom_1 … nom_n`.
