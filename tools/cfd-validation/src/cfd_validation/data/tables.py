@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from cfd_validation.core.bornes import CONSIGNES
 from cfd_validation.core.noeuds import (
     coordonnees_noeuds,
     decrire_forme,
@@ -75,6 +76,11 @@ class TableReference:
         Tolérance ; par défaut identité bit pour bit (``JUSTIFICATION_NOEUD``).
     description
         Ce que la table représente, repris dans le rapport.
+    bornes
+        Consigne hors grille, par axe : ``{"alpha": "extrapole"}`` pour les deux
+        côtés, ou ``{"alphat": ("inatteignable", "extrapole")}`` côté min puis
+        côté max ; ``sature``, ``extrapole`` ou ``inatteignable``. Sert au test
+        des bornes ; un axe absent prend la consigne par défaut de ce test.
     """
 
     nom: str
@@ -87,6 +93,7 @@ class TableReference:
     atol: float | None = None
     justification: str | None = None
     description: str = ""
+    bornes: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.nom or not str(self.nom).strip():
@@ -108,10 +115,26 @@ class TableReference:
         object.__setattr__(self, "valeurs", valeurs)
         object.__setattr__(self, "axes", grilles)
         object.__setattr__(self, "fixes", dict(self.fixes))
+        object.__setattr__(self, "bornes", self._lire_bornes(grilles))
         try:
             self.tolerance  # noqa: B018 — valide rtol/atol dès la déclaration
         except (TypeError, ValueError) as erreur:
             raise ErreurTable(f"table {self.nom} : {erreur}") from None
+
+    def _lire_bornes(self, grilles: Mapping[str, Any]) -> dict[str, tuple[str, str]]:
+        """``{axe: (consigne min, consigne max)}`` ; refuse un axe ou une consigne inconnus."""
+        propres: dict[str, tuple[str, str]] = {}
+        for axe, consigne in dict(self.bornes).items():
+            if axe not in grilles:
+                raise ErreurTable(f"table {self.nom}, bornes : {axe} n'est pas un axe ({', '.join(grilles)})")
+            paire = (consigne, consigne) if isinstance(consigne, str) else tuple(consigne)
+            if len(paire) != 2 or any(c not in CONSIGNES for c in paire):
+                raise ErreurTable(
+                    f"table {self.nom}, bornes de {axe} : {consigne!r} — attendu une consigne "
+                    f"ou un couple (min, max) parmi {', '.join(CONSIGNES)}"
+                )
+            propres[axe] = (str(paire[0]), str(paire[1]))
+        return propres
 
     @property
     def grilles(self) -> tuple[NDArray[np.float64], ...]:

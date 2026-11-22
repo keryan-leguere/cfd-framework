@@ -29,13 +29,20 @@ C       CL, CM, CN  coefficients de moment au centre de gravite,
 C                   adimensionnes par LREF
 C       IERR        0  calcul nominal
 C                   1  AERCAL appele avant AERINI    (sorties = 0)
-C                   2  point hors des tables : valeurs saturees au
-C                      bord, sorties calculees
+C                   2  point hors des tables : sorties calculees
+C                      selon la consigne de chaque axe (ci-dessous)
 C                   3  IPROPU ni 0 ni 1               (sorties = 0)
 C     Sortie de AERINI
 C       IERR        0  initialisation faite
 C                   11 grille non strictement croissante
 C                   12 longueur de reference <= 0
+C
+C     Consignes hors grille (aero_interp.f, ISATU / IEXTR) :
+C       Mach, braquages DM et DN, propulsion   saturation au bord
+C       alpha, beta, alphaT                    extrapolation lineaire
+C       phiA                                   saturation (jamais hors
+C                                              de [-180, 180] : atan2)
+C     alphaT ne peut pas sortir par le bas (acos >= 0).
 C
 C     Les variables locales en SAVE gardent leur valeur d'un appel a
 C     l'autre : c'est ce qui lie les deux phases.
@@ -69,6 +76,7 @@ C
 C     Locales
       INTEGER IS, ISAT
       DOUBLE PRECISION RX, RY, RZ, DCMG, VG(5)
+      INTEGER IEXG(5)
       DOUBLE PRECISION DEG, ARAD, BRAD, CALFT, ALFT, PHIA
       PARAMETER (DEG = 57.295779513082321D0)
       LOGICAL CROISS
@@ -81,6 +89,8 @@ C     restent a zero quand le modele est pris dans une bibliotheque)
       EXTERNAL AERTBD
 C
       DATA INIT / .FALSE. /
+C     Consignes de la table des gouvernes : Mach, alphaT, phiA, DM, DN
+      DATA IEXG / ISATU, IEXTR, ISATU, ISATU, ISATU /
       DATA SXREF, SYREF, SZREF, ULREF / 4 * 0.0D0 /
 C
 C     Appel direct de AERO : sans objet
@@ -137,28 +147,34 @@ C
 C
 C     1. Coefficients au point de reference
       ISAT = 0
-      CX = INTE2D(TMACH, NM, TALPHA, NA, TCX, NM, MACH, ALPHA, IS)
+      CX = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCX, NM,
+     &            MACH, ALPHA, IS)
       VALID_TAB_CX = CX
       ISAT = MAX(ISAT, IS)
-      CZ = INTE2D(TMACH, NM, TALPHA, NA, TCZ, NM, MACH, ALPHA, IS)
+      CZ = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCZ, NM,
+     &            MACH, ALPHA, IS)
       VALID_TAB_CZ = CZ
       ISAT = MAX(ISAT, IS)
-      CM = INTE2D(TMACH, NM, TALPHA, NA, TCM, NM, MACH, ALPHA, IS)
+      CM = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCM, NM,
+     &            MACH, ALPHA, IS)
       VALID_TAB_CM = CM
       ISAT = MAX(ISAT, IS)
-      CY = INTE2D(TMACH, NM, TBETA,  NB, TCY, NM, MACH, BETA,  IS)
+      CY = INTE2D(TMACH, NM, ISATU, TBETA,  NB, IEXTR, TCY, NM,
+     &            MACH, BETA,  IS)
       VALID_TAB_CY = CY
       ISAT = MAX(ISAT, IS)
-      CL = INTE2D(TMACH, NM, TBETA,  NB, TCL, NM, MACH, BETA,  IS)
+      CL = INTE2D(TMACH, NM, ISATU, TBETA,  NB, IEXTR, TCL, NM,
+     &            MACH, BETA,  IS)
       VALID_TAB_CL = CL
       ISAT = MAX(ISAT, IS)
-      CN = INTE2D(TMACH, NM, TBETA,  NB, TCN, NM, MACH, BETA,  IS)
+      CN = INTE2D(TMACH, NM, ISATU, TBETA,  NB, IEXTR, TCN, NM,
+     &            MACH, BETA,  IS)
       VALID_TAB_CN = CN
       ISAT = MAX(ISAT, IS)
 C
 C     2. Propulsion : increment de CX fonction du Mach seul
       IF (IPROPU .EQ. 1) THEN
-         VALID_TAB_DCXP = INTE1D(TMACHP, TDCXP, NP, MACH, IS)
+         VALID_TAB_DCXP = INTE1D(TMACHP, TDCXP, NP, MACH, ISATU, IS)
          CX = CX + VALID_TAB_DCXP
          ISAT = MAX(ISAT, IS)
       END IF
@@ -179,7 +195,7 @@ C        doit y etre independante de phiA)
       VG(4) = DM
       VG(5) = DN
       DCMG = INTE5D(TMACHG, NMG, TALFT, NAT, TPHIA, NPH, TDMG, NDM,
-     &              TDNG, NDN, TDCMG, VG, IS)
+     &              TDNG, NDN, IEXG, TDCMG, VG, IS)
       VALID_TAB_DCMG = DCMG
       ISAT = MAX(ISAT, IS)
       CM = CM + DCMG

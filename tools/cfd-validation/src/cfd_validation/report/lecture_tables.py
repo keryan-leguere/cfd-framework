@@ -10,7 +10,7 @@ rapport ne dépend pas du nombre d'axes, une table 5D se lit comme une 2D.
 from __future__ import annotations
 
 import io
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,7 @@ from cfd_validation.report import theme
 from cfd_validation.report.console import _grille, _table, _titre, _valeur
 from cfd_validation.report.journal import sha256_fichier
 
-__all__ = ["LIGNES_MAX_TERMINAL", "ecrire_journal_tables", "rendre_lecture_tables"]
+__all__ = ["LIGNES_MAX_TERMINAL", "ecrire_journal_rich", "ecrire_journal_tables", "rendre_lecture_tables"]
 
 #: Points en échec listés par table au terminal (le journal les liste tous).
 LIGNES_MAX_TERMINAL = 15
@@ -214,19 +214,28 @@ def rendre_lecture_tables(
         console.print(s)
 
 
-def ecrire_journal_tables(
-    res: ResultatLectureTables, chemin: Path, *, pieces: Sequence[Path] = (), racine: Path | None = None
+def ecrire_journal_rich(
+    chemin: Path,
+    entete: Sequence[str],
+    rendre: Callable[[Console], None],
+    *,
+    pieces: Sequence[Path] = (),
+    racine: Path | None = None,
+    largeur: int = LARGEUR_JOURNAL,
 ) -> Path:
-    """Le journal complet, texte brut, avec la liste des pièces et leur SHA-256."""
+    """Un journal texte brut : ``entete``, le rapport complet (``rendre``), les pièces et leur SHA-256.
+
+    Rendu en mémoire, sans couleur, espaces de fin de ligne ôtés. Commun aux
+    contrôles sur les tables (lecture, bornes).
+    """
     chemin.parent.mkdir(parents=True, exist_ok=True)
     tampon = io.StringIO()
-    console = Console(file=tampon, width=LARGEUR_JOURNAL, no_color=True, color_system=None, force_terminal=False,
+    console = Console(file=tampon, width=largeur, no_color=True, color_system=None, force_terminal=False,
                       highlight=False, emoji=False, soft_wrap=False)
-    console.print(f"Journal du test de lecture de table {res.identifiant} — "
-                  f"cfd-validation {res.environnement.versions.get('cfd-validation', '?')}")
-    console.print(f"Écrit le {res.environnement.date} (UTC). Ce fichier est généré : ne pas l'éditer.")
+    for ligne in entete:
+        console.print(ligne)
     console.print()
-    rendre_lecture_tables(console, res, complet=True)
+    rendre(console)
     if pieces:
         t = Table(title="Pièces produites (SHA-256)", title_justify="left", header_style=theme.ENTETE,
                   box=box.SIMPLE_HEAD, show_edge=False, pad_edge=False)
@@ -238,3 +247,16 @@ def ecrire_journal_tables(
         console.print(Padding(t, (1, 0, 0, 2)))
     chemin.write_text("\n".join(x.rstrip() for x in tampon.getvalue().splitlines()) + "\n", encoding="utf-8")
     return chemin
+
+
+def ecrire_journal_tables(
+    res: ResultatLectureTables, chemin: Path, *, pieces: Sequence[Path] = (), racine: Path | None = None
+) -> Path:
+    """Le journal complet du test de lecture de table."""
+    entete = [
+        f"Journal du test de lecture de table {res.identifiant} — "
+        f"cfd-validation {res.environnement.versions.get('cfd-validation', '?')}",
+        f"Écrit le {res.environnement.date} (UTC). Ce fichier est généré : ne pas l'éditer.",
+    ]
+    return ecrire_journal_rich(chemin, entete, lambda c: rendre_lecture_tables(c, res, complet=True),
+                               pieces=pieces, racine=racine)

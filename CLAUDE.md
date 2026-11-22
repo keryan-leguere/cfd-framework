@@ -581,7 +581,7 @@ not part of the Bash framework's runtime:
   NASA-STD-7009A / IEEE 29119-3; `00_DOC/01_PRINCIPE.md` maps each requirement to the piece that
   answers it (section numbers only where certain — DO-178C §11.13–11.16). Layers `core` (NumPy
   only) → `data` → `engine` → `report` → `cli`, AST-enforced (`tests/test_architecture.py`);
-  `integration.py` is the façade outside the layers. mypy strict. First control (second one below: table reading):
+  `integration.py` is the façade outside the layers. mypy strict. First control (then table reading, table bounds and table interpolation, below):
     - **Integration test** — `valider_integration(reference, test, entrees=, sorties=, …)` /
       `cfd-validation integration REF TEST --config X.yaml` (exit 0 conform, 1 input error,
       2 non-conform). Rows are paired **on input values** by default (order may differ;
@@ -640,6 +640,57 @@ not part of the Bash framework's runtime:
       `ecart`, `ulp`, `marge`, `statut`, `conforme`, `%.17g`), `FIGURES/`, `resume.json`,
       `lecture_tables.log` (SHA-256 of the others). Tests: `tests/test_lecture_tables.py` (fake
       Python "code", no compiler, incl. 5D).
+    - **Table-bounds test** (third control) — `valider_bornes_tables(tables, evaluer, defauts, ecart=0.10,
+      ecarts=, consigne_defaut="sature")` (`00_DOC/04_BORNES_TABLES.md`): beyond each table's bounds,
+      does the code saturate or extrapolate as the declared **consigne** says? Consigne lives in
+      `TableReference(bornes={"alpha": "extrapole", "alphat": ("inatteignable", "extrapole")})`
+      (`sature` / `extrapole` / `inatteignable` — a side no input can reach, e.g. alphaT < 0 from
+      acos, declared, not tested, reported), so one declaration serves both table tests. Points: one
+      **face** per axis and side (user decisions: faces only, no corners; no IERR-flag check), the axis
+      at `ecart × (max − min)` beyond the bound (fraction of the *span*: « 10 % of the bound » means
+      nothing for α ∈ [−20, 20]), the other axes on all their nodes. Oracle `core/bornes.interpoler`:
+      multilinear with a per-axis-per-side rule (t clamped or left outside [0, 1]), checked against an
+      exact multilinear function. Every face is also compared to *both* consignes → **observé**
+      (sature / extrapole / indiscernable when the last cell is flat / ni l'un ni l'autre / sonde non
+      atteinte): failures read « attendu sature, observé extrapole ». Default tolerance: bit-for-bit
+      on saturated faces, rtol 1e-12 on extrapolated ones (oracle may order operations differently);
+      a table's declared tolerance wins. `engine/injection.py` (`piloter`: defaults → fixes → table
+      columns / `vers_entrees`) is now shared with the reading test; `report/lecture_tables.
+      ecrire_journal_rich` is the shared journal writer. Layers: `core/bornes.py`,
+      `engine/bornes_tables.py`, `report/bornes_tables.py`, `report/figures_bornes.py` (x = points face
+      after face, face labels `alpha+ E` in vermilion when failing; blue = expected, grey rings = the
+      *other* consigne, crosses on top — crosses landing on grey rings = wrong consigne), façade
+      `bornes_tables.py`. Pieces: `RESULTATS/` (`valeur_ATTENDUE/SATURATION/EXTRAPOLATION/CODE`),
+      `FIGURES/synthese_bornes*.svg`, `resume.json` (recap-compatible `tables[]` keys),
+      `bornes_tables.log`. Proven on the real code with an injected `CHERCH` fault (upper side ignores
+      the consigne): the 7 extrapolated upper faces fail « observé sature » while the reading test
+      stays conforme. Tests: `tests/test_bornes_tables.py`.
+    - **Table-interpolation test** (fourth control) + **polars** — `valider_interpolation_tables(tables,
+      evaluer, defauts, fractions=(¼,½,¾), centres=True, polaires=, libelles=, superposer=True, n_jobs=)`
+      (`00_DOC/05_INTERPOLATION_TABLES.md`): between nodes, does the code return the table's
+      **multilinear** interpolation? Groups: one per axis (axis at each fraction of each cell, other
+      axes on all nodes) + `centres` (every cell centre, all axes at ½ — the only place a missing cross
+      term shows: a sum of 1D interpolations is exact whenever one axis sits on its lower node). CSV
+      carries `maille` in 1-based Fortran indices (`3-4`, centres `2-3 4-5`). Oracle =
+      `core/bornes.interpoler`; **observé** = linéaire / palier (code equals a cell corner) /
+      indiscernable / ni l'un ni l'autre / sonde non atteinte; default tolerance rtol 1e-12. The
+      evaluator call is now shared by all table tests (`engine/injection.appeler`). **Polars** (user
+      request, qualitative, no verdict — they show all three table tests at once): per table and
+      abscissa, the code called densely (`core/mailles.abscisses_polaire`: nodes, 7 pts/cell, 10 %
+      beyond each bound except `inatteignable` sides) for every condition (other axes on nodes),
+      drawn by **`cfd_plot.batch_plot`** (`report/figures_polaires.py`): sources `code` (vermilion
+      line) and `table` (blue dots), abscissa in `sweep_dict`, other axes in `flight_point_dict`
+      (1D tables get a dummy constant key, batch_plot needs one), `fold` overlay (`FoldSpec(kind=
+      "context", layout="overlay", over=(axis,), folder="SUPERPOSITION")`) for the superposed sheet;
+      hook `HabillagePolaire` (frozen dataclass → picklable, `n_jobs` keeps its pool) greys the
+      out-of-bounds zones with the declared consigne, rebuilds legends and French titles; call
+      wrapped in `mpl.rc_context()` since batch_plot's `use_style` is global. `data/polaires.Polaires`
+      (abscisses, noeuds kept when the axis is a condition, superposer) restricts them; > 200 curves
+      is refused (a 5D table at defaults would be 3 125). `tracer_polaires_tables` draws them alone.
+      Proven on the real code with two injected Fortran faults: `CHERCH` T = 0 in-grid (palier) —
+      2D/1D tables pass tests 1–2, only test 3 catches them (DCMG caught everywhere: the polar
+      round trip lands just under nodes); `INTE2D` without cross term — CL passes tests 1–2, fails
+      32/36 centres. Tests: `tests/test_interpolation_tables.py`.
     - **`01_EXEMPLE/MODELE_AERO/`** — a real Fortran 77 code wrapped for Python, the bench
       the validation runs on (package data, explicit globs in `pyproject.toml`; the built `*.so`
       and `VALIDATION/SORTIE/` are never shipped nor copied by `cfd-validation exemple`).
@@ -650,12 +701,20 @@ not part of the Bash framework's runtime:
       user decision, always active), `aero_tables.f` (BLOCK DATA, **generated** by
       `OUTILS/generer_tables.py`, `--verifier` = drift check), `aero_interp.f` (bilinear and 32-corner
       `INTE5D`, weights written `(1−T)`/`T` so nodes come back bit-exact; saturation → IERR 2),
+      per-axis out-of-grid consigne in `CHERCH(…, IEXT, …)` (`ISATU`/`IEXTR` in `aero_dim.inc`;
+      user request: mixed behaviour — Mach/DM/DN/propulsion saturate, α/β/alphaT extrapolate,
+      IERR 2 either way),
       `aero_modele.f` (`SUBROUTINE AERO` with `ENTRY AERINI(XREF,YREF,ZREF,LREF,IERR)` — the init
       carries the user's constants, kept in SAVE — and `ENTRY AERCAL(MACH…IPROPU, DM, DN, CX…CN,
       IERR)`; alphaT/phiA computed from α, β; each table value copied to its probe *before*
       propulsion/control/transport; `Cf2py intent(in/out)` lines right after each ENTRY). Sources
       must stay **ASCII** (f2py fails on one accent). User decisions: no Makefile, no Fortran
-      tests — verification goes through Python. `PYTHON/`: `construire.sh` (plain bash, user request — `bash construire.sh [NOM [DOSSIER]]`,
+      tests — verification goes through Python. `CMakeLists.txt` (user request, `LANGUAGES NONE`, ≥ 3.17) is
+      only a front door over the bash/Python scripts: targets `modele` (ALL, custom command on the `.so`,
+      rebuilt when `SOURCES/*` change), `exemple`, `validation`, `lecture`/`bornes`/`interpolation`,
+      `verifier_tables`/`tables`, `nettoyer`/`nettoyer_tout` (`OUTILS/nettoyer.cmake`), `aide`; ctest
+      with a `modele` fixture; in-source build refused; `CMakePresets.json` (`defaut`, `o3`);
+      `gitignore.exemple` is a template, not active. `PYTHON/`: `construire.sh` (plain bash, user request — `bash construire.sh [NOM [DOSSIER]]`,
       `FFLAGS`/`FC` env; one `python -m numpy.f2py -c --backend meson` call in a temp dir, needs
       meson+ninja = extra `[f2py]`, the interpreter's bin dir prepended to PATH; refuses non-ASCII
       sources; a module's name is baked into the binary, so two builds to compare get two names and
@@ -667,8 +726,13 @@ not part of the Bash framework's runtime:
       `modele_aero.py` (`ModeleAero`, 5 class attributes). `VALIDATION/` holds **one directory per
       test** (user request) + `RUN_VALIDATION.sh` (explicit `TESTS=(dir|script|options)` list; script
       contract: accepts `--sortie DIR`, writes `resume.json`, exits 0/2; extra options forwarded;
-      outputs in `VALIDATION/SORTIE/`) + `recapituler.py` (stdlib; `SORTIE/RECAP.txt`, one line per
+      outputs in `VALIDATION/SORTIE/`) + `tables_modele.py` (the model's 8 tables declared once —
+      values/grids read from the COMMON, probes, inversion, `bornes` consignes — imported by every
+      test; the file to rewrite for another code) + `recapituler.py` (stdlib; `SORTIE/RECAP.txt`, one line per
       test, % of conforming values never rounded up to 100, « TOUT EST À 100 % »; exit 0/1).
+      `02_BORNES_TABLES/`, `03_INTERPOLATION_TABLES/` (polars of every table, DCMG restricted in
+      `tables_modele.POLAIRES`, mathtext axis labels in `LIBELLES`; `--defaut` simulates in Python a
+      CM read with alpha snapped to the nearest node → « observé palier », staircase polar; `--jobs`).
       `01_LECTURE_TABLES/01_lecture_tables.py`: the 8
       tables declared from the COMMON, DCXP with `fixes={"ipropu": 1}`, DCMG with the polar inverse
       and a justified `rtol=1e-12` (round trip lands within ~13 ULP); `--combinaisons`, `--defaut`

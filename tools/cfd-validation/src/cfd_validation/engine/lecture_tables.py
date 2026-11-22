@@ -41,6 +41,7 @@ from cfd_validation.engine.environnement import (
     capturer_environnement,
     empreinte_table,
 )
+from cfd_validation.engine.injection import piloter
 
 __all__ = [
     "COLONNES_COMPARAISON",
@@ -305,16 +306,6 @@ def _json(v: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _colonne(valeurs: Any, n: int, quoi: str) -> np.ndarray:
-    a = np.asarray(valeurs)
-    if a.ndim == 0:
-        return np.full(n, a.item())
-    a = a.ravel()
-    if a.size != n:
-        raise ErreurTable(f"{quoi} : {a.size} valeurs pour {n} nœuds")
-    return a
-
-
 def _combinaisons(
     table: TableReference, combinaisons: Mapping[str, tuple[Any, ...]], pilotees: Sequence[str], base: Mapping[str, Any]
 ) -> tuple[list[dict[str, Any]], tuple[str, ...], bool]:
@@ -341,37 +332,10 @@ def _plan(
 ) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...], list[dict[str, Any]], tuple[str, ...], bool]:
     """``(cles, entrees, pilotees, combinaisons, ignorees, defauts_hors_produit)`` ; ``cles`` = nœud, combinaison, axes."""
     entrees_modele = list(defauts)
-    non_entrees = [a for a in table.noms_axes if a not in defauts]
-    if non_entrees and table.vers_entrees is None:
-        raise ErreurTable(
-            f"table {table.nom} : {', '.join(non_entrees)} n'est pas une entrée du modèle "
-            f"({', '.join(entrees_modele)}) — déclarer vers_entrees pour reconstruire les entrées"
-        )
-    inconnues = sorted(set(table.fixes) - set(defauts))
-    if inconnues:
-        raise ErreurTable(f"table {table.nom} : fixes inconnues du vecteur de défauts : {', '.join(inconnues)}")
-
     _, coords = coordonnees_noeuds(table.grilles)
     n = len(coords)
     axes_df = pd.DataFrame(coords, columns=list(table.noms_axes))
-    pilote: dict[str, np.ndarray] = {a: axes_df[a].to_numpy() for a in table.noms_axes if a in defauts}
-    if table.vers_entrees is not None:
-        rendu = table.vers_entrees(axes_df.copy())
-        if not isinstance(rendu, Mapping) and not isinstance(rendu, pd.DataFrame):
-            raise ErreurTable(f"table {table.nom} : vers_entrees doit rendre un dict {{entrée: valeurs}}")
-        cles = list(rendu.keys())
-        hors = sorted(str(k) for k in cles if k not in defauts)
-        if hors:
-            raise ErreurTable(
-                f"table {table.nom} : vers_entrees rend {', '.join(hors)}, pas des entrées du modèle "
-                f"({', '.join(entrees_modele)})"
-            )
-        for k in cles:
-            pilote[str(k)] = _colonne(rendu[k], n, f"table {table.nom}, vers_entrees[{k}]")
-    pilotees = tuple(k for k in entrees_modele if k in pilote)
-    conflit = sorted(set(pilotees) & set(table.fixes))
-    if conflit:
-        raise ErreurTable(f"table {table.nom} : {', '.join(conflit)} à la fois fixée et pilotée par la table")
+    pilote, pilotees = piloter(table, defauts, axes_df)
 
     base = {**defauts, **table.fixes}
     liste, ignorees, hors_produit = _combinaisons(table, combinaisons, pilotees, base)

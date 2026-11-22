@@ -14,3 +14,6 @@ VALIDATION_INTEGRATION/
 *.so
 # Pièces des scripts de 01_EXEMPLE/MODELE_AERO/VALIDATION/
 SORTIE/
+# Dossiers de construction CMake de 01_EXEMPLE/MODELE_AERO (cmake -B build)
+build/
+build-*/

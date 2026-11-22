@@ -127,6 +127,9 @@ def _panneau(cp: Any, ax: Any, b: BilanTable) -> None:
                    clip_on=False, label="sonde non atteinte (NaN)", zorder=6)
     _blocs(ax, b)
     ax.set_xlim(-0.5 - 0.01 * n, n - 0.5 + 0.01 * n)
+    from matplotlib.ticker import MaxNLocator
+
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # un rang de nœud : jamais 0.25
     ax.set_xlabel("rang du nœud (ordre de lecture)", fontsize=7)
     ax.set_ylabel(b.nom, fontsize=7.5)
     verdict = "conforme" if b.conforme else f"NON CONFORME ({b.n_echecs})"

@@ -171,7 +171,7 @@ correspond plus au script.
 ## 5. Interpolation et transport
 
 **Interpolation** (`aero_interp.f`). `CHERCH` trouve la maille `[XT(I),
-XT(I+1)]` qui contient `X` et le poids `T ∈ [0, 1]`. `INTE2D` est bilinéaire :
+XT(I+1)]` qui contient `X` et le poids `T ∈ [0, 1]` (hors grille : voir plus bas). `INTE2D` est bilinéaire :
 
 ```
 V = (1−T)(1−U)·V(I,J) + T(1−U)·V(I+1,J) + (1−T)U·V(I,J+1) + TU·V(I+1,J+1)
@@ -182,9 +182,26 @@ valeur de la table sur un nœud, aux deux bords compris : les poids valent
 exactement 0 ou 1. On peut donc exiger l'égalité exacte entre une sortie
 calculée sur un nœud et la table (lisible depuis Python : `aerolib.aertab.tcx`).
 
-**Hors des grilles**, pas d'extrapolation : la valeur est saturée au bord et
-`IERR = 2`. Les coefficients sont calculés quand même ; c'est à l'appelant de
-décider s'il les garde.
+**Hors des grilles**, chaque axe suit sa **consigne**, passée à `CHERCH` par
+`INTE1D` / `INTE2D` / `INTE5D` (constantes `ISATU`, `IEXTR` de `aero_dim.inc`) :
+
+- `ISATU` : saturation — `T` borné à 0 ou 1, la valeur au bord de la grille ;
+- `IEXTR` : extrapolation linéaire — `T` laissé hors de [0, 1], la dernière
+  maille prolongée par la même formule `(1−T)·V(I) + T·V(I+1)`.
+
+| Axe                         | Consigne                                         |
+|-----------------------------|--------------------------------------------------|
+| Mach (toutes les tables)    | saturation                                       |
+| α (CX, CZ, CM), β (CY, CL, CN) | extrapolation linéaire                        |
+| alphaT (gouvernes)          | extrapolation au-delà de 20° ; jamais sous 0 (acos) |
+| phiA (gouvernes)            | saturation, jamais atteinte (atan2 ∈ [−180, 180]) |
+| DM, DN (gouvernes)          | saturation                                       |
+| Mach de la propulsion       | saturation                                       |
+
+Dans les deux cas `IERR = 2` : les coefficients sont calculés, c'est à
+l'appelant de décider s'il les garde. Ces consignes sont celles que vérifie le
+test des bornes (`VALIDATION/02_BORNES_TABLES/`), déclarées dans
+`VALIDATION/tables_modele.py`.
 
 **Transport des moments** du point de référence R au CDG G :
 
@@ -206,7 +223,7 @@ sont pas nuls.
 |--------|----------|-------------------------------------------|---------------|
 | 0      | les deux | nominal                                   | calculés      |
 | 1      | `AERCAL` | appelé avant `AERINI`                     | 0             |
-| 2      | `AERCAL` | point hors d'une table, valeurs saturées  | calculés      |
+| 2      | `AERCAL` | point hors d'une table : saturé ou extrapolé selon l'axe | calculés |
 | 3      | `AERCAL` | `IPROPU` ni 0 ni 1                        | 0             |
 | 11     | `AERINI` | grille non strictement croissante         | –             |
 | 12     | `AERINI` | `LREF ≤ 0`                                | –             |
@@ -242,7 +259,8 @@ valeur interpolée **juste après** chaque lecture de table, avant que le code n
 la transforme :
 
 ```fortran
-      CX = INTE2D(TMACH, NM, TALPHA, NA, TCX, NM, MACH, ALPHA, IS)
+      CX = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCX, NM,
+     &            MACH, ALPHA, IS)
       VALID_TAB_CX = CX
 ```
 

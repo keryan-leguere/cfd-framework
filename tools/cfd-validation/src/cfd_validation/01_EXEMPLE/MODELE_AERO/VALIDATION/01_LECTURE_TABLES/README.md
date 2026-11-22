@@ -27,6 +27,7 @@ Ce que montre chaque table :
 | DCXP | Une table lue sous condition : sans `fixes={"ipropu": 1}`, la sonde reste NaN et le test échoue en le disant. |
 | DCMG | 5D, colonnes qui ne sont **pas** des entrées : (alphat, phia) → (alpha, beta) par `vers_entrees`. L'aller-retour ne retombe pas au bit près sur le nœud, d'où une tolérance déclarée et justifiée. |
 
-**Pour un autre code**, on recopie `declarer_tables` et `DEFAUTS`. Le
+**Pour un autre code**, on réécrit `../tables_modele.py` (`declarer_tables`,
+`DEFAUTS`), commun à tous les tests. Le
 mécanisme est décrit dans `00_DOC/03_LECTURE_TABLES.md`, à la racine de
 `cfd-validation`.

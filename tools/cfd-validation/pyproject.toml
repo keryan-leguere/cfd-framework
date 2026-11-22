@@ -48,7 +48,9 @@ where = ["src"]
 cfd_validation = [
     "01_EXEMPLE/*.py", "01_EXEMPLE/*.md", "01_EXEMPLE/*.sh", "01_EXEMPLE/*.yaml",
     # Projet Fortran d'exemple : sources, doc, encapsulation — jamais le module compilé (*.so)
-    "01_EXEMPLE/MODELE_AERO/*.md", "01_EXEMPLE/MODELE_AERO/SOURCES/*",
+    "01_EXEMPLE/MODELE_AERO/*.md", "01_EXEMPLE/MODELE_AERO/CMakeLists.txt",
+    "01_EXEMPLE/MODELE_AERO/CMakePresets.json", "01_EXEMPLE/MODELE_AERO/gitignore.exemple",
+    "01_EXEMPLE/MODELE_AERO/OUTILS/*.cmake", "01_EXEMPLE/MODELE_AERO/SOURCES/*",
     "01_EXEMPLE/MODELE_AERO/DOC/*", "01_EXEMPLE/MODELE_AERO/PYTHON/*.py",
     "01_EXEMPLE/MODELE_AERO/PYTHON/*.md", "01_EXEMPLE/MODELE_AERO/PYTHON/*.sh", "01_EXEMPLE/MODELE_AERO/OUTILS/*.py",
     "01_EXEMPLE/MODELE_AERO/VALIDATION/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION/*.md",

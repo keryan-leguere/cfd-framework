@@ -1,0 +1,134 @@
+# .gitignore d'exemple pour un projet de code Fortran encapsulé et validé
+# comme MODELE_AERO. Il ne s'applique pas tel quel : le copier à la racine du
+# projet sous le nom .gitignore (cp gitignore.exemple .gitignore).
+#
+# Règle suivie : on versionne ce qu'on écrit (sources, doc, scripts, tables de
+# référence), jamais ce qu'une commande régénère (modules compilés, sorties de
+# validation, dossiers de construction). Exception, à décider projet par
+# projet : SOURCES/aero_tables.f est généré mais versionné, parce que c'est le
+# code livré ; OUTILS/generer_tables.py --verifier en contrôle la dérive.
+#
+# Pour archiver une validation comme preuve, ne pas la versionner ici : copier
+# VALIDATION/SORTIE/ (journaux .log avec leurs SHA-256) dans le dossier de
+# livraison, ou retirer la ligne SORTIE/ ci-dessous en connaissance de cause.
+
+# -- Fortran : objets, modules, bibliothèques ---------------------------------
+*.o
+*.obj
+*.mod
+*.smod
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.i
+*.i90
+*.optrpt
+*.gcno
+*.gcda
+*.gcov
+
+# -- f2py : modules Python compilés et fichiers intermédiaires ----------------
+*.pyd
+*module.c
+*-f2pywrappers.f
+*-f2pywrappers2.f90
+*.pyf.bak
+f2py.log
+.f2py*/
+bbdir/
+meson-logs/
+meson-private/
+
+# -- CMake ------------------------------------------------------------------
+build/
+build-*/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+install_manifest.txt
+compile_commands.json
+_deps/
+# Makefile généré par CMake dans le dossier des sources (on construit dans build/)
+/Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+
+# -- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+dist/
+wheels/
+pip-wheel-metadata/
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ipynb_checkpoints/
+
+# -- Sorties de validation (régénérées par cmake --build build -t validation) -
+SORTIE/
+SORTIE_*/
+RECAP.txt
+*.log
+!DOC/*.log
+
+# -- Figures et rapports régénérés ailleurs que dans SORTIE/ ------------------
+# (à commenter si des figures de la doc sont produites et versionnées ici)
+# *.svg
+# *.png
+# *.pdf
+
+# -- Éditeurs et IDE ------------------------------------------------------------
+.vscode/
+!.vscode/settings.json.exemple
+.idea/
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+*.sublime-workspace
+.spyproject/
+.project
+.pydevproject
+.settings/
+
+# -- Systèmes -------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.directory
+.nfs*
+
+# -- Calcul / cluster -----------------------------------------------------------
+slurm-*.out
+# vidages mémoire (pas « core » seul : il masquerait un paquet core/)
+core.[0-9]*
+*.core
+vgcore.*
+
+# -- Secrets et réglages locaux (ne jamais versionner) ------------------------
+.env
+.env.*
+*.local
+*.local.*

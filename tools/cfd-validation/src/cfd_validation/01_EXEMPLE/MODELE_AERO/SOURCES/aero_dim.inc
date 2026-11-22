@@ -14,6 +14,11 @@ C----------------------------------------------------------------------
       INTEGER NMG, NAT, NPH, NDM, NDN
       PARAMETER (NMG = 5, NAT = 5, NPH = 5, NDM = 5, NDN = 5)
 C
+C     Consigne hors grille d'un axe (CHERCH) : saturation au bord, ou
+C     extrapolation lineaire de la derniere maille
+      INTEGER ISATU, IEXTR
+      PARAMETER (ISATU = 0, IEXTR = 1)
+C
 C     Grilles (Mach, degres)
       DOUBLE PRECISION TMACH(NM), TALPHA(NA), TBETA(NB), TMACHP(NP)
 C     Coefficients au point de reference, axes corps FRD

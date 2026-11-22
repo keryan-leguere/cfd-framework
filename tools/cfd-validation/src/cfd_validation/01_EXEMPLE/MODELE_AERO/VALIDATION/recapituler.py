@@ -35,7 +35,7 @@ def _ligne_test(nom: str, code: int, sortie: Path) -> tuple[bool, list[str]]:
     """(conforme, lignes du récapitulatif) pour un test."""
     resume_json = sortie / nom / "resume.json"
     if code not in (0, 2) or not resume_json.exists():
-        return False, [f"{nom:<22s} ERREUR        le script a échoué (code {code}) : voir SORTIE/{nom}.txt"]
+        return False, [f"{nom:<24s} ERREUR        le script a échoué (code {code}) : voir SORTIE/{nom}.txt"]
     r: dict[str, Any] = json.loads(resume_json.read_text(encoding="utf-8"))
     conforme = bool(r.get("conforme")) and code == 0
     lignes = []
@@ -44,13 +44,13 @@ def _ligne_test(nom: str, code: int, sortie: Path) -> tuple[bool, list[str]]:
         appels = sum(int(t["appels"]) for t in tables)
         bons = appels - sum(int(t["echecs"]) for t in tables)
         ok = sum(bool(t["conforme"]) for t in tables)
-        lignes.append(f"{nom:<22s} {'CONFORME' if conforme else 'NON CONFORME':<13s} "
-                      f"{ok}/{len(tables)} tables, {appels} appels".ljust(62) + f"{_pourcent(bons, appels):>9s}")
+        lignes.append(f"{nom:<24s} {'CONFORME' if conforme else 'NON CONFORME':<13s} "
+                      f"{ok}/{len(tables)} tables, {appels} appels".ljust(64) + f"{_pourcent(bons, appels):>9s}")
         for t in tables:
             if not t["conforme"]:
-                lignes.append(f"{'':<22s}   ✗ {t['nom']} : {t['echecs']}/{t['appels']} en échec")
+                lignes.append(f"{'':<24s}   ✗ {t['nom']} : {t['echecs']}/{t['appels']} en échec")
     else:  # autre contrôle : le verdict seul
-        lignes.append(f"{nom:<22s} {'CONFORME' if conforme else 'NON CONFORME':<13s} {r.get('verdict', '')}")
+        lignes.append(f"{nom:<24s} {'CONFORME' if conforme else 'NON CONFORME':<13s} {r.get('verdict', '')}")
     return conforme, lignes
 
 
@@ -73,7 +73,7 @@ def main(argv: list[str]) -> int:
         "=" * LARGEUR,
         f"RÉCAPITULATIF DE LA VALIDATION — {date} (UTC)",
         "=" * LARGEUR,
-        f"{'Test':<22s} {'Verdict':<13s} {'Détail'.ljust(25)}{'Conformes':>9s}",
+        f"{'Test':<24s} {'Verdict':<13s} {'Détail'.ljust(25)}{'Conformes':>9s}",
         "-" * LARGEUR,
         *corps,
         "-" * LARGEUR,

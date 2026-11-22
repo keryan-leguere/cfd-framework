@@ -507,7 +507,7 @@ def test_recapitulatif(tmp_path: Path) -> None:
     res = _recap(tmp_path, "01_OK:0", "02_KO:2", "03_PLANTE:1")
     assert res.returncode == 1 and "1/3 tests conformes — À REPRENDRE" in res.stdout
     assert "99.0 %" in res.stdout and "✗ CX : 1/49 en échec" in res.stdout  # 99/100, jamais arrondi à 100
-    assert "03_PLANTE              ERREUR" in res.stdout
+    assert "03_PLANTE                ERREUR" in res.stdout
 
 
 @avec_compilateur
@@ -522,7 +522,9 @@ def test_run_validation(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
         capture_output=True, text=True, env={**os.environ, "CFD_VALIDATION_PYTHON": sys.executable},
     )
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
+    assert "3/3 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
+    assert "02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels" in res.stdout
+    assert "03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels" in res.stdout
     assert (copie / "SORTIE" / "RECAP.txt").exists()
     assert (copie / "SORTIE" / "01_LECTURE_TABLES" / "resume.json").exists()
 
@@ -540,3 +542,98 @@ def test_construire_refuse_source_absent_ou_non_ascii(tmp_path: Path) -> None:
     source.unlink()
     res = subprocess.run(["bash", str(script), "x", str(tmp_path)], capture_output=True, text=True, env=env)
     assert res.returncode == 1 and "aero_interp.f" in res.stderr and "introuvable" in res.stderr
+
+
+# -- consignes hors grille et test des bornes (VALIDATION/02_BORNES_TABLES) ------
+
+
+@avec_compilateur
+def test_consignes_hors_grille(modele: Any, bibliotheques: dict[str, Any]) -> None:
+    """Le Fortran extrapole en alpha, sature en Mach, et lève IERR = 2 dans les deux cas."""
+    tab = bibliotheques["t0"].aertab
+    neutre = {"beta": 0.0, "xg": 1.2, "yg": 0.0, "zg": 0.0, "ipropu": 0, "dm": 0.0, "dn": 0.0}
+    a, t = tab.talpha, tab.tcx
+    r = modele.calculer(mach=float(tab.tmach[2]), alpha=26.0, **neutre)
+    attendu = t[2, -1] + (26.0 - a[-1]) / (a[-1] - a[-2]) * (t[2, -1] - t[2, -2])
+    assert r["valid_tab_cx"] == pytest.approx(attendu, abs=1e-15) and r["ierr"] == ma.IERR_HORS_DOMAINE
+    r = modele.calculer(mach=2.5, alpha=float(a[3]), **neutre)
+    assert r["valid_tab_cx"] == float(t[-1, 3]) and r["ierr"] == ma.IERR_HORS_DOMAINE
+
+
+BORNES = VALIDATION / "02_BORNES_TABLES" / "02_bornes_tables.py"
+
+
+def _bornes(bibliotheques: dict[str, Any], sortie: Path, *options: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(BORNES), "--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"]),
+         "--sortie", str(sortie), *options],
+        capture_output=True, text=True, env={**os.environ, "COLUMNS": "100", "MPLBACKEND": "Agg"},
+    )
+
+
+@avec_compilateur
+def test_bornes_tables_conforme(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    res = _bornes(bibliotheques, tmp_path / "B", "--sans-figures")
+    assert res.returncode == 0, res.stdout + res.stderr
+    tables = {t["nom"]: t for t in json.loads((tmp_path / "B" / "resume.json").read_text())["tables"]}
+    assert set(tables) == {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCMG"}
+    faces = {f["face"]: f for f in tables["CX"]["faces"]}
+    assert faces["alpha+"]["observe"] == "extrapole" and faces["mach+"]["observe"] == "sature"
+    dcmg = tables["DCMG"]
+    assert sorted(f["face"] for f in dcmg["non_testees"]) == ["alphat−", "phia+", "phia−"]
+    assert {f["face"]: f["observe"] for f in dcmg["faces"]}["alphat+"] == "extrapole"
+    assert dcmg["appels"] == 7 * 625
+
+
+@avec_compilateur
+def test_bornes_tables_consigne_fausse_detectee(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    res = _bornes(bibliotheques, tmp_path / "D", "--defaut")
+    assert res.returncode == 2, res.stdout + res.stderr
+    resume = json.loads((tmp_path / "D" / "resume.json").read_text())
+    assert resume["motifs_non_conformite"] == [
+        "CX alpha− : attendu sature, observé extrapole (7/7 hors tolérance)",
+        "CX alpha+ : attendu sature, observé extrapole (7/7 hors tolérance)",
+    ]
+    assert [p.name for p in sorted((tmp_path / "D" / "FIGURES").iterdir())] == [
+        "synthese_bornes_01.svg", "synthese_bornes_02.svg"]
+
+
+# -- interpolation et polaires (VALIDATION/03_INTERPOLATION_TABLES) -------------
+
+INTERPOLATION = VALIDATION / "03_INTERPOLATION_TABLES" / "03_interpolation_tables.py"
+
+
+def _interpolation(bibliotheques: dict[str, Any], sortie: Path, *options: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(INTERPOLATION), "--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"]),
+         "--sortie", str(sortie), *options],
+        capture_output=True, text=True, env={**os.environ, "COLUMNS": "100", "MPLBACKEND": "Agg"},
+    )
+
+
+@avec_compilateur
+def test_interpolation_tables_conforme(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    res = _interpolation(bibliotheques, tmp_path / "I", "--sans-figures")
+    assert res.returncode == 0, res.stdout + res.stderr
+    resume = json.loads((tmp_path / "I" / "resume.json").read_text())
+    tables = {t["nom"]: t for t in resume["tables"]}
+    assert set(tables) == {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCMG"} and resume["appels"] == 40270
+    assert {g["groupe"] for g in tables["DCMG"]["groupes"]} == {"mach", "alphat", "phia", "dm", "dn", "centres"}
+    assert {g["observe"] for t in tables.values() for g in t["groupes"]} == {"linéaire"}
+
+
+@avec_compilateur
+def test_interpolation_palier_detecte_et_polaires(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    pytest.importorskip("cfd_plot")
+    res = _interpolation(bibliotheques, tmp_path / "D", "--defaut", "--jobs", "2")
+    assert res.returncode == 2, res.stdout + res.stderr
+    resume = json.loads((tmp_path / "D" / "resume.json").read_text())
+    assert resume["motifs_non_conformite"] == [
+        "CM alpha : attendu linéaire, observé palier (126/126 hors tolérance, 6/6 maille(s))",
+        "CM centres : attendu linéaire, observé ni l'un ni l'autre (36/36 hors tolérance, 36/36 maille(s))",
+    ]
+    polaires = tmp_path / "D" / "POLAIRES"
+    assert (polaires / "CM" / "POLAIRE_ALPHA" / "MACH_0.8" / "CM_vs_alpha.svg").exists()
+    assert (polaires / "CM" / "POLAIRE_ALPHA" / "SUPERPOSITION" / "CM_vs_alpha_by_MACH.svg").exists()
+    assert (polaires / "DCMG" / "POLAIRE_ALPHAT" / "SUPERPOSITION" / "PHIA_90" / "DCMG_vs_alphat_by_DM.svg").exists()
+    assert len(list(polaires.rglob("*.svg"))) == sum(p["courbes"] for p in resume["polaires"]) + 12 + 7  # superpositions : 2D, puis DCMG

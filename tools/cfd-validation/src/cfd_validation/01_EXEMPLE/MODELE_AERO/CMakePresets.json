@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {"major": 3, "minor": 21, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "defaut",
+      "displayName": "gfortran -O2, module aerolib",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "o3",
+      "displayName": "gfortran -O3 -ffast-math, module aerolib_o3 (à comparer à aerolib)",
+      "binaryDir": "${sourceDir}/build-o3",
+      "cacheVariables": {"FFLAGS": "-O3 -ffast-math", "MODELE_NOM": "aerolib_o3"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "modele", "configurePreset": "defaut", "targets": ["modele"]},
+    {"name": "exemple", "configurePreset": "defaut", "targets": ["exemple"]},
+    {"name": "validation", "configurePreset": "defaut", "targets": ["validation"]},
+    {"name": "nettoyer", "configurePreset": "defaut", "targets": ["nettoyer"]},
+    {"name": "aide", "configurePreset": "defaut", "targets": ["aide"]},
+    {"name": "validation-o3", "configurePreset": "o3", "targets": ["validation"]}
+  ],
+  "testPresets": [
+    {"name": "defaut", "configurePreset": "defaut", "output": {"outputOnFailure": true}}
+  ]
+}

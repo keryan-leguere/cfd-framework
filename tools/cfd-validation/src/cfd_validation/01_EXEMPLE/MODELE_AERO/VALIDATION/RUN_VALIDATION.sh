@@ -23,6 +23,8 @@ SORTIE="$ICI/SORTIE"
 # rend 0 (conforme), 2 (non conforme) ou autre chose (il a échoué).
 TESTS=(
     "01_LECTURE_TABLES|01_lecture_tables.py|--combinaisons"
+    "02_BORNES_TABLES|02_bornes_tables.py|"
+    "03_INTERPOLATION_TABLES|03_interpolation_tables.py|--jobs 4"
 )
 
 rm -rf "$SORTIE"
@@ -30,7 +32,7 @@ mkdir -p "$SORTIE"
 bilans=()
 for t in "${TESTS[@]}"; do
     IFS='|' read -r rep script options <<< "$t"
-    printf '== %-22s ' "$rep"
+    printf '== %-24s ' "$rep"
     debut=$SECONDS
     # shellcheck disable=SC2086  # options : plusieurs mots voulus
     "$PY" "$ICI/$rep/$script" $options --sortie "$SORTIE/$rep" "$@" > "$SORTIE/$rep.txt" 2>&1

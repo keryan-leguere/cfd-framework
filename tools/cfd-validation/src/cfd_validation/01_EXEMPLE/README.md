@@ -51,5 +51,5 @@ Fortran 77 complet : `SOURCES/` (tables carrées en dur dans un `BLOCK DATA`,
 initialisation puis calcul par deux `ENTRY` balisées `Cf2py`), `DOC/`, et
 `PYTHON/`, l'encapsulation f2py — `bash construire.sh` produit le module,
 `ModeleAero().calculer_df(df)` rend le DataFrame augmenté des six
-coefficients — et `VALIDATION/`, le test de lecture de table qui passe par
+coefficients — et `VALIDATION/`, les tests de lecture, de bornes et d'interpolation des tables (avec leurs polaires) qui passent par
 elle (`bash RUN_VALIDATION.sh`, un récapitulatif à la fin). Voir `MODELE_AERO/README.md`.

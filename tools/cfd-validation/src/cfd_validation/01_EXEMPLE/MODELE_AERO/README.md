@@ -6,7 +6,8 @@ par elle. Le modèle est **factice** mais a la forme des vrais : Mach, α, β,
 CDG, propulsion et braquages en entrée, six coefficients en sortie, tables
 carrées en dur dans un `BLOCK DATA` (six 2D, une 1D, une 5D en angles
 polaires), initialisation (constantes du calcul) puis calcul par deux
-`ENTRY`, et une sonde de validation après chaque lecture de table.
+`ENTRY`, une sonde de validation après chaque lecture de table, et une consigne
+hors grille par axe (saturation en Mach, extrapolation linéaire en α et β).
 
 ```
 MODELE_AERO/
@@ -26,9 +27,16 @@ MODELE_AERO/
 ├── VALIDATION/            tests cfd-validation, par l'encapsulation (un répertoire par test)
 │   ├── RUN_VALIDATION.sh    lance tous les tests, puis le récapitulatif SORTIE/RECAP.txt
 │   ├── recapituler.py
-│   └── 01_LECTURE_TABLES/   chaque nœud de chaque table, relu par le code
-└── OUTILS/
-    └── generer_tables.py    régénère SOURCES/aero_tables.f
+│   ├── tables_modele.py     les tables du modèle, leurs polaires, déclarées une fois pour tous les tests
+│   ├── 01_LECTURE_TABLES/   chaque nœud de chaque table, relu par le code
+│   ├── 02_BORNES_TABLES/    au-delà des bornes : sature ou extrapole comme demandé ?
+│   └── 03_INTERPOLATION_TABLES/  entre les nœuds : interpolation multilinéaire ? + polaires
+├── OUTILS/
+│   ├── generer_tables.py    régénère SOURCES/aero_tables.f
+│   └── nettoyer.cmake       efface les sorties (cibles nettoyer, nettoyer_tout)
+├── CMakeLists.txt         les commandes de base en un point d'entrée (facultatif)
+├── CMakePresets.json
+└── gitignore.exemple      un .gitignore complet pour ce genre de projet (à renommer)
 ```
 
 ## En quelques commandes
@@ -47,6 +55,33 @@ from modele_aero import ModeleAero
 modele = ModeleAero(lref=0.2)              # appelle aerini(xref, yref, zref, lref)
 sortie = modele.calculer_df(df)            # colonnes mach … dn → + cx … cn, ierr, sondes
 ```
+
+## Avec CMake
+
+Les mêmes commandes, avec les dépendances en plus : le module est reconstruit
+quand une source change, et la validation le construit d'abord. CMake ne
+compile rien lui-même, il appelle les scripts ci-dessus, qui restent
+utilisables sans lui.
+
+```bash
+cmake -B build                       # une fois : choisit Python, vérifie gfortran, numpy, meson, ninja
+cmake --build build                  # construit PYTHON/aerolib*.so
+cmake --build build -t validation    # les trois tests, puis SORTIE/RECAP.txt
+cmake --build build -t nettoyer      # efface SORTIE/ et __pycache__/ (nettoyer_tout : et les *.so)
+cmake --build build -t aide          # toutes les cibles et les réglages
+ctest --test-dir build               # construit, puis un test ctest par test de validation
+```
+
+Autres cibles : `exemple`, `lecture`, `bornes`, `interpolation` (un test
+seul), `verifier_tables`, `tables`. Réglages : `-DPYTHON=…` (défaut
+`$CFD_VALIDATION_PYTHON`, sinon le venv actif, sinon `python3`), `-DFC=…`,
+`-DFFLAGS=…`, `-DMODELE_NOM=…`, `-DVALIDATION_JOBS=4`,
+`-DVALIDATION_OPTIONS="--sans-figures"`. Avec CMake ≥ 3.21, les presets
+raccourcissent : `cmake --preset defaut`, `cmake --build --preset validation` ;
+le preset `o3` construit `aerolib_o3` (`-O3 -ffast-math`) dans `build-o3/`.
+
+`gitignore.exemple` ne s'applique pas tel quel : le copier en `.gitignore` à la
+racine d'un projet du même genre.
 
 Prérequis : `gfortran`, numpy ≥ 1.26, `meson` et `ninja` (`pip install meson
 ninja`). Le détail de l'encapsulation et la marche à suivre pour un autre

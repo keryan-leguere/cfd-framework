@@ -31,7 +31,8 @@ avant toute transformation (incrément propulsif, gouvernes, report des
 moments au CDG) :
 
 ```fortran
-      CX = INTE2D(TMACH, NM, TALPHA, NA, TCX, NM, MACH, ALPHA, IS)
+      CX = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCX, NM,
+     &            MACH, ALPHA, IS)
       VALID_TAB_CX = CX
 ```
 

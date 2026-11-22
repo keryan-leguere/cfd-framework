@@ -76,8 +76,47 @@ res = valider_lecture_tables(
 )
 ```
 
+## Test des bornes de table
+
+Appelé au-delà des bornes (10 % de l'étendue de chaque axe), le code
+sature-t-il ou extrapole-t-il comme la consigne déclarée par axe et par côté le
+demande ? Le rapport donne, pour chaque face, l'attendu et l'**observé** :
+« attendu sature, observé extrapole ».
+
+```python
+TableReference("CX", ..., bornes={"mach": "sature", "alpha": "extrapole"})
+res = valider_bornes_tables(tables, evaluer=modele.calculer_df, defauts={...}, sortie="BORNES_TABLES")
+```
+
+## Test d'interpolation de table, et les polaires
+
+Entre les nœuds, le code rend-il l'interpolation multilinéaire de la table ?
+Chaque axe est parcouru dans ses mailles (¼, ½, ¾, les autres axes sur leurs
+nœuds), puis le centre de chaque maille (couplage entre axes). Le rapport
+donne, par groupe, l'**observé** : « attendu linéaire, observé palier ».
+
+Le test trace aussi les **polaires** par `cfd_plot.batch_plot` : la courbe du
+code le long de chaque axe, de 10 % avant la première borne à 10 % après la
+dernière, les nœuds de la table par-dessus, les zones hors bornes grisées avec
+leur consigne, et une figure superposée par abscisse (`fold` « overlay »).
+Elles montrent les trois tests de table d'un coup d'œil.
+
+```python
+from cfd_validation import Polaires, valider_interpolation_tables
+
+res = valider_interpolation_tables(
+    tables, evaluer=modele.calculer_df, defauts={...},
+    polaires={"DCMG": Polaires(abscisses=["alphat"], noeuds={"mach": [1.0], "dn": [0.0]})},
+    libelles={"alpha": (r"$\alpha$", "°")},
+    sortie="INTERPOLATION_TABLES",
+)
+```
+
+`tracer_polaires_tables(...)` trace les polaires seules, sans verdict.
+
 Exemple complet sur un code Fortran encapsulé par f2py :
-`src/cfd_validation/01_EXEMPLE/MODELE_AERO/` (`VALIDATION/01_LECTURE_TABLES/`, tous les tests par `bash VALIDATION/RUN_VALIDATION.sh`).
+`src/cfd_validation/01_EXEMPLE/MODELE_AERO/` (`VALIDATION/01_LECTURE_TABLES/`, `02_BORNES_TABLES/`,
+`03_INTERPOLATION_TABLES/`, tous les tests par `bash VALIDATION/RUN_VALIDATION.sh`).
 
 ## Documentation
 
@@ -88,6 +127,10 @@ Exemple complet sur un code Fortran encapsulé par f2py :
   attribution, pièces, lecture des figures ;
 - `00_DOC/03_LECTURE_TABLES.md` : sondes, déclaration d'une table,
   orientation, inversion, combinaisons, pièces, lecture de la figure ;
+- `00_DOC/04_BORNES_TABLES.md` : consignes (sature, extrapole, inatteignable),
+  points hors bornes, oracle, comportement observé, pièces, figure ;
+- `00_DOC/05_INTERPOLATION_TABLES.md` : points dans les mailles, centres,
+  oracle, comportement observé, polaires (`batch_plot`, superposition), pièces ;
 - `src/cfd_validation/01_EXEMPLE/` : l'exemple exécutable (`bash RUN_EXEMPLE.sh`),
   et `MODELE_AERO/`, un code Fortran 77 encapsulé par f2py et sa validation.
 
