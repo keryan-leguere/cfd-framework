@@ -40,7 +40,7 @@ def _ligne_test(nom: str, code: int, sortie: Path) -> tuple[bool, list[str]]:
     conforme = bool(r.get("conforme")) and code == 0
     lignes = []
     tables = r.get("tables")
-    if isinstance(tables, list):  # test de lecture de table
+    if isinstance(tables, list):  # tests de table (lecture, bornes, interpolation)
         appels = sum(int(t["appels"]) for t in tables)
         bons = appels - sum(int(t["echecs"]) for t in tables)
         ok = sum(bool(t["conforme"]) for t in tables)
@@ -49,6 +49,18 @@ def _ligne_test(nom: str, code: int, sortie: Path) -> tuple[bool, list[str]]:
         for t in tables:
             if not t["conforme"]:
                 lignes.append(f"{'':<24s}   ✗ {t['nom']} : {t['echecs']}/{t['appels']} en échec")
+    elif isinstance(r.get("sorties"), list):  # test d'intégration
+        sorties = r["sorties"]
+        lignes_ref = int(r.get("structure", {}).get("lignes_reference", 0))
+        total = lignes_ref * len(sorties)  # une ligne absente du test compte comme valeur en échec
+        bons = sum(int(b["identiques"]) + int(b["toleres"]) for b in sorties)
+        ok = sum(int(b["hors_tolerance"]) == 0 and int(b["non_finis"]) == 0 and int(b["n"]) == lignes_ref for b in sorties)
+        lignes.append(f"{nom:<24s} {'CONFORME' if conforme else 'NON CONFORME':<13s} "
+                      f"{ok}/{len(sorties)} sorties, {lignes_ref} lignes".ljust(64) + f"{_pourcent(bons, total):>9s}")
+        for b in sorties:
+            echecs = lignes_ref - int(b["identiques"]) - int(b["toleres"])
+            if echecs:
+                lignes.append(f"{'':<24s}   ✗ {b['nom']} : {echecs}/{lignes_ref} en échec")
     else:  # autre contrôle : le verdict seul
         lignes.append(f"{nom:<24s} {'CONFORME' if conforme else 'NON CONFORME':<13s} {r.get('verdict', '')}")
     return conforme, lignes

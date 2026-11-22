@@ -95,3 +95,28 @@ def test_exemple_yaml_valide() -> None:
     spec, desc = specification_depuis_dict(lire_yaml(EXEMPLE_DIR / "INTEGRATION.yaml"))
     assert spec.tolerance("CY").atol == 1e-14
     assert desc["identifiant"] == "INT-01"
+
+
+def test_lire_dossier(tmp_path: Path) -> None:
+    """Tous les CSV d'un dossier, renommés, bout à bout, au bit près ; provenance et empreintes."""
+    from cfd_validation import ErreurLecture, lire_dossier
+
+    rng = np.random.default_rng(1)
+    pd.DataFrame({"X (m)": rng.normal(size=3) / 3, "Y": [1, 2, 3]}).to_csv(tmp_path / "b.csv", index=False)
+    pd.DataFrame({"Y": [4, 5], "X (m)": rng.normal(size=2) / 7}).to_csv(tmp_path / "a.csv", index=False)
+    renommer = lambda df: df.rename(columns={"X (m)": "x", "Y": "y"})  # noqa: E731
+    tout = lire_dossier(tmp_path, renommer=renommer)
+    assert list(tout.columns) == ["fichier", "y", "x"]  # l'ordre du premier fichier (a.csv, ordre alphabétique)
+    assert list(tout["fichier"]) == ["a.csv"] * 2 + ["b.csv"] * 3
+    assert set(tout.attrs["fichiers"]) == {"a.csv", "b.csv"} and len(tout.attrs["fichiers"]["a.csv"]) == 64
+    relu = pd.concat([pd.read_csv(tmp_path / n).rename(columns={"X (m)": "x", "Y": "y"}) for n in ("a.csv", "b.csv")])
+    np.testing.assert_array_equal(tout["x"].to_numpy(), relu["x"].to_numpy())
+    assert "fichier" not in lire_dossier(tmp_path, renommer=renommer, colonne_fichier=None)
+
+    pd.DataFrame({"Y": [6], "Z": [0.0]}).to_csv(tmp_path / "c.csv", index=False)
+    with pytest.raises(ErreurLecture, match=r"c\.csv : colonnes différentes de a\.csv — manquantes : x — en plus : Z"):
+        lire_dossier(tmp_path, renommer=renommer)
+    with pytest.raises(ErreurLecture, match="aucun fichier"):
+        lire_dossier(tmp_path, "*.parquet")
+    with pytest.raises(ErreurLecture, match="dossier introuvable"):
+        lire_dossier(tmp_path / "rien")

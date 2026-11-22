@@ -2,7 +2,8 @@
 #
 #   cmake -B build                           # une fois (choisit Python, vérifie les outils)
 #   cmake --build build                      # construit le module f2py (cible « modele »)
-#   cmake --build build -t validation        # les trois tests, puis VALIDATION/SORTIE/RECAP.txt
+#   cmake --build build -t validation        # les quatre tests, puis VALIDATION/SORTIE/RECAP.txt
+#   cmake --build build -t validation_production   # idem, copie sans option de falsification
 #   cmake --build build -t nettoyer          # efface les sorties (SORTIE/, __pycache__/)
 #   cmake --build build -t aide              # toutes les cibles et les réglages
 #
@@ -127,7 +128,14 @@ add_custom_target(validation
     COMMAND ${CMAKE_COMMAND} -E env "CFD_VALIDATION_PYTHON=${PYTHON}"
             bash "${DOSSIER_VALIDATION}/RUN_VALIDATION.sh" --module "${MODELE_NOM}" ${_options}
     DEPENDS modele
-    COMMENT "Les trois tests, puis VALIDATION/SORTIE/RECAP.txt"
+    COMMENT "Les quatre tests, puis VALIDATION/SORTIE/RECAP.txt"
+    USES_TERMINAL VERBATIM)
+# La copie de production : mêmes tests, aucune option pour en fausser un.
+add_custom_target(validation_production
+    COMMAND ${CMAKE_COMMAND} -E env "CFD_VALIDATION_PYTHON=${PYTHON}"
+            bash "${RACINE}/VALIDATION_PRODUCTION/RUN_VALIDATION.sh" --module "${MODELE_NOM}" ${_options}
+    DEPENDS modele
+    COMMENT "Les quatre tests (copie de production), puis VALIDATION_PRODUCTION/SORTIE/RECAP.txt"
     USES_TERMINAL VERBATIM)
 
 # Un test seul : cible, répertoire, script, options propres.
@@ -150,6 +158,7 @@ endfunction()
 test_validation(lecture 01_LECTURE_TABLES 01_lecture_tables.py --combinaisons)
 test_validation(bornes 02_BORNES_TABLES 02_bornes_tables.py)
 test_validation(interpolation 03_INTERPOLATION_TABLES 03_interpolation_tables.py --jobs "${VALIDATION_JOBS}")
+test_validation(integration 04_INTEGRATION 04_integration.py)
 
 # -- tables du BLOCK DATA ------------------------------------------------------------
 add_custom_target(verifier_tables
@@ -178,16 +187,18 @@ set(_aide
     "  modele           construit PYTHON/${MODELE_NOM}${EXT_SUFFIX} (cible par défaut)"
     "  exemple          lance PYTHON/exemple_appel.py"
     "  pdv              points de vol d'un YAML -> CSV (PDV_YAML, défaut PYTHON/exemple_pdv.yaml)"
-    "  validation       les trois tests puis VALIDATION/SORTIE/RECAP.txt"
+    "  validation       les quatre tests puis VALIDATION/SORTIE/RECAP.txt"
+    "  validation_production  idem avec VALIDATION_PRODUCTION/ (sans option --defaut)"
     "  lecture          test 1 seul : lecture des tables (--combinaisons)"
     "  bornes           test 2 seul : au-delà des bornes"
     "  interpolation    test 3 seul : entre les nœuds, et les polaires"
+    "  integration      test 4 seul : REFERENCE/*.csv d'un autre environnement contre ce code"
     "  verifier_tables  SOURCES/aero_tables.f à jour ?"
     "  tables           régénère SOURCES/aero_tables.f"
     "  nettoyer         efface SORTIE/ et __pycache__/"
     "  nettoyer_tout    idem, et les modules PYTHON/*.so"
     "  clean            efface le module ${MODELE_NOM} seul"
-    "ctest --test-dir ${CMAKE_BINARY_DIR} : construit, puis les trois tests et le contrôle des tables"
+    "ctest --test-dir ${CMAKE_BINARY_DIR} : construit, puis les quatre tests et le contrôle des tables"
     ""
     "Réglages (cmake -B ${CMAKE_BINARY_DIR} -D<NOM>=<valeur>) :"
     "  PYTHON=${PYTHON}"

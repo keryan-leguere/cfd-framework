@@ -7,7 +7,7 @@ leurs nœuds) :
   la première borne à autant après la dernière ;
 - **points bleus** : les nœuds de la table, par-dessus ;
 - **zones grisées** : au-delà des bornes, avec la consigne déclarée du côté
-  (« sature », « extrapole ») ; pointillés aux bornes.
+  (« Saturé », « Extrapolé ») ; pointillés aux bornes ; grille fine sous les courbes.
 
 Ce que les trois tests vérifient s'y lit d'un coup d'œil : la courbe passe par
 les points (lecture), elle est droite entre eux (interpolation), elle est plate
@@ -43,6 +43,8 @@ Libelles = Mapping[str, "str | tuple[str, str]"]
 #: Condition fictive des tables 1D : ``batch_plot`` veut au moins un point de vol.
 _SEULE = "_seule"
 ZONE = "#EDEDED"
+#: Consigne hors bornes telle qu'affichée dans la zone grisée.
+CONSIGNES_AFFICHEES = {"sature": "Saturé", "extrapole": "Extrapolé"}
 SOURCE_CODE = "code"
 SOURCE_TABLE = "table"
 
@@ -64,6 +66,30 @@ def _unite(unite: str | None) -> str:
     if not unite:
         return ""
     return unite if unite.startswith("°") or unite == "%" else f" {unite}"
+
+
+def _condition(texte: str) -> str:
+    """``δm=-20°`` (étiquette de ``batch_plot``) → ``δm = −20°`` : espaces, vrai signe moins."""
+    nom, egal, valeur = texte.rpartition("=")
+    if not egal:
+        return texte
+    return f"{nom.strip()} = {valeur.strip().replace('-', '−')}"
+
+
+def _entete(cp: Any, fig: Any, ax: Any, titre: str, sous_titre: str | None) -> None:
+    """Titre en gras noir, conditions en dessous en gris, sans gras (à la place de ceux de batch_plot)."""
+    if getattr(fig, "_suptitle", None) is not None:
+        fig._suptitle.set_text("")
+    cp.set_title(ax, titre, fontsize=10, fontweight="bold", color="black")
+    if sous_titre:
+        cp.set_subtitle(ax, sous_titre, fontsize=8.5, fontweight="normal", color="0.45")
+
+
+def _grille(ax: Any) -> None:
+    """Grille fine sous les courbes : principale grise continue, secondaire pointillée plus claire."""
+    ax.set_axisbelow(True)
+    ax.grid(True, which="major", color="0.82", lw=0.5, ls="-")
+    ax.grid(True, which="minor", color="0.90", lw=0.4, ls=(0, (1, 2)))
 
 
 @dataclass(frozen=True)
@@ -102,10 +128,10 @@ class HabillagePolaire:
                 continue
             ax.axvspan(debut, fin, facecolor=ZONE, edgecolor="none", zorder=0)
             consigne = self.consignes[k]
-            if consigne:
-                ax.text((debut + fin) / 2, 0.97, consigne, transform=trans, rotation=90, ha="center", va="top",
-                        fontsize=6.5, color="0.35", style="italic", zorder=5,
-                        bbox={"facecolor": ZONE, "edgecolor": "none", "pad": 0.8})
+            if consigne:  # sous les courbes (zorder 1.5) : le texte ne les coupe pas
+                ax.text((debut + fin) / 2, 0.97, CONSIGNES_AFFICHEES.get(consigne, consigne.capitalize()),
+                        transform=trans, rotation=90, ha="center", va="top",
+                        fontsize=6.5, color="0.35", style="italic", zorder=1.5)
         ax.set_xlim(lo, hi)
 
     def _legende_simple(self, cp: Any, ax: Any) -> None:
@@ -113,11 +139,11 @@ class HabillagePolaire:
         from matplotlib.patches import Patch
 
         poignees: list[Any] = [
-            Line2D([], [], color=VERMILLON, lw=1.2, label="code"),
-            Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="table (nœuds)"),
+            Line2D([], [], color=VERMILLON, lw=1.2, label="Code"),
+            Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="Table (nœuds)"),
         ]
         if any(p > 0 for p in self.prolongements):
-            poignees.append(Patch(facecolor=ZONE, edgecolor="none", label="hors des bornes"))
+            poignees.append(Patch(facecolor=ZONE, edgecolor="none", label="Hors des bornes"))
         cp.make_legend(ax, handles=poignees, fontsize=7)
 
     def _legende_superposee(self, cp: Any, ax: Any) -> None:
@@ -129,13 +155,14 @@ class HabillagePolaire:
             etiquette = str(ligne.get_label())
             if etiquette.startswith(prefixe):
                 poignees.append(Line2D([], [], color=ligne.get_color(), marker="o", ms=3.5, lw=1.0,
-                                       label=etiquette[len(prefixe):]))
-        cp.make_legend(ax, handles=poignees, fontsize=6.5, title="trait : code — points : table",
+                                       label=_condition(etiquette[len(prefixe):])))
+        cp.make_legend(ax, handles=poignees, fontsize=6.5, title="Trait : code — Points : table",
                        title_fontsize=6.5, loc="center left", bbox_to_anchor=(1.02, 0.5),
                        ncol=2 if len(poignees) > 12 else 1)
 
     def __call__(self, fig: Any, ax: Any, context: Any) -> None:
         cp = _cfd_plot()
+        _grille(ax)
         self._zones(ax)
         for ligne in ax.get_lines():  # les nœuds de la table : des points pleins
             if str(ligne.get_label()).startswith(SOURCE_TABLE):
@@ -151,11 +178,13 @@ class HabillagePolaire:
                     restant.append(f"{libelle} = {_texte_valeur(valeurs[col])}{_unite(unite)}")
             n = len(str(context.fold_label or "").split(" / "))
             ligne2 = f"{n} valeurs de {superpose} superposées" + (f" — {', '.join(restant)}" if restant else "")
-            cp.set_suptitle(fig, f"{self.nom} vs. {self.abscisse}\n{ligne2}", fontsize=10)
+            _entete(cp, fig, ax, f"{self.nom} vs. {self.abscisse}", ligne2)
             self._legende_superposee(cp, ax)
         else:
-            if self.unidim:
-                cp.set_title(ax, f"{self.nom} vs. {self.abscisse}")
+            valeurs = {**context.flight_point, **context.fixed_sweeps}
+            conditions = [f"{libelle} = {_texte_valeur(valeurs[col])}{_unite(unite)}"
+                          for col, libelle, unite in self.conditions if col in valeurs]
+            _entete(cp, fig, ax, f"{self.nom} vs. {self.abscisse}", ", ".join(conditions))
             self._legende_simple(cp, ax)
 
 

@@ -92,9 +92,9 @@ def _panneau(cp: Any, ax: Any, b: BilanBornes) -> None:
     n = len(r)
     ax.set_xlim(-0.5 - 0.01 * n, n - 0.5 + 0.01 * n)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # un rang de point : jamais 0.25
-    ax.set_xlabel("points hors bornes, face par face", fontsize=7)
+    ax.set_xlabel("Points hors bornes, face par face", fontsize=7)
     ax.set_ylabel(b.nom, fontsize=7.5)
-    verdict = "conforme" if b.conforme else f"NON CONFORME ({b.n_echecs})"
+    verdict = "Conforme" if b.conforme else f"NON CONFORME ({b.n_echecs})"
     cp.set_title(ax, f"{b.nom} — {b.table.decrire_forme}", fontsize=8.5)
     nt = f" · {len(b.non_testees)} inatteignable(s)" if b.non_testees else ""
     cp.set_subtitle(ax, f"{len(b.faces)} faces{nt} · {n} points · {verdict}", fontsize=6.5,
@@ -121,16 +121,16 @@ def figure_synthese_bornes(res: ResultatBornesTables, chemin: Path, formats: Seq
             for ax, b in zip(plats, page):
                 _panneau(cp, ax, b)
             poignees = [
-                Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="attendu (consigne)"),
-                Line2D([], [], color=GRIS, marker="o", mfc="none", ls="", ms=4, label="l'autre consigne"),
-                Line2D([], [], color=VERMILLON, marker="x", ls="", ms=5, label="code"),
+                Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="Attendu (consigne)"),
+                Line2D([], [], color=GRIS, marker="o", mfc="none", ls="", ms=4, label="L'autre consigne"),
+                Line2D([], [], color=VERMILLON, marker="x", ls="", ms=5, label="Code"),
             ]
             if any(not b.conforme for b in page):
-                poignees.append(Line2D([], [], color="k", marker="o", mfc="none", ls="", ms=6, label="hors tolérance"))
+                poignees.append(Line2D([], [], color="k", marker="o", mfc="none", ls="", ms=6, label="Hors tolérance"))
             if any((b.resultats["statut"] == st.NOMS[st.NON_FINI]).any() for b in page):
-                poignees.append(Line2D([], [], color="k", marker="^", ls="", ms=4, label="sonde non atteinte (NaN)"))
+                poignees.append(Line2D([], [], color="k", marker="^", ls="", ms=4, label="Sonde non atteinte (NaN)"))
             _legende_sous(fig, poignees, ncol=len(poignees))
-            titre = f"{res.identifiant} — tables appelées hors bornes (S : sature, E : extrapole) : {res.verdict}"
+            titre = f"{res.identifiant} — Tables appelées hors bornes (S : saturé, E : extrapolé) : {res.verdict}"
             if len(pages) > 1:
                 titre += f" ({p + 1}/{len(pages)})"
             cp.set_suptitle(fig, titre, fontsize=9.0)

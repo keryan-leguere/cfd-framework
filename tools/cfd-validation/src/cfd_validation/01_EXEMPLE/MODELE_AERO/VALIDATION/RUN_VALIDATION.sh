@@ -25,6 +25,7 @@ TESTS=(
     "01_LECTURE_TABLES|01_lecture_tables.py|--combinaisons"
     "02_BORNES_TABLES|02_bornes_tables.py|"
     "03_INTERPOLATION_TABLES|03_interpolation_tables.py|--jobs 4"
+    "04_INTEGRATION|04_integration.py|"
 )
 
 rm -rf "$SORTIE"

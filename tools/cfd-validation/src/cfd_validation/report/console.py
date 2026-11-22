@@ -219,8 +219,11 @@ def _specification(res: ResultatIntegration, complet: bool) -> list[RenderableTy
         g.add_row("Renommage du test", ", ".join(f"{a} → {b}" for a, b in spec.renommage_test.items()))
     g.add_row("Critère", "|test − réf| ≤ atol + rtol·|réf| ; deux NaN sont identiques")
 
+    # Une justification n'est écrite qu'une fois, en renvoi : six sorties à la même
+    # tolérance ne répètent pas six fois le même paragraphe.
     numerique = {b.nom: b.numerique for b in res.sorties}
-    t = _table("Sortie", "Critère", "Origine", "Justification", insecables=(0, 1))
+    renvois: dict[str, int] = {}
+    t = _table("Sortie", "Critère", "Origine", "Justification", insecables=(0, 1, 3))
     for nom in spec.sorties:
         tol = spec.tolerance(nom)
         if not numerique.get(nom, True):
@@ -230,9 +233,20 @@ def _specification(res: ResultatIntegration, complet: bool) -> list[RenderableTy
             origine = Text("défaut", style=theme.ATTENTION)
         else:
             origine = Text("déclarée")
-        justif = Text(tol.justification) if tol.justification else Text("non justifiée", style=theme.ATTENTION)
+        if tol.justification:
+            justif = Text(f"({renvois.setdefault(tol.justification, len(renvois) + 1)})")
+        else:
+            justif = Text("non justifiée", style=theme.ATTENTION)
         t.add_row(nom, tol.decrire(), origine, justif)
-    return [_titre("2. Spécification"), Padding(Group(g, Text(""), t), (0, 0, 1, 2))]
+    notes = Table.grid(padding=(0, 1))
+    notes.add_column(style=theme.DISCRET, no_wrap=True)
+    notes.add_column(overflow="fold")
+    for texte, numero in renvois.items():
+        notes.add_row(f"({numero})", texte)
+    blocs: list[RenderableType] = [g, Text(""), t]
+    if renvois:
+        blocs += [Text(""), notes]
+    return [_titre("2. Spécification"), Padding(Group(*blocs), (0, 0, 1, 2))]
 
 
 def _structure(res: ResultatIntegration) -> list[RenderableType]:

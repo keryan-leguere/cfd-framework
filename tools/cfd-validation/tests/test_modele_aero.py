@@ -657,11 +657,175 @@ def test_run_validation(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
         capture_output=True, text=True, env={**os.environ, "CFD_VALIDATION_PYTHON": sys.executable},
     )
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "3/3 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
+    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
     assert "02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels" in res.stdout
     assert "03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels" in res.stdout
+    assert "04_INTEGRATION           CONFORME      7/7 sorties, 1016 lignes" in res.stdout
     assert (copie / "SORTIE" / "RECAP.txt").exists()
     assert (copie / "SORTIE" / "01_LECTURE_TABLES" / "resume.json").exists()
+
+
+# -- VALIDATION_PRODUCTION/ : la même validation, sans option de falsification ---
+
+PRODUCTION = PROJET / "VALIDATION_PRODUCTION"
+SCRIPTS = ("01_LECTURE_TABLES/01_lecture_tables.py", "02_BORNES_TABLES/02_bornes_tables.py",
+           "03_INTERPOLATION_TABLES/03_interpolation_tables.py", "04_INTEGRATION/04_integration.py")
+#: Ce qui sert à fausser un test dans la démonstration ; rien de tout cela en production.
+FALSIFICATION = ("--defaut", "cm_faussee", "consigne_cx_alpha", "cm_en_palier", "args.defaut", "defaut=")
+
+
+def _charger_script(chemin: Path, nom: str) -> ModuleType:
+    """Un script de test, avec **son** tables_modele : démonstration et production en ont chacune un."""
+    spec = importlib.util.spec_from_file_location(nom, chemin)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    deja = sys.modules.pop("tables_modele", None)
+    chemins = list(sys.path)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop("tables_modele", None)
+        if deja is not None:
+            sys.modules["tables_modele"] = deja
+        sys.path[:] = chemins
+    return module
+
+
+def _charger_tables(dossier: Path, nom: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(nom, dossier / "tables_modele.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_production_sans_falsification() -> None:
+    """Aucun fichier de production ne sait fausser un test ; le reste suit la démonstration."""
+    for fichier in [*SCRIPTS, "tables_modele.py", "RUN_VALIDATION.sh"]:
+        texte = (PRODUCTION / fichier).read_text(encoding="utf-8")
+        code = "\n".join(ligne for ligne in texte.splitlines() if not ligne.lstrip().startswith("#"))
+        trouves = [m for m in FALSIFICATION if m in code.split('"""', 2)[-1]]  # hors docstring de tête
+        assert not trouves, f"{fichier} : {trouves}"
+    assert (PRODUCTION / "recapituler.py").read_bytes() == (VALIDATION / "recapituler.py").read_bytes()
+    references = sorted(p.name for p in (VALIDATION / "04_INTEGRATION" / "REFERENCE").glob("*.csv"))
+    assert references and references == sorted(p.name for p in (PRODUCTION / "04_INTEGRATION" / "REFERENCE").glob("*.csv"))
+    for nom in references:
+        assert (PRODUCTION / "04_INTEGRATION" / "REFERENCE" / nom).read_bytes() == \
+               (VALIDATION / "04_INTEGRATION" / "REFERENCE" / nom).read_bytes()
+    assert not (PRODUCTION / "04_INTEGRATION" / "generer_reference.py").exists()
+    demo4, prod4 = (_charger_script(d / "04_INTEGRATION" / "04_integration.py", f"int_{d.name}") for d in (VALIDATION, PRODUCTION))
+    for nom in ("ENTREES", "SORTIES", "ALIAS", "PROPULSION", "RTOL", "ATOL", "JUSTIFICATION", "TOLERANCES", "FORMATS"):
+        assert getattr(prod4, nom) == getattr(demo4, nom), nom
+    demo = (VALIDATION / "RUN_VALIDATION.sh").read_text(encoding="utf-8").splitlines()
+    prod = (PRODUCTION / "RUN_VALIDATION.sh").read_text(encoding="utf-8").splitlines()
+    assert [ligne for ligne in prod if not ligne.startswith("#")] == [ligne for ligne in demo if not ligne.startswith("#")]
+    for nom in ("DEFAUTS", "LIBELLES", "MACH_ALPHA", "MACH_BETA"):
+        assert getattr(_charger_tables(PRODUCTION, "tables_prod"), nom) == getattr(_charger_tables(VALIDATION, "tables_demo"), nom)
+
+
+@pytest.mark.parametrize("script", SCRIPTS)
+def test_production_refuse_defaut(script: str) -> None:
+    """``--defaut`` en production : erreur d'appel (1), jamais « non conforme » (2) ; avant tout chargement du module."""
+    res = subprocess.run([sys.executable, str(PRODUCTION / script), "--defaut", "--dossier", "/nulle/part"],
+                         capture_output=True, text=True)
+    assert res.returncode == 1, res.stdout + res.stderr
+    assert "--defaut" in res.stderr
+
+
+@avec_compilateur
+def test_production_memes_tables(bibliotheques: dict[str, Any]) -> None:
+    """Les deux déclarations, sans falsification, donnent les mêmes tables au bit près."""
+    modele = ma.ModeleAero("aerolib_t0", dossier=bibliotheques["dossier"])
+    demo = _charger_tables(VALIDATION, "tables_demo").declarer_tables(modele)
+    prod = _charger_tables(PRODUCTION, "tables_prod").declarer_tables(modele)
+    assert [t.nom for t in prod] == [t.nom for t in demo]
+    for d, p in zip(demo, prod):
+        np.testing.assert_array_equal(p.valeurs, d.valeurs)
+        assert list(p.axes) == list(d.axes)
+        for axe in d.axes:
+            np.testing.assert_array_equal(p.axes[axe], d.axes[axe])
+        assert (p.sonde, dict(p.fixes), p.bornes, p.rtol, p.atol, p.justification, p.description) == \
+               (d.sonde, dict(d.fixes), d.bornes, d.rtol, d.atol, d.justification, d.description)
+        assert (p.vers_entrees is None) == (d.vers_entrees is None)
+        if d.vers_entrees is not None and p.vers_entrees is not None:
+            df = pd.DataFrame({"alphat": [0.0, 10.0, 20.0], "phia": [-90.0, 45.0, 180.0]})
+            for k, v in d.vers_entrees(df).items():
+                np.testing.assert_array_equal(p.vers_entrees(df)[k], v)
+
+
+@avec_compilateur
+def test_run_validation_production(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    """La copie de production donne les mêmes verdicts et les mêmes nombres d'appels que la démonstration."""
+    copie = tmp_path / "VALIDATION_PRODUCTION"
+    shutil.copytree(PRODUCTION, copie, ignore=shutil.ignore_patterns("SORTIE", "__pycache__"))
+    (tmp_path / "PYTHON").symlink_to(PYTHON)
+    res = subprocess.run(
+        ["bash", str(copie / "RUN_VALIDATION.sh"), "--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"]),
+         "--sans-figures"],
+        capture_output=True, text=True, env={**os.environ, "CFD_VALIDATION_PYTHON": sys.executable},
+    )
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
+    assert "02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels" in res.stdout
+    assert "03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels" in res.stdout
+    assert "04_INTEGRATION           CONFORME      7/7 sorties, 1016 lignes" in res.stdout
+
+
+# -- VALIDATION/04_INTEGRATION : CSV d'un autre environnement ---------------------
+
+INTEGRATION = VALIDATION / "04_INTEGRATION"
+
+
+def test_integration_helper_noms() -> None:
+    """Les en-têtes des deux outils d'export ramenés aux noms du modèle ; refus explicites."""
+    mod = _charger_script(INTEGRATION / "04_integration.py", "int_demo")
+    assert [mod.nom_type(c) for c in ("Alpha (deg)", "ALPHA [deg]", "DELTA_M [deg]", "Biais CX", "Lref (m)", "IERR")] == \
+           ["alpha", "alpha", "dm", "biaicx", "lref", "ierr"]
+    for fichier in sorted((INTEGRATION / "REFERENCE").glob("*.csv")):
+        df = mod.normaliser_colonnes(pd.read_csv(fichier))
+        assert set(df.columns) == set(mod.ENTREES) | set(mod.SORTIES), fichier.name
+        assert df["ipropu"].dtype == "int64" and set(df["ipropu"]) <= {0, 1}
+    with pytest.raises(mod.ErreurLecture, match="« Temperature » → temperature"):
+        mod.normaliser_colonnes(pd.DataFrame({"Mach": [0.5], "Temperature": [288.0]}))
+    with pytest.raises(mod.ErreurLecture, match="plusieurs en-têtes donnent alpha"):
+        mod.normaliser_colonnes(pd.DataFrame({"Alpha (deg)": [0.0], "ALPHA [deg]": [0.0]}))
+    base = {c: [0.0] for c in [*mod.ENTREES, *mod.SORTIES]}
+    with pytest.raises(mod.ErreurLecture, match="propulsion : valeurs"):
+        mod.normaliser_colonnes(pd.DataFrame({**base, "ipropu": ["PEUT-ETRE"]}))
+
+
+def _integration(bibliotheques: dict[str, Any], sortie: Path, *options: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(INTEGRATION / "04_integration.py"), "--module", "aerolib_t0",
+         "--dossier", str(bibliotheques["dossier"]), "--sortie", str(sortie), "--sans-figures", *options],
+        capture_output=True, text=True, env={**os.environ, "COLUMNS": "100", "MPLBACKEND": "Agg"},
+    )
+
+
+@avec_compilateur
+def test_integration_conforme_et_defaut(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    """Les CSV -O3 -ffast-math passent dans la tolérance ; la régression simulée est attribuée à dm."""
+    res = _integration(bibliotheques, tmp_path / "ok")
+    assert res.returncode == 0, res.stdout + res.stderr
+    resume = json.loads((tmp_path / "ok" / "resume.json").read_text())
+    assert resume["structure"]["lignes_reference"] == 1016 and resume["structure"]["appariees"] == 1016
+    assert {b["nom"]: b["hors_tolerance"] for b in resume["sorties"]} == dict.fromkeys(["cx", "cy", "cz", "cl", "cm", "cn", "ierr"], 0)
+    assert "campagne_C_gouvernes.csv" in json.dumps(resume["metadonnees"])
+    res = _integration(bibliotheques, tmp_path / "ko", "--defaut")
+    assert res.returncode == 2, res.stdout + res.stderr
+    resume = json.loads((tmp_path / "ko" / "resume.json").read_text())
+    cm = next(b for b in resume["sorties"] if b["nom"] == "cm")
+    assert cm["hors_tolerance"] == 162  # 2 braquages × 81 lignes de la campagne C
+    v = {a["entree"]: a["v_cramer"] for a in resume["attribution"]}
+    assert v["dm"] == pytest.approx(1.0) and max(v.values(), key=lambda x: x or 0.0) == v["dm"]
+
+
+def test_integration_reference_illisible(tmp_path: Path) -> None:
+    """Une colonne inconnue dans un CSV : erreur (1) qui nomme la colonne, avant tout chargement du module."""
+    (tmp_path / "x.csv").write_text("Mach,Temperature\n0.5,288\n", encoding="utf-8")
+    res = subprocess.run([sys.executable, str(INTEGRATION / "04_integration.py"), "--reference", str(tmp_path),
+                          "--dossier", "/nulle/part"], capture_output=True, text=True)
+    assert res.returncode == 1 and "Temperature" in res.stderr
 
 
 def test_construire_refuse_non_ascii_ou_dossier_vide(tmp_path: Path) -> None:

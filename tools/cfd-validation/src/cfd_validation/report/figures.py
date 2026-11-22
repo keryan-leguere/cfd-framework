@@ -95,10 +95,10 @@ COULEURS_SERIES = (BLEU, VERMILLON, VERT, ORANGE, POURPRE, CIEL, "0.25")
 
 #: Apparence de chaque statut de valeur : (couleur, marqueur, taille, libellé).
 _STYLE = {
-    st.IDENTIQUE: (GRIS, ".", 4, "identique"),
-    st.TOLERE: (BLEU, "o", 9, "dans la tolérance"),
-    st.ECART: (VERMILLON, "D", 14, "hors tolérance"),
-    st.NON_FINI: ("k", "x", 22, "non fini divergent"),
+    st.IDENTIQUE: (GRIS, ".", 4, "Identique"),
+    st.TOLERE: (BLEU, "o", 9, "Dans la tolérance"),
+    st.ECART: (VERMILLON, "D", 14, "Hors tolérance"),
+    st.NON_FINI: ("k", "x", 22, "Non fini divergent"),
 }
 _CODE = {v: k for k, v in st.NOMS.items()}
 
@@ -123,12 +123,13 @@ def _cfd_plot() -> ModuleType:
 
 @contextmanager
 def _style() -> Iterator[ModuleType]:
-    """Profil « paper » de cfd-plot, titres en maigre, tailles d'article."""
+    """Profil « paper » de cfd-plot, tailles d'article ; titres en gras noir, sous-titres en gris (``set_subtitle``)."""
     import matplotlib as mpl
 
     cp = _cfd_plot()
     reglages: dict[str, Any] = {
-        "axes.titleweight": "normal",
+        "axes.titleweight": "bold",
+        "figure.titleweight": "bold",
         "axes.titlesize": 9.0,
         "axes.labelsize": 8.5,
         "xtick.labelsize": 7.5,
@@ -315,13 +316,13 @@ def figure_synthese(res: ResultatIntegration, chemin: Path, formats: Sequence[st
             ax.set_yticks(range(n), [b.nom for b in reversed(page)])
             ax.tick_params(axis="y", length=0)
             ax.set_xlabel("|marge| = |Δ| / tolérance   (≤ 1 : accepté)")
-            cp.set_title(ax, f"{res.identifiant} — synthèse par sortie" + (f" ({p + 1}/{len(pages)})" if len(pages) > 1 else ""))
+            cp.set_title(ax, f"{res.identifiant} — Synthèse par sortie" + (f" ({p + 1}/{len(pages)})" if len(pages) > 1 else ""))
             poignees = [
-                Line2D([], [], color=BLEU, lw=1.6, label="médiane → maximum"),
+                Line2D([], [], color=BLEU, lw=1.6, label="Médiane → maximum"),
                 Line2D([], [], color=BLEU, marker="|", ms=7, mew=1.2, ls="", label="99e centile"),
-                Line2D([], [], color=VERMILLON, marker="D", ms=4.5, ls="", label="maximum hors tolérance"),
-                Line2D([], [], color="k", marker="x", ms=5, mew=1.3, ls="", label="non fini"),
-                Line2D([], [], color=GRIS, marker="o", mfc="white", ms=4.5, ls="", label="tout identique"),
+                Line2D([], [], color=VERMILLON, marker="D", ms=4.5, ls="", label="Maximum hors tolérance"),
+                Line2D([], [], color="k", marker="x", ms=5, mew=1.3, ls="", label="Non fini"),
+                Line2D([], [], color=GRIS, marker="o", mfc="white", ms=4.5, ls="", label="Tout identique"),
             ]
             _legende_sous(fig, poignees, ncol=5)
             fichiers += _enregistrer(fig, chemin.with_name(chemin.name + _suffixe(p, len(pages))), formats)
@@ -355,9 +356,9 @@ def figure_marges_sorties(res: ResultatIntegration, chemin: Path, formats: Seque
                 cp.set_subtitle(ax, _sous_titre(b), fontsize=6.5)
                 ax.set_xlabel(f"{b.nom} de référence")
                 if i % COLONNES == 0:
-                    ax.set_ylabel("marge = Δ / tolérance")
+                    ax.set_ylabel("Marge = Δ / tolérance")
             _legende_figure(fig, axes)
-            cp.set_suptitle(fig, f"{res.identifiant} — écart de chaque valeur, en unités de tolérance (bande : accepté)", fontsize=9.5)
+            cp.set_suptitle(fig, f"{res.identifiant} — Écart de chaque valeur, en unités de tolérance (bande : accepté)", fontsize=9.5)
             fichiers += _enregistrer(fig, chemin.with_name(chemin.name + _suffixe(p, len(pages))), formats)
     return fichiers
 
@@ -415,9 +416,9 @@ def _repartition_page(res: ResultatIntegration, bilans: Sequence[BilanSortie], c
         ax.text(0.97, 0.03, "accepté ", color=BLEU, fontsize=7, ha="right", va="bottom", transform=ax.get_xaxis_transform())
         ax.text(1.03, 0.03, " refusé", color=VERMILLON, fontsize=7, ha="left", va="bottom", transform=ax.get_xaxis_transform())
         ax.set_xlabel("|marge| = |Δ| / tolérance")
-        ax.set_ylabel("part des valeurs ≤ |marge|")
-        cp.set_title(ax, f"{res.identifiant} — répartition des écarts")
-        cp.set_subtitle(ax, "ordonnée à l'origine : part identique bit pour bit ; palier final < 1 : valeurs non finies", fontsize=7)
+        ax.set_ylabel("Part des valeurs ≤ |marge|")
+        cp.set_title(ax, f"{res.identifiant} — Répartition des écarts")
+        cp.set_subtitle(ax, "Ordonnée à l'origine : part identique bit pour bit ; palier final < 1 : valeurs non finies", fontsize=7)
         _legende_sous(fig, ax.get_legend_handles_labels()[0], ncol=2)
         return _enregistrer(fig, chemin, formats)
 
@@ -431,10 +432,19 @@ def _abscisse_entree(valeurs: pd.Series) -> tuple[np.ndarray, list[str] | None]:
     return textes.map(rang).to_numpy(dtype=float), niveaux
 
 
+def _variables(res: ResultatIntegration) -> set[str]:
+    """Les entrées qui prennent plus d'une valeur : une entrée constante n'explique rien,
+    son panneau ne répèterait que le taux global (le rapport la dit « sans objet »)."""
+    return {a.entree for a in res.attributions if len(a.niveaux) > 1}
+
+
 def figure_marges_entrees(res: ResultatIntegration, b: BilanSortie, chemin: Path, formats: Sequence[str] = FORMATS) -> list[Path]:
-    """Marge d'une sortie contre chacune des entrées."""
+    """Marge d'une sortie contre chacune des entrées qui varient."""
     df = _donnees_sortie(res, b.nom)
-    entrees = res.entrees_par_pertinence(b.nom)
+    variables = _variables(res)
+    entrees = [e for e in res.entrees_par_pertinence(b.nom) if e in variables]
+    if not entrees:
+        return []
     pages = _paginer(entrees)
     marges = df["marge"].to_numpy(dtype=float)
     codes = df["_code"].to_numpy()
@@ -451,13 +461,16 @@ def figure_marges_entrees(res: ResultatIntegration, b: BilanSortie, chemin: Path
                 _axe_marge(ax, marges)
                 _points(ax, x, marges, codes, legende=True)
                 if niveaux is not None:
-                    ax.set_xticks(range(len(niveaux)), niveaux, rotation=30 if len(niveaux) > 4 else 0)
+                    # Un panneau d'un tiers de page loge ~30 caractères à plat (noms de fichier…).
+                    tourner = len(niveaux) > 4 or sum(len(n) + 1 for n in niveaux) > 30
+                    ax.set_xticks(range(len(niveaux)), niveaux, rotation=30 if tourner else 0,
+                                  ha="right" if tourner else "center", fontsize=6.5 if tourner else 7.5)
                 v = v_par_entree.get(entree, math.nan)
                 titre = entree if math.isnan(v) else f"{entree}   (V = {formater(v, 2)})"
                 _titre_panneau(cp, ax, titre)
                 ax.set_xlabel(entree)
                 if i % COLONNES == 0:
-                    ax.set_ylabel(f"marge de {b.nom}")
+                    ax.set_ylabel(f"Marge de {b.nom}")
             _legende_figure(fig, axes)
             cp.set_suptitle(fig, f"{res.identifiant} — {b.nom} : écart en unités de tolérance selon chaque entrée", fontsize=9.5)
             fichiers += _enregistrer(fig, chemin.with_name(chemin.name + _suffixe(p, len(pages))), formats)
@@ -465,9 +478,12 @@ def figure_marges_entrees(res: ResultatIntegration, b: BilanSortie, chemin: Path
 
 
 def figure_taux_echec(res: ResultatIntegration, chemin: Path, formats: Sequence[str] = FORMATS) -> list[Path]:
-    """Taux de lignes de référence en échec par niveau de chaque entrée."""
+    """Taux de lignes de référence en échec par niveau de chaque entrée qui varie."""
     par_nom = {a.entree: a for a in res.attributions}
-    attributions = [par_nom[n] for n in res.entrees_par_pertinence()]
+    variables = _variables(res)
+    attributions = [par_nom[n] for n in res.entrees_par_pertinence() if n in variables]
+    if not attributions:
+        return []
     pages = _paginer(attributions)
     taux_global = res.taux_echec
     fichiers: list[Path] = []
@@ -477,11 +493,11 @@ def figure_taux_echec(res: ResultatIntegration, chemin: Path, formats: Sequence[
             for i, (ax, a) in enumerate(zip(axes, page)):
                 _barres_niveaux(cp, ax, a, taux_global)
                 if i % COLONNES == 0:
-                    ax.set_ylabel("lignes en échec (%)")
+                    ax.set_ylabel("Lignes en échec (%)")
             _legende_figure(fig, axes)
             cp.set_suptitle(
                 fig,
-                f"{res.identifiant} — taux d'échec par niveau d'entrée (global : {pourcentage(res.n_lignes_echec, res.structure.n_ref)})",
+                f"{res.identifiant} — Taux d'échec par niveau d'entrée (global : {pourcentage(res.n_lignes_echec, res.structure.n_ref)})",
                 fontsize=9.5,
             )
             fichiers += _enregistrer(fig, chemin.with_name(chemin.name + _suffixe(p, len(pages))), formats)
@@ -496,10 +512,10 @@ def _barres_niveaux(cp: ModuleType, ax: Any, a: AttributionEntree, taux_global: 
         t_abs = np.where(n > 0, 100 * absentes / n, 0.0)
         t_cmp = np.where(n > 0, 100 * (echecs - absentes) / n, 0.0)
     pos = np.arange(len(a.niveaux))
-    cp.plot_bar(ax, pos, t_cmp, color=VERMILLON, label="hors tolérance / non fini", width=0.72)
-    cp.plot_bar(ax, pos, t_abs, bottom=t_cmp, color=ORANGE, label="absente du test", width=0.72, hatch="///")
+    cp.plot_bar(ax, pos, t_cmp, color=VERMILLON, label="Hors tolérance / non fini", width=0.72)
+    cp.plot_bar(ax, pos, t_abs, bottom=t_cmp, color=ORANGE, label="Absente du test", width=0.72, hatch="///")
     if math.isfinite(taux_global) and taux_global > 0:
-        cp.add_reference_lines(ax, hlines=[100 * taux_global], color="0.2", linewidth=0.8, label="taux global")
+        cp.add_reference_lines(ax, hlines=[100 * taux_global], color="0.2", linewidth=0.8, label="Taux global")
     ax.set_ylim(0, 105)
     # Un panneau d'un tiers de page loge ~30 caractères à plat.
     tourner = sum(len(niv.libelle) + 1 for niv in a.niveaux) > 30
@@ -515,7 +531,10 @@ def figure_liaison(res: ResultatIntegration, chemin: Path, formats: Sequence[str
     if not presentes or res.n_lignes_echec == 0:
         return []
     par_nom = {a.entree: a for a in res.attributions}
-    entrees = res.entrees_par_pertinence()
+    variables = _variables(res)
+    entrees = [e for e in res.entrees_par_pertinence() if e in variables]
+    if not entrees:
+        return []
     z = np.array([[par_nom[e].v_par_sortie.get(s, math.nan) for s in presentes] for e in entrees], dtype=float)
     n_col = len(presentes)
     long_nom = max(len(s) for s in presentes)
@@ -535,7 +554,7 @@ def figure_liaison(res: ResultatIntegration, chemin: Path, formats: Sequence[str
         ax.tick_params(length=0)
         barre = fig.colorbar(image, ax=ax, shrink=0.9)
         barre.set_label("V de Cramér")
-        cp.set_title(ax, f"{res.identifiant} — liaison entrée × échec de la sortie")
+        cp.set_title(ax, f"{res.identifiant} — Liaison entrée × échec de la sortie")
         return _enregistrer(fig, chemin, formats)
 
 

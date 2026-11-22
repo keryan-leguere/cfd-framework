@@ -53,6 +53,7 @@ from cfd_validation.data.tables import ErreurTable, TableReference
 from cfd_validation.engine.bornes_tables import BilanBornes, ResultatBornesTables, verifier_bornes
 from cfd_validation.engine.lecture_tables import BilanTable, ResultatLectureTables, relire_tables
 from cfd_validation.data.polaires import Polaires
+from cfd_validation.data.lecture import ErreurLecture, lire_dossier, lire_table
 from cfd_validation.engine.interpolation_tables import (
     BilanInterpolation,
     ResultatInterpolationTables,
@@ -68,6 +69,7 @@ __all__ = [
     "BilanBornes",
     "BilanInterpolation",
     "BilanTable",
+    "ErreurLecture",
     "ErreurSpecification",
     "ErreurTable",
     "ResultatBornesTables",
@@ -80,6 +82,8 @@ __all__ = [
     "Tolerance",
     "comparer",
     "construire_specification",
+    "lire_dossier",
+    "lire_table",
     "relire_tables",
     "tracer_polaires_tables",
     "valider_bornes_tables",

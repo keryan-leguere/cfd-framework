@@ -105,18 +105,18 @@ def _panneau(cp: Any, ax: Any, b: BilanTable) -> None:
     base = r[r["combinaison"] == 0]
     x = base["noeud"].to_numpy()
     ax.scatter(x, base["valeur_TAB"].to_numpy(dtype=float), s=s_tab, marker="o", color=BLEU, linewidths=0,
-               label="table", zorder=2, rasterized=tramer)
+               label="Table", zorder=2, rasterized=tramer)
     xc = traces["noeud"].to_numpy()
     code = traces["valeur_CODE"].to_numpy(dtype=float)
     fini = np.isfinite(code)
     ax.scatter(xc[fini], code[fini], s=s_code, marker="x", color=VERMILLON, linewidths=epaisseur,
-               label="code", zorder=3, rasterized=tramer)
+               label="Code", zorder=3, rasterized=tramer)
     hors = (~traces["conforme"].to_numpy()) & fini
     if hors.any():
         # Quelques échecs : un cercle bien visible ; des milliers : un anneau fin, sinon une tache.
         rare = int(hors.sum()) <= 50
         ax.scatter(xc[hors], code[hors], s=36 if rare else max(s_tab * 1.5, 4.0), marker="o", facecolors="none",
-                   edgecolors="k", linewidths=0.8 if rare else 0.3, label="hors tolérance", zorder=5,
+                   edgecolors="k", linewidths=0.8 if rare else 0.3, label="Hors tolérance", zorder=5,
                    rasterized=tramer)
     nf = traces["statut"].to_numpy() == st.NOMS[st.NON_FINI]
     if nf.any():
@@ -124,15 +124,15 @@ def _panneau(cp: Any, ax: Any, b: BilanTable) -> None:
 
         trans = blended_transform_factory(ax.transData, ax.transAxes)
         ax.scatter(xc[nf], np.full(int(nf.sum()), 0.02), s=10, marker="^", color="k", transform=trans,
-                   clip_on=False, label="sonde non atteinte (NaN)", zorder=6)
+                   clip_on=False, label="Sonde non atteinte (NaN)", zorder=6)
     _blocs(ax, b)
     ax.set_xlim(-0.5 - 0.01 * n, n - 0.5 + 0.01 * n)
     from matplotlib.ticker import MaxNLocator
 
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))  # un rang de nœud : jamais 0.25
-    ax.set_xlabel("rang du nœud (ordre de lecture)", fontsize=7)
+    ax.set_xlabel("Rang du nœud (ordre de lecture)", fontsize=7)
     ax.set_ylabel(b.nom, fontsize=7.5)
-    verdict = "conforme" if b.conforme else f"NON CONFORME ({b.n_echecs})"
+    verdict = "Conforme" if b.conforme else f"NON CONFORME ({b.n_echecs})"
     cp.set_title(ax, f"{b.nom} — {b.table.decrire_forme}", fontsize=8.5)
     comb = f" · {len(b.combinaisons)} comb." if len(b.combinaisons) > 1 else ""
     cp.set_subtitle(ax, f"{n} nœuds{comb} · {verdict}", fontsize=6.5, color=VERMILLON if not b.conforme else "0.3")
@@ -159,18 +159,18 @@ def figure_synthese_tables(res: ResultatLectureTables, chemin: Path, formats: Se
                 _panneau(cp, ax, b)
             combines = any(len(b.combinaisons) > 1 for b in page)
             poignees = [
-                Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="table"),
+                Line2D([], [], color=BLEU, marker="o", ls="", ms=4, label="Table"),
                 Line2D([], [], color=VERMILLON, marker="x", ls="", ms=5,
-                       label="code (toutes combinaisons)" if combines else "code"),
+                       label="Code (toutes combinaisons)" if combines else "Code"),
             ]
             if any((~b.resultats["conforme"]).any() for b in page):
-                poignees.append(Line2D([], [], color="k", marker="o", mfc="none", ls="", ms=6, label="hors tolérance"))
+                poignees.append(Line2D([], [], color="k", marker="o", mfc="none", ls="", ms=6, label="Hors tolérance"))
             if any(b.n_non_finis for b in page):
-                poignees.append(Line2D([], [], color="k", marker="^", ls="", ms=4, label="sonde non atteinte (NaN)"))
+                poignees.append(Line2D([], [], color="k", marker="^", ls="", ms=4, label="Sonde non atteinte (NaN)"))
             if any(len(b.table.forme) > 1 for b in page):
-                poignees.append(Line2D([], [], color=GRIS, lw=0.6, label="blocs de l'axe le plus lent"))
+                poignees.append(Line2D([], [], color=GRIS, lw=0.6, label="Blocs de l'axe le plus lent"))
             _legende_sous(fig, poignees, ncol=len(poignees))
-            titre = f"{res.identifiant} — lecture des tables sur leurs nœuds : {res.verdict}"
+            titre = f"{res.identifiant} — Lecture des tables sur leurs nœuds : {res.verdict}"
             if len(pages) > 1:
                 titre += f" ({p + 1}/{len(pages)})"
             cp.set_suptitle(fig, titre, fontsize=9.5)

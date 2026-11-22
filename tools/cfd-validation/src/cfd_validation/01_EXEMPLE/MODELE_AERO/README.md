@@ -32,7 +32,9 @@ MODELE_AERO/
 │   ├── tables_modele.py     les tables du modèle, leurs polaires, déclarées une fois pour tous les tests
 │   ├── 01_LECTURE_TABLES/   chaque nœud de chaque table, relu par le code
 │   ├── 02_BORNES_TABLES/    au-delà des bornes : sature ou extrapole comme demandé ?
-│   └── 03_INTERPOLATION_TABLES/  entre les nœuds : interpolation multilinéaire ? + polaires
+│   ├── 03_INTERPOLATION_TABLES/  entre les nœuds : interpolation multilinéaire ? + polaires
+│   └── 04_INTEGRATION/      CSV d'un autre environnement (REFERENCE/), rejoués et comparés
+├── VALIDATION_PRODUCTION/ les mêmes tests sans option pour les fausser (--defaut) : à livrer
 ├── OUTILS/
 │   ├── generer_tables.py    régénère SOURCES/aero_tables.f
 │   └── nettoyer.cmake       efface les sorties (cibles nettoyer, nettoyer_tout)
@@ -50,7 +52,16 @@ python exemple_appel.py       # un point, un DataFrame de 180 cas
 python calcul_yaml.py exemple_pdv.yaml   # points de vol en YAML → SORTIE/exemple_pdv.csv
 cd ../VALIDATION
 bash RUN_VALIDATION.sh        # tous les tests, puis « TOUT EST À 100 % » ou non
+cd ../VALIDATION_PRODUCTION
+bash RUN_VALIDATION.sh        # idem, la copie de production (pas de --defaut)
 ```
+
+`VALIDATION/` est la démonstration : chaque test y a un `--defaut` qui le
+fausse exprès, pour montrer à quoi ressemble un échec. `VALIDATION_PRODUCTION/`
+est la copie à livrer et à faire tourner pour produire une preuve : mêmes
+tables, mêmes tolérances, mêmes verdicts, et aucune option capable de rendre un
+test faux (une option inconnue y sort en erreur, code 1, jamais en « non
+conforme »).
 
 ```python
 from modele_aero import ModeleAero
@@ -70,7 +81,8 @@ utilisables sans lui.
 ```bash
 cmake -B build                       # une fois : choisit Python, vérifie gfortran, numpy, meson, ninja
 cmake --build build                  # construit PYTHON/aerolib*.so
-cmake --build build -t validation    # les trois tests, puis SORTIE/RECAP.txt
+cmake --build build -t validation    # les quatre tests, puis SORTIE/RECAP.txt
+cmake --build build -t validation_production   # idem avec VALIDATION_PRODUCTION/
 cmake --build build -t nettoyer      # efface SORTIE/ et __pycache__/ (nettoyer_tout : et les *.so)
 cmake --build build -t aide          # toutes les cibles et les réglages
 ctest --test-dir build               # construit, puis un test ctest par test de validation

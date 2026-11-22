@@ -56,6 +56,11 @@ cfd_validation = [
     "01_EXEMPLE/MODELE_AERO/VALIDATION/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION/*.md",
     "01_EXEMPLE/MODELE_AERO/VALIDATION/*.sh",
     "01_EXEMPLE/MODELE_AERO/VALIDATION/*/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION/*/*.md",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/*.py", "01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/*.md",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/*.sh",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/*/*.py",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION/*/REFERENCE/*.csv",
+    "01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/*/REFERENCE/*.csv",
 ]
 
 [tool.ruff]
@@ -87,6 +92,10 @@ indent-style = "space"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+# VALIDATION_PRODUCTION/ copie VALIDATION/ sous les mêmes noms de module : mypy les
+# confondrait. Les scripts de démonstration sont vérifiés ; la copie est tenue par
+# tests/test_modele_aero.py (mêmes tables, même lanceur, pas de falsification).
+exclude = ["01_EXEMPLE/MODELE_AERO/VALIDATION_PRODUCTION/"]
 
 # cfd-plot est un paquet frère de ce dépôt (voir report/figures.py), pas une
 # publication PyPI : il n'a pas de marqueur py.typed.
