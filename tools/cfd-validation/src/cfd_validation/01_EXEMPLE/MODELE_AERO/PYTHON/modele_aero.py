@@ -4,6 +4,7 @@
 
     modele = ModeleAero()                          # charge aerolib, rien d'autre
     sortie = modele.calcul_aero(df)                # paramètres standard → sorties + colonnes en plus
+    modele.calcul_aero(df, csv="resultats.csv")    # idem, et écrit en CSV
     brut = modele.calcul_aero_elementaire(df_f)    # arguments Fortran tels quels → sorties + sondes
     modele.lire("aertab.tcx")                      # une table, telle que le code la voit
 
@@ -30,7 +31,7 @@ from types import ModuleType
 from typing import ClassVar
 
 import pandas as pd
-from modele_f2py import ErreurModele, ModeleF2py
+from modele_f2py import ErreurModele, ModeleF2py, ecrire_csv
 
 # Codes IERR de AERCAL (SOURCES/aero_modele.f)
 IERR_NOMINAL = 0
@@ -82,9 +83,9 @@ class ModeleAero(ModeleF2py):
 
     # -- niveau élémentaire : le Fortran tel quel ----------------------------
 
-    def calcul_aero_elementaire(self, entrees: pd.DataFrame) -> pd.DataFrame:
-        """Colonnes xref … lref, biaicx, mach … dn → l'entrée + cx … cn, ierr, sondes."""
-        return self.calcul_elementaire(entrees)
+    def calcul_aero_elementaire(self, entrees: pd.DataFrame, *, csv: str | Path | None = None) -> pd.DataFrame:
+        """Colonnes xref … lref, biaicx, mach … dn → l'entrée + cx … cn, ierr, sondes (``csv`` : aussi en fichier)."""
+        return self.calcul_elementaire(entrees, csv=csv)
 
     # -- niveau standard : conversions, puis sorties en plus -----------------
 
@@ -100,13 +101,12 @@ class ModeleAero(ModeleF2py):
         if manquants:
             raise ErreurModele(f"paramètre(s) absent(s) : {', '.join(manquants)}")
         df = entrees.copy()
-        for nom, valeur in self.DEFAUTS.items():
-            if nom not in df.columns:
-                df[nom] = valeur
+        for nom, valeur in self.DEFAUTS.items():  # absente, ou vide sur certaines lignes : le défaut
+            df[nom] = df[nom].fillna(valeur) if nom in df.columns else valeur
         # FLU (mm) → FRD (m) : y et z changent de signe
         df["xg"] = df["xg_mm"] / 1000.0
-        df["yg"] = -df["yg_mm"] / 1000.0
-        df["zg"] = -df["zg_mm"] / 1000.0
+        df["yg"] = 0.0 - df["yg_mm"] / 1000.0  # 0.0 − x et non −x : pas de −0 dans le CSV
+        df["zg"] = 0.0 - df["zg_mm"] / 1000.0
         df["ipropu"] = df["propulsion"].astype(bool).astype("int64")
         return df
 
@@ -119,6 +119,9 @@ class ModeleAero(ModeleF2py):
         sortie["bibliotheque"] = self.bibliotheque.__name__
         return sortie
 
-    def calcul_aero(self, entrees: pd.DataFrame) -> pd.DataFrame:
-        """Paramètres standard (``PARAMETRES``, ``DEFAUTS`` facultatifs) → sorties complètes."""
-        return self.completer_sorties(self.calcul_aero_elementaire(self.vers_elementaire(entrees)))
+    def calcul_aero(self, entrees: pd.DataFrame, *, csv: str | Path | None = None) -> pd.DataFrame:
+        """Paramètres standard (``PARAMETRES``, ``DEFAUTS`` facultatifs) → sorties complètes (``csv`` : aussi en fichier)."""
+        sortie = self.completer_sorties(self.calcul_aero_elementaire(self.vers_elementaire(entrees)))
+        if csv is not None:
+            ecrire_csv(sortie, csv)
+        return sortie

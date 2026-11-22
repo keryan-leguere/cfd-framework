@@ -23,6 +23,7 @@
 #   MODELE_NOM      nom du module (défaut aerolib ; un autre nom = une autre compilation)
 #   VALIDATION_JOBS processus pour les polaires du test 3 (défaut 4)
 #   VALIDATION_OPTIONS  options transmises à chaque test (ex. "--sans-figures")
+#   PDV_YAML        fichier de points de vol de la cible « pdv » (défaut PYTHON/exemple_pdv.yaml)
 cmake_minimum_required(VERSION 3.17)
 project(MODELE_AERO LANGUAGES NONE)
 
@@ -53,6 +54,7 @@ set(FFLAGS "-O2" CACHE STRING "options du compilateur Fortran")
 set(MODELE_NOM "aerolib" CACHE STRING "nom du module f2py")
 set(VALIDATION_JOBS "4" CACHE STRING "processus pour les polaires du test 3")
 set(VALIDATION_OPTIONS "" CACHE STRING "options transmises à chaque test (séparées par des espaces)")
+set(PDV_YAML "${CMAKE_CURRENT_SOURCE_DIR}/PYTHON/exemple_pdv.yaml" CACHE FILEPATH "points de vol de la cible pdv")
 separate_arguments(_options UNIX_COMMAND "${VALIDATION_OPTIONS}")
 
 # -- vérifications (des avertissements : nettoyer doit marcher sans compilateur) --
@@ -113,6 +115,13 @@ add_custom_target(exemple
     COMMENT "Un point et un DataFrame de 180 cas (PYTHON/exemple_appel.py)"
     USES_TERMINAL VERBATIM)
 
+add_custom_target(pdv
+    COMMAND "${PYTHON}" calcul_yaml.py "${PDV_YAML}" --module "${MODELE_NOM}"
+    WORKING_DIRECTORY "${DOSSIER_PYTHON}"
+    DEPENDS modele
+    COMMENT "Points de vol de ${PDV_YAML} -> CSV (PYTHON/calcul_yaml.py)"
+    USES_TERMINAL VERBATIM)
+
 # -- valider -----------------------------------------------------------------------
 add_custom_target(validation
     COMMAND ${CMAKE_COMMAND} -E env "CFD_VALIDATION_PYTHON=${PYTHON}"
@@ -168,6 +177,7 @@ set(_aide
     "Cibles (cmake --build ${CMAKE_BINARY_DIR} -t <cible>) :"
     "  modele           construit PYTHON/${MODELE_NOM}${EXT_SUFFIX} (cible par défaut)"
     "  exemple          lance PYTHON/exemple_appel.py"
+    "  pdv              points de vol d'un YAML -> CSV (PDV_YAML, défaut PYTHON/exemple_pdv.yaml)"
     "  validation       les trois tests puis VALIDATION/SORTIE/RECAP.txt"
     "  lecture          test 1 seul : lecture des tables (--combinaisons)"
     "  bornes           test 2 seul : au-delà des bornes"
@@ -182,7 +192,8 @@ set(_aide
     "Réglages (cmake -B ${CMAKE_BINARY_DIR} -D<NOM>=<valeur>) :"
     "  PYTHON=${PYTHON}"
     "  FC=${FC}  FFLAGS=${FFLAGS}  MODELE_NOM=${MODELE_NOM}"
-    "  VALIDATION_JOBS=${VALIDATION_JOBS}  VALIDATION_OPTIONS=${VALIDATION_OPTIONS}")
+    "  VALIDATION_JOBS=${VALIDATION_JOBS}  VALIDATION_OPTIONS=${VALIDATION_OPTIONS}"
+    "  PDV_YAML=${PDV_YAML}")
 set(_commandes)
 foreach(ligne IN LISTS _aide)
     list(APPEND _commandes COMMAND ${CMAKE_COMMAND} -E echo "${ligne}")

@@ -1,0 +1,42 @@
+# Points de vol du modèle aéro : python calcul_yaml.py exemple_pdv.yaml
+#
+# Chaque bloc de « pdv » est le produit croisé de ses clés (la dernière varie
+# le plus vite), les blocs sont mis bout à bout. Une clé vaut :
+#   un scalaire            beta: 0
+#   une liste              mach: [0.8, 1.2]
+#   une plage, avec pas    alpha: {de: 0, a: 10, pas: 2}   -> 0, 2, 4, 6, 8, 10
+#   une plage, en n points alpha: {de: 0, a: 10, n: 5}     -> 0, 2.5, 5, 7.5, 10
+
+# calcul_aero : paramètres standard (ModeleAero.PARAMETRES, CDG en mm axes FLU,
+# propulsion booléenne ; xref, yref, zref, lref, biaicx facultatifs).
+# calcul_aero_elementaire : les arguments Fortran tels quels, tous obligatoires.
+fonction: calcul_aero
+
+# CSV de sortie, relatif à ce fichier
+sortie: SORTIE/exemple_pdv.csv
+
+# Valeurs communes à tous les blocs ; un bloc peut les surcharger
+commun:
+  beta: 0.0
+  xg_mm: 1050.0
+  yg_mm: 0.0
+  zg_mm: 0.0
+  propulsion: false
+  dm: 0.0
+  dn: 0.0
+
+pdv:
+  - nom: balayage_alpha
+    mach: [0.8, 1.2]
+    alpha: {de: 0, a: 10, pas: 2}
+
+  - nom: balayage_mach_propulse
+    mach: {de: 0.4, a: 1.8, n: 8}
+    alpha: 5.0
+    propulsion: true
+
+  - nom: gouverne_et_biais
+    mach: 0.9
+    alpha: [0.0, 8.0]
+    dm: {de: -10, a: 10, pas: 5}
+    biaicx: 0.01

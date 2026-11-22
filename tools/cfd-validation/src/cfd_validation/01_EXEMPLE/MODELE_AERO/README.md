@@ -23,7 +23,9 @@ MODELE_AERO/
 │   ├── construire.sh        sources → module aerolib*.so (un appel à f2py)
 │   ├── modele_f2py.py       classe générique ModeleF2py
 │   ├── modele_aero.py       ModeleAero : ce qui est propre à ce code
-│   └── exemple_appel.py
+│   ├── exemple_appel.py
+│   ├── calcul_yaml.py       points de vol d'un fichier YAML → CSV
+│   └── exemple_pdv.yaml
 ├── VALIDATION/            tests cfd-validation, par l'encapsulation (un répertoire par test)
 │   ├── RUN_VALIDATION.sh    lance tous les tests, puis le récapitulatif SORTIE/RECAP.txt
 │   ├── recapituler.py
@@ -45,6 +47,7 @@ MODELE_AERO/
 cd PYTHON
 bash construire.sh            # gfortran + f2py (meson, ninja) → aerolib*.so
 python exemple_appel.py       # un point, un DataFrame de 180 cas
+python calcul_yaml.py exemple_pdv.yaml   # points de vol en YAML → SORTIE/exemple_pdv.csv
 cd ../VALIDATION
 bash RUN_VALIDATION.sh        # tous les tests, puis « TOUT EST À 100 % » ou non
 ```
@@ -53,7 +56,7 @@ bash RUN_VALIDATION.sh        # tous les tests, puis « TOUT EST À 100 % » ou 
 from modele_aero import ModeleAero
 
 modele = ModeleAero()                      # charge aerolib
-sortie = modele.calcul_aero(df)            # paramètres standard → + cx … cn, ierr, sondes, etat, modele…
+sortie = modele.calcul_aero(df, csv="res.csv")  # paramètres standard (csv= : aussi en fichier) → + cx … cn, ierr, sondes, etat, modele…
 brut = modele.calcul_aero_elementaire(df_f)  # xref … lref, biaicx, mach … dn (le Fortran tel quel) → + sorties, sondes
 ```
 
@@ -73,7 +76,7 @@ cmake --build build -t aide          # toutes les cibles et les réglages
 ctest --test-dir build               # construit, puis un test ctest par test de validation
 ```
 
-Autres cibles : `exemple`, `lecture`, `bornes`, `interpolation` (un test
+Autres cibles : `exemple`, `pdv` (points de vol d'un YAML → CSV, `-DPDV_YAML=…`), `lecture`, `bornes`, `interpolation` (un test
 seul), `verifier_tables`, `tables`. Réglages : `-DPYTHON=…` (défaut
 `$CFD_VALIDATION_PYTHON`, sinon le venv actif, sinon `python3`), `-DFC=…`,
 `-DFFLAGS=…`, `-DMODELE_NOM=…`, `-DVALIDATION_JOBS=4`,

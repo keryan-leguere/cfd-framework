@@ -56,6 +56,7 @@ __all__ = [
     "ErreurModele",
     "ModeleF2py",
     "Signature",
+    "ecrire_csv",
     "importer_bibliotheque",
 ]
 
@@ -386,7 +387,7 @@ class ModeleF2py:
 
     # -- DataFrame ---------------------------------------------------------
 
-    def calcul_elementaire(self, entrees: pd.DataFrame) -> pd.DataFrame:
+    def calcul_elementaire(self, entrees: pd.DataFrame, *, csv: str | Path | None = None) -> pd.DataFrame:
         """Une ligne par point, **tous** les arguments Fortran en colonnes : rend l'entrée augmentée des sorties.
 
         Colonnes lues : ``colonnes_entree`` (init puis calcul), toutes
@@ -395,6 +396,8 @@ class ModeleF2py:
         fixes ne les appelle qu'une fois. Les autres colonnes sont recopiées
         telles quelles. Les sorties sont ajoutées dans l'ordre de la docstring,
         puis les sondes ; une sortie tableau devient ``nom_1 … nom_n``.
+
+        ``csv`` : écrit aussi le résultat dans ce fichier (``ecrire_csv``).
         """
         s = self.signature_calcul
         tableaux = [n for n in self.colonnes_entree if self._types[n].tableau]
@@ -423,7 +426,26 @@ class ModeleF2py:
         for nom, liste in colonnes.items():
             dtype = "float64" if self.sondes.get(nom, (None, False))[1] else _dtype(s, nom)
             sortie[nom] = pd.Series(liste, index=entrees.index, dtype=dtype)
+        if csv is not None:
+            ecrire_csv(sortie, csv)
         return sortie
+
+
+def ecrire_csv(df: pd.DataFrame, chemin: str | Path) -> Path:
+    """Le DataFrame en CSV, relisible sans perte, dossier créé au besoin.
+
+    Les réels sont écrits par ``repr`` (le défaut de pandas) : le plus court
+    texte qui redonne le même double — ``0.8``, pas ``0.80000000000000004``.
+    Relire avec ``pd.read_csv(…, float_precision="round_trip")`` avant pandas 3
+    (son lecteur rapide par défaut peut se tromper d'un ULP) ; le défaut suffit après.
+
+    L'index est écrit seulement s'il porte quelque chose (pas le 0, 1, 2… par
+    défaut) : un ``set_index("cas")`` se retrouve en première colonne.
+    """
+    chemin = Path(chemin)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(chemin, index=not isinstance(df.index, pd.RangeIndex))
+    return chemin
 
 
 def _convertir(argument: Argument, valeur: Any, numero: int) -> Any:

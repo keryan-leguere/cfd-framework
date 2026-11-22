@@ -54,6 +54,14 @@ def _charger(nom: str) -> ModuleType:
 
 mf = _charger("modele_f2py")
 ma = _charger("modele_aero")
+cy = _charger("calcul_yaml")
+
+
+def _lire_csv(chemin: Path, **options: Any) -> pd.DataFrame:
+    """Relecture exacte : ``round_trip`` avant pandas 3, le défaut après (l'option y est dépréciée)."""
+    if int(pd.__version__.split(".")[0]) < 3:
+        options["float_precision"] = "round_trip"
+    return pd.read_csv(chemin, **options)
 
 
 # --------------------------------------------------------------------------
@@ -164,6 +172,42 @@ def test_signature_sans_sortie() -> None:
 def test_signature_illisible(doc: str | None) -> None:
     with pytest.raises(mf.ErreurModele):
         mf.Signature.depuis_doc(doc, "x")
+
+
+# --------------------------------------------------------------------------
+# Points de vol en YAML (sans compilateur)
+# --------------------------------------------------------------------------
+
+
+def test_yaml_valeurs() -> None:
+    assert cy.valeurs("x", 3.0) == [3.0]
+    assert cy.valeurs("x", [1, 2]) == [1, 2]
+    assert cy.valeurs("x", {"de": 0, "a": 10, "pas": 2}) == [0, 2, 4, 6, 8, 10]
+    assert cy.valeurs("x", {"de": 0, "a": 0.3, "pas": 0.1}) == pytest.approx([0, 0.1, 0.2, 0.3])  # « a » gardé
+    assert cy.valeurs("x", {"de": 0, "a": 9, "pas": 2}) == [0, 2, 4, 6, 8]
+    assert cy.valeurs("x", {"de": 0, "a": 10, "n": 5}) == [0, 2.5, 5, 7.5, 10]
+    for mauvais, motif in (({"de": 0, "a": 10}, "de, a, pas"), ({"de": 0, "a": 1, "pas": 0}, "positif"),
+                           ({"de": 2, "a": 1, "pas": 1}, "de = 2"), ([], "vide")):
+        with pytest.raises(cy.ErreurYaml, match=motif):
+            cy.valeurs("alpha", mauvais)
+
+
+def test_yaml_exemple_et_refus(tmp_path: Path) -> None:
+    fonction, sortie, df = cy.lire_pdv(PYTHON / "exemple_pdv.yaml")
+    assert fonction == "calcul_aero" and sortie == PYTHON / "SORTIE" / "exemple_pdv.csv"
+    assert df.groupby("bloc", sort=False).size().to_dict() == {
+        "balayage_alpha": 12, "balayage_mach_propulse": 8, "gouverne_et_biais": 10}
+    premier = df[df["bloc"] == "balayage_alpha"]
+    assert list(premier["alpha"][:6]) == [0, 2, 4, 6, 8, 10] and set(premier["mach"]) == {0.8, 1.2}  # dernière clé la plus rapide
+    assert df["propulsion"].tolist().count(True) == 8  # « commun » surchargé par un bloc
+    f = tmp_path / "f.yaml"
+    for texte, motif in (("pdv: {mach: 1}\nautre: 1\n", "inconnue"), ("fonction: x\npdv: {mach: 1}\n", "fonction"),
+                         ("sortie: a.csv\n", "pdv")):
+        f.write_text(texte)
+        with pytest.raises(cy.ErreurYaml, match=motif):
+            cy.lire_pdv(f)
+    f.write_text("pdv: {mach: 1}\n")
+    assert cy.lire_pdv(f)[1] == tmp_path / "f.csv"  # sortie par défaut : à côté du YAML
 
 
 # --------------------------------------------------------------------------
@@ -443,6 +487,38 @@ def test_calcul_aero_refus(modele: Any) -> None:
     with pytest.raises(mf.ErreurModele, match=r"absent.*propulsion"):
         modele.calcul_aero(df.drop(columns="propulsion"))
     assert modele.calcul_aero(df.assign(mach=3.0)).iloc[0]["etat"] == ma.ETATS[ma.IERR_HORS_DOMAINE]
+
+
+@avec_compilateur
+def test_csv_des_deux_classes(modele: Any, tmp_path: Path) -> None:
+    """``csv=`` écrit le résultat rendu, relu à l'identique ; l'index nommé est gardé."""
+    df = _plan().set_index("cas")
+    brut = modele.calcul_aero_elementaire(df, csv=tmp_path / "A" / "brut.csv")  # dossier créé
+    relu = _lire_csv(tmp_path / "A" / "brut.csv", index_col="cas")
+    pd.testing.assert_frame_equal(relu, brut, check_dtype=False)
+    std = pd.DataFrame([STANDARD] * 2).assign(alpha=[0.0, 4.0], yg_mm=0.0, zg_mm=0.0)
+    sortie = modele.calcul_aero(std, csv=tmp_path / "std.csv")
+    relu = _lire_csv(tmp_path / "std.csv")
+    assert list(relu.columns) == list(sortie.columns) and "cas" not in relu.columns
+    assert relu["cm"].tolist() == sortie["cm"].tolist() and relu["etat"].tolist() == ["nominal"] * 2
+    assert relu["yg"].map(lambda v: math.copysign(1.0, v)).tolist() == [1.0, 1.0]  # 0.0 − 0 : pas de −0
+    assert relu["zg"].map(lambda v: math.copysign(1.0, v)).tolist() == [1.0, 1.0]
+
+
+@avec_compilateur
+def test_calcul_yaml(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    """calcul_yaml.py sur l'exemple : 30 points, CSV ; un bloc sans biaicx prend le défaut."""
+    sortie = tmp_path / "pdv.csv"
+    code = cy.main([str(PYTHON / "exemple_pdv.yaml"), "--module", "aerolib_t0",
+                    "--dossier", str(bibliotheques["dossier"]), "--sortie", str(sortie)])
+    assert code == 0
+    d = _lire_csv(sortie)
+    assert len(d) == 30 and set(d["ierr"]) == {0}
+    assert d.groupby("bloc")["biaicx"].unique().map(list).to_dict() == {
+        "balayage_alpha": [0.0], "balayage_mach_propulse": [0.0], "gouverne_et_biais": [0.01]}
+    f = tmp_path / "e.yaml"
+    f.write_text("fonction: calcul_aero_elementaire\npdv: {mach: 1}\n")
+    assert cy.main([str(f), "--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"])]) == 1
 
 
 @avec_compilateur

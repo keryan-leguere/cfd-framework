@@ -734,7 +734,14 @@ not part of the Bash framework's runtime:
       `calcul_aero(df)` = standard `PARAMETRES` (CDG in mm body FLU, `propulsion` bool, `xref…lref`
       optional from `DEFAUTS`) → `vers_elementaire` → elementary → `completer_sorties` (`etat`,
       `modele`, `version`, `bibliotheque` — where extra output columns go); Fortran-convention
-      columns mixed into standard ones are refused). `VALIDATION/` holds **one directory per
+      columns mixed into standard ones are refused; a default column left empty on some rows takes
+      its default). `csv=` on `calcul_elementaire` / `calcul_aero_elementaire` / `calcul_aero`
+      (user request) writes the returned frame too (`ecrire_csv`: pandas' default `repr` floats —
+      shortest exact, no `0.80000000000000004` —, named index kept, dir created). `calcul_yaml.py
+      FILE.yaml [--sortie CSV]` (user request) runs flight points from YAML (`exemple_pdv.yaml`):
+      `fonction`, `sortie` (relative to the YAML), `commun`, `pdv` = one block or a list, each block
+      the cross product of its keys (last fastest), a key = scalar / list / `{de, a, pas}` (bounds
+      included) / `{de, a, n}`; errors name the spot (`pdv[0].alpha`), exit 1; CMake target `pdv`. `VALIDATION/` holds **one directory per
       test** (user request) + `RUN_VALIDATION.sh` (explicit `TESTS=(dir|script|options)` list; script
       contract: accepts `--sortie DIR`, writes `resume.json`, exits 0/2; extra options forwarded;
       outputs in `VALIDATION/SORTIE/`) + `tables_modele.py` (the model's 8 tables declared once —

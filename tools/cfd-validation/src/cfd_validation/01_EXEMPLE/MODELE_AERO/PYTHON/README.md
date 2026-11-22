@@ -8,7 +8,9 @@ PYTHON/
 ├── construire.sh     sources Fortran → module aerolib*.so (un appel à f2py)
 ├── modele_f2py.py    ModeleF2py : la mécanique, sans rien du modèle aéro
 ├── modele_aero.py    ModeleAero : la surcouche propre à ce code (conversions, sorties en plus)
-└── exemple_appel.py  paramètres standard, arguments Fortran, une constante qui varie
+├── exemple_appel.py  paramètres standard, arguments Fortran, une constante qui varie
+├── calcul_yaml.py    points de vol d'un fichier YAML → CSV
+└── exemple_pdv.yaml  un fichier de points de vol commenté
 ```
 
 ## 1. Construire le module
@@ -107,6 +109,13 @@ retrouver en plus dans le vecteur de sortie). Une colonne en convention Fortran
 ou par l'autre. **La validation passe par `calcul_aero_elementaire`** : elle
 teste le code, pas la surcouche.
 
+**CSV.** Les trois fonctions prennent `csv=` : `modele.calcul_aero(df,
+csv="resultats.csv")` rend le DataFrame **et** l'écrit (dossier créé au
+besoin, `ecrire_csv`). Les réels sont écrits par `repr`, le plus court texte
+qui redonne le même double (`0.8`) : relu exactement (`float_precision=
+"round_trip"` avant pandas 3). Un index nommé (`set_index("cas")`) est gardé en
+première colonne ; l'index 0, 1, 2… par défaut ne l'est pas.
+
 **L'état Fortran est global au processus.** Les variables `SAVE` d'AERINI sont
 les mêmes pour tous les objets construits sur `aerolib`. La dernière init faite
 sur chaque bibliothèque est suivie au niveau du module : deux objets, ou deux
@@ -127,7 +136,35 @@ indifférente), avec la forme et l'ordre d'indices du Fortran : `TCX(NM, NA)`
 donne `(7, 7)`, `[i, j]` valant `TCX(I+1, J+1)`. C'est là que les tests de
 table prennent leurs tables et leurs grilles : telles que le code les voit.
 
-## 3. Pour un autre code
+## 3. Points de vol depuis un fichier YAML
+
+```bash
+python calcul_yaml.py exemple_pdv.yaml                  # → SORTIE/exemple_pdv.csv (clé « sortie »)
+python calcul_yaml.py mes_pdv.yaml --sortie res.csv     # ailleurs
+```
+
+```yaml
+fonction: calcul_aero              # ou calcul_aero_elementaire (arguments Fortran tels quels)
+sortie: SORTIE/exemple_pdv.csv     # relatif au YAML (défaut : <nom du YAML>.csv à côté)
+commun: {beta: 0.0, xg_mm: 1050.0, yg_mm: 0.0, zg_mm: 0.0, propulsion: false, dm: 0.0, dn: 0.0}
+pdv:
+  - nom: balayage_alpha            # colonne « bloc » du CSV
+    mach: [0.8, 1.2]               # liste
+    alpha: {de: 0, a: 10, pas: 2}  # plage avec pas : 0, 2, …, 10 (bornes comprises)
+  - nom: balayage_mach
+    mach: {de: 0.4, a: 1.8, n: 8}  # plage en n points
+    alpha: 5.0                     # scalaire
+```
+
+Chaque bloc est le **produit croisé** de ses clés, la dernière variant le plus
+vite ; les blocs sont mis bout à bout ; `commun` complète chaque bloc, qui peut
+le surcharger. Les noms de clés sont ceux de la fonction appelée. Une clé à
+défaut (`biaicx`) absente d'un bloc prend son défaut sur ces lignes. Une plage,
+une fonction ou une clé de premier niveau mal écrites sont refusées avec leur
+emplacement (`pdv[0].alpha : …`), code 1. Depuis `MODELE_AERO/` : `cmake --build
+build -t pdv` (fichier : `-DPDV_YAML=…`).
+
+## 4. Pour un autre code
 
 1. après chaque `ENTRY` (ou en tête de chaque `SUBROUTINE` appelée de
    l'extérieur), une ligne `Cf2py intent(in)`, et une ligne `Cf2py intent(out)`
