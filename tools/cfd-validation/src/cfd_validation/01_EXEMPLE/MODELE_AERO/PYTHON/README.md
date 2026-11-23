@@ -189,7 +189,16 @@ d'init par `ModeleAero.DEFAUTS` (`completer_init`) : une colonne absente, ou
 vide sur certaines lignes, prend le défaut ; une valeur donnée prime. Les
 arguments de AERCAL restent obligatoires. `ModeleF2py.calcul_elementaire`, le
 générique, n'a toujours aucune valeur par défaut : c'est la surcouche du code
-qui les connaît. La validation donne les siennes explicitement.
+qui les connaît.
+
+`ModeleAero.DEFAUTS_CALCUL` donne aussi une valeur à chaque argument de AERCAL
+(`mach`, `alpha` … `dn`), **que le modèle n'utilise jamais pour calculer** : un
+point de vol s'écrit en entier. C'est le point où une table ne pilote pas
+l'argument, repris tel quel par la validation (`tables_modele.DEFAUTS =
+ModeleAero.defauts_complets()`) : les valeurs par défaut s'écrivent une fois,
+dans le modèle. `modele.defauts` les rend dans l'ordre des colonnes et dit
+s'il en manque ; une clé qui n'est pas un argument de la bonne phase (faute de
+frappe, argument d'init dans `DEFAUTS_CALCUL`) est refusée à la construction.
 
 **CSV.** Les trois fonctions prennent `csv=` : `modele.calcul_aero(df,
 csv="resultats.csv")` rend le DataFrame **et** l'écrit (dossier créé au

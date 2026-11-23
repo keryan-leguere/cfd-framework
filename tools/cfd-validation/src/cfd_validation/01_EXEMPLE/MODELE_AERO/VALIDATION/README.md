@@ -68,6 +68,15 @@ entrées, consignes hors bornes, polaires à tracer, libellés des axes) sont d�
 `tables_modele.py`, et importées par chaque test : pour un autre code, c'est
 ce fichier qu'on réécrit.
 
+**Les valeurs par défaut** des arguments — celles que prend un argument quand
+la table testée ne le pilote pas — ne s'y écrivent pas : elles viennent du
+modèle (`PYTHON/modele_aero.py`), `ModeleAero.DEFAUTS` pour les phases d'init
+et `ModeleAero.DEFAUTS_CALCUL` pour AERCAL. Ces dernières ne servent qu'à ça :
+le modèle ne s'en sert jamais pour calculer. `tables_modele.DEFAUTS =
+ModeleAero.defauts_complets()`, et `charger_modele` sort en erreur (code 1)
+si un argument n'a pas de valeur. Une valeur propre à la validation se
+surcharge là : `{**ModeleAero.defauts_complets(), "biaicx": 0.005}`.
+
 ## Ajouter un test
 
 Quatre étapes, et rien d'autre à toucher : `RUN_VALIDATION.sh` lance ce que

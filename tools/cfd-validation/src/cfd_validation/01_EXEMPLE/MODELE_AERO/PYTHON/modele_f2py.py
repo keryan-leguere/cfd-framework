@@ -30,6 +30,15 @@ liste dans ``sondes_absentes``) ; ``True`` les exige tous (erreur sinon) ;
 ``False`` n'en lit aucun. ``lire("aertab.tcx")`` rend une copie de n'importe quelle variable
 de COMMON — les tables et leurs grilles, telles que le code les voit.
 
+**Valeurs par défaut** (facultatives, déclarées par la sous-classe) :
+``DEFAUTS`` pour les arguments des phases d'init — ``completer_init`` en
+remplit les colonnes absentes, à la sous-classe de l'appeler dans ses
+calculs — et ``DEFAUTS_CALCUL`` pour ceux de la phase de calcul, **jamais
+utilisés pour calculer** : un point de référence (« là où une table ne pilote
+pas l'argument ») que la validation reprend par ``defauts_complets()``. Une
+clé qui n'est pas un argument de la bonne phase est refusée à la construction.
+``calcul_elementaire`` lui-même n'en prend aucune.
+
 L'état Fortran (variables SAVE, COMMON) est **global au processus** : deux
 objets sur la même bibliothèque partagent le même état. La dernière
 initialisation faite sur chaque bibliothèque est suivie au niveau du module,
@@ -233,6 +242,10 @@ class ModeleF2py:
     PHASE_CALCUL: ClassVar[str] = ""
     # Blocs COMMON de sondes, lus après chaque calcul (voir le module).
     SONDES: ClassVar[tuple[str, ...]] = ()
+    # Valeurs par défaut (voir le module) : init, complétées par completer_init ;
+    # calcul, jamais utilisées pour calculer (point de référence de la validation).
+    DEFAUTS: ClassVar[Mapping[str, Any]] = {}
+    DEFAUTS_CALCUL: ClassVar[Mapping[str, Any]] = {}
 
     def __init__(
         self,
@@ -256,6 +269,14 @@ class ModeleF2py:
         self.sondes_absentes: tuple[str, ...] = ()
         self.sondes = self._sondes(sondes)
         self._types = {a.nom: a for s in (*self.signatures_init, self.signature_calcul) for a in s.entrees}
+        for attribut, phase, admis in (("DEFAUTS", "d'init", self.arguments_init),
+                                       ("DEFAUTS_CALCUL", f"de {self.PHASE_CALCUL}", self.arguments_calcul)):
+            intrus = sorted(set(getattr(self, attribut)) - set(admis))
+            if intrus:
+                raise ErreurModele(
+                    f"{type(self).__name__}.{attribut} : {', '.join(intrus)} n'est pas un argument "
+                    f"des phases {phase} ({', '.join(admis) or 'aucun'})"
+                )
 
     # -- description -------------------------------------------------------
 
@@ -346,6 +367,31 @@ class ModeleF2py:
     def colonnes_sortie(self) -> tuple[str, ...]:
         """Sorties de la phase de calcul, puis sondes."""
         return (*self.signature_calcul.noms_sorties, *self.sondes)
+
+    @classmethod
+    def defauts_complets(cls) -> dict[str, Any]:
+        """``DEFAUTS`` puis ``DEFAUTS_CALCUL`` : une valeur par argument, sans charger le module."""
+        return {**cls.DEFAUTS, **cls.DEFAUTS_CALCUL}
+
+    @property
+    def defauts(self) -> dict[str, Any]:
+        """``defauts_complets()`` dans l'ordre des colonnes ; erreur s'il manque un argument obligatoire."""
+        complets = self.defauts_complets()
+        manquants = [n for n in self.colonnes_obligatoires if n not in complets]
+        if manquants:
+            raise ErreurModele(
+                f"{type(self).__name__} : pas de valeur par défaut pour {', '.join(manquants)} "
+                "(DEFAUTS pour l'init, DEFAUTS_CALCUL pour le calcul)"
+            )
+        return {n: complets[n] for n in self.colonnes_entree if n in complets}
+
+    def completer_init(self, entrees: pd.DataFrame) -> pd.DataFrame:
+        """Arguments des phases d'init absents, ou vides sur une ligne : la valeur de ``DEFAUTS``."""
+        df = entrees.copy()
+        for nom in self.arguments_init:
+            if nom in self.DEFAUTS:
+                df[nom] = df[nom].fillna(self.DEFAUTS[nom]) if nom in df.columns else self.DEFAUTS[nom]
+        return df
 
     def decrire(self) -> str:
         """Les phases telles que f2py les expose."""

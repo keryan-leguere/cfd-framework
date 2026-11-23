@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import ModuleType
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pandas as pd
 from modele_f2py import ErreurModele, ModeleF2py, ecrire_csv
@@ -73,10 +73,19 @@ class ModeleAero(ModeleF2py):
         "dm": "braquage de profondeur (deg)",
         "dn": "braquage de direction (deg)",
     }
-    #: Valeurs prises par les deux calculs quand la colonne est absente : le point
-    #: de référence des moments des tables (m, FRD), leur longueur de référence (m),
-    #: et le biais de configuration sur CX (AERCFG).
-    DEFAUTS: ClassVar[dict[str, float]] = {"xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2, "biaicx": 0.0}
+    #: Phases d'init (AERINI, AERCFG) : valeurs prises par les deux calculs quand la
+    #: colonne est absente — le point de référence des moments des tables (m, FRD),
+    #: leur longueur de référence (m), et le biais de configuration sur CX.
+    DEFAUTS: ClassVar[dict[str, Any]] = {"xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2, "biaicx": 0.0}
+    #: Phase de calcul (AERCAL) : **jamais utilisées pour calculer** (un point de vol
+    #: s'écrit en entier). C'est le point où une table ne pilote pas l'argument, repris
+    #: tel quel par la validation (VALIDATION/tables_modele.py) : CDG au point de
+    #: référence, donc rien à transporter ; propulsion éteinte, gouvernes au neutre.
+    DEFAUTS_CALCUL: ClassVar[dict[str, Any]] = {
+        "mach": 0.8, "alpha": 0.0, "beta": 0.0,
+        "xg": 1.2, "yg": 0.0, "zg": 0.0,
+        "ipropu": 0, "dm": 0.0, "dn": 0.0,
+    }
 
     def __init__(
         self,
@@ -91,14 +100,6 @@ class ModeleAero(ModeleF2py):
         super().__init__(bibliotheque, dossier, sondes=sondes)
 
     # -- niveau élémentaire : le Fortran tel quel ----------------------------
-
-    def completer_init(self, entrees: pd.DataFrame) -> pd.DataFrame:
-        """Arguments des phases d'init absents, ou vides sur une ligne : la valeur de ``DEFAUTS``."""
-        df = entrees.copy()
-        for nom in self.arguments_init:
-            if nom in self.DEFAUTS:
-                df[nom] = df[nom].fillna(self.DEFAUTS[nom]) if nom in df.columns else self.DEFAUTS[nom]
-        return df
 
     def calcul_aero_elementaire(self, entrees: pd.DataFrame, *, csv: str | Path | None = None) -> pd.DataFrame:
         """Colonnes mach … dn (xref … lref, biaicx : ``DEFAUTS`` si absentes) → l'entrée + cx … cn, ierr, sondes.

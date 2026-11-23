@@ -41,21 +41,17 @@ if str(PYTHON) not in sys.path:
     sys.path.insert(0, str(PYTHON))
 
 from modele_aero import ModeleAero  # noqa: E402
+from modele_f2py import ErreurModele  # noqa: E402
 
 __all__ = ["DEFAUTS", "LIBELLES", "POLAIRES", "PYTHON", "ModeleAero", "analyseur", "charger_modele", "declarer_tables",
            "metadonnees", "polaire_vers_cartesien"]
 
-#: Valeur de chaque argument Fortran (AERINI puis AERCAL) quand la table ne le pilote pas.
-#: Les tests passent par ModeleAero.calcul_aero_elementaire : tous les arguments sont là,
-#: constantes d'init comprises.
-DEFAUTS: dict[str, Any] = {
-    "xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2,  # AERINI : point de référence des moments, longueur
-    "biaicx": 0.005,                                      # AERCFG : biais sur CX, constant ; appliqué après
-                                                          # les sondes, il ne change aucune lecture de table
-    "mach": 0.8, "alpha": 0.0, "beta": 0.0,
-    "xg": 1.2, "yg": 0.0, "zg": 0.0,          # CDG au point de référence : rien à transporter
-    "ipropu": 0, "dm": 0.0, "dn": 0.0,
-}
+#: Valeur de chaque argument Fortran quand la table ne le pilote pas : **celles du
+#: modèle**, rien à réécrire ici — ModeleAero.DEFAUTS pour les phases d'init (AERINI,
+#: AERCFG), ModeleAero.DEFAUTS_CALCUL pour AERCAL (PYTHON/modele_aero.py).
+#: charger_modele refuse un modèle qui n'en donne pas une par argument.
+#: Pour une valeur propre à la validation : {**ModeleAero.defauts_complets(), "biaicx": 0.005}.
+DEFAUTS: dict[str, Any] = ModeleAero.defauts_complets()
 
 #: Libellé (mathtext) et unité de chaque axe et de chaque table sur les figures.
 LIBELLES: dict[str, str | tuple[str, str]] = {
@@ -162,10 +158,20 @@ def analyseur(description: str) -> argparse.ArgumentParser:
 def charger_modele(module: str, dossier: Path) -> ModeleAero | None:
     """Le modèle, ou ``None`` après avoir dit comment construire le module."""
     try:
-        return ModeleAero(module, dossier=dossier, sondes=True)  # les tests de tables lisent les sondes
+        modele = ModeleAero(module, dossier=dossier, sondes=True)  # les tests de tables lisent les sondes
     except ModuleNotFoundError as erreur:
         print(f"{erreur}\n  → cd {PYTHON} && bash construire.sh", file=sys.stderr)
         return None
+    except ErreurModele as erreur:
+        print(f"erreur : {erreur}", file=sys.stderr)
+        return None
+    manquants = [n for n in modele.colonnes_obligatoires if n not in DEFAUTS]
+    if manquants:  # chaque test pilote les arguments que ses tables ne pilotent pas
+        print(f"erreur : pas de valeur par défaut pour {', '.join(manquants)} — à déclarer dans "
+              "ModeleAero.DEFAUTS (init) ou ModeleAero.DEFAUTS_CALCUL (calcul), PYTHON/modele_aero.py",
+              file=sys.stderr)
+        return None
+    return modele
 
 
 def metadonnees(modele: ModeleAero, scenario: str) -> dict[str, str]:

@@ -490,6 +490,26 @@ def test_calcul_aero_elementaire_init_par_defaut(modele: Any) -> None:
 
 
 @avec_compilateur
+def test_defauts_du_modele(modele: Any, bibliotheques: dict[str, Any]) -> None:
+    """DEFAUTS (init) + DEFAUTS_CALCUL (AERCAL) : une valeur par argument, reprise par la validation, jamais par le calcul."""
+    assert set(ma.ModeleAero.DEFAUTS) == set(modele.arguments_init)
+    assert set(ma.ModeleAero.DEFAUTS_CALCUL) == set(modele.arguments_calcul)
+    assert list(modele.defauts) == list(modele.colonnes_entree)
+    tables = _charger_tables(VALIDATION, "tables_defauts")
+    assert tables.DEFAUTS == ma.ModeleAero.defauts_complets()  # rien de réécrit dans tables_modele.py
+    with pytest.raises(mf.ErreurModele, match=r"absente.*mach"):  # DEFAUTS_CALCUL ne calcule rien
+        modele.calcul_aero_elementaire(_plan().drop(columns="mach"))
+    faute = type("Faute", (ma.ModeleAero,), {"DEFAUTS_CALCUL": {**ma.ModeleAero.DEFAUTS_CALCUL, "mahc": 0.8}})
+    with pytest.raises(mf.ErreurModele, match=r"DEFAUTS_CALCUL : mahc"):
+        faute(bibliotheques["t0"])
+    with pytest.raises(mf.ErreurModele, match=r"DEFAUTS : alpha.*init"):  # mauvaise phase
+        type("Phase", (ma.ModeleAero,), {"DEFAUTS": {**ma.ModeleAero.DEFAUTS, "alpha": 0.0}})(bibliotheques["t0"])
+    incomplet = type("Incomplet", (ma.ModeleAero,), {"DEFAUTS_CALCUL": {"mach": 0.8}})(bibliotheques["t0"])
+    with pytest.raises(mf.ErreurModele, match=r"pas de valeur par défaut pour alpha"):
+        _ = incomplet.defauts
+
+
+@avec_compilateur
 def test_sondes_facultatives(bibliotheques: dict[str, Any]) -> None:
     """Code pas encore sondé : sondes=None ignore le bloc absent (avertissement), True le refuse, False n'en lit aucun."""
     NonSonde = type("NonSonde", (ma.ModeleAero,), {"SONDES": ("probe", "inexistant")})

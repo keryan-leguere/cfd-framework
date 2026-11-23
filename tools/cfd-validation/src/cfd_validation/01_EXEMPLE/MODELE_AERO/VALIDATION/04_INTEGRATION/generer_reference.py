@@ -35,7 +35,8 @@ sys.path.insert(0, str(ICI.parent))  # VALIDATION/ : tables_modele
 from tables_modele import DEFAUTS, PYTHON, charger_modele  # noqa: E402
 
 #: Constantes d'init de l'autre environnement : celles de la validation.
-INIT = {k: DEFAUTS[k] for k in ("xref", "yref", "zref", "lref", "biaicx")}
+# biaicx 0.005 : la valeur des CSV livrés dans REFERENCE/ (le défaut du modèle est 0)
+INIT = {**{k: DEFAUTS[k] for k in ("xref", "yref", "zref", "lref")}, "biaicx": 0.005}
 ENTREES = ["mach", "alpha", "beta", "xg", "yg", "zg", "ipropu", "dm", "dn", "xref", "yref", "zref", "lref", "biaicx"]
 SORTIES = ["cx", "cy", "cz", "cl", "cm", "cn", "ierr"]
 
