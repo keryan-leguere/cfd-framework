@@ -229,7 +229,7 @@ INIT: dict[str, Any] = {"xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2, "bia
 POINT: dict[str, Any] = {"mach": 0.9, "alpha": 8.0, "beta": 3.0, "xg": 1.05, "yg": 0.004, "zg": -0.012,
                          "ipropu": 1, "dm": 5.0, "dn": 0.0}
 NOMS = ("cx", "cy", "cz", "cl", "cm", "cn")
-SONDES = tuple(f"valid_tab_{n}" for n in ("cx", "cz", "cm", "cy", "cl", "cn", "dcxp", "dcmg"))
+SONDES = tuple(f"valid_tab_{n}" for n in ("cx", "cz", "cm", "cy", "cl", "cn", "dcxp", "dcmg", "dczr", "dcxb"))
 
 
 def _construire(dossier: Path, nom: str, fflags: str) -> None:
@@ -307,13 +307,18 @@ def test_refus_du_point(modele: Any) -> None:
 
 @avec_compilateur
 def test_noeuds_au_bit_pres(modele: Any, bibliotheques: dict[str, Any]) -> None:
-    """CDG au point de référence, sans propulsion ni gouverne : AERCAL rend les tables du COMMON."""
+    """CDG au point de référence, sans propulsion ni gouverne : AERCAL rend les tables du COMMON.
+
+    Plus les deux incréments lus ailleurs (DCZR en radians, DCXB en |beta|), donnés par leurs sondes.
+    """
     tab = bibliotheques["t0"].aertab
     neutre = {"xg": 1.2, "yg": 0.0, "zg": 0.0, "ipropu": 0, "dm": 0.0, "dn": 0.0}
     for i, j in itertools.product(range(7), range(7)):
         r = modele.calcul_point(**INIT, mach=tab.tmach[i], alpha=tab.talpha[j], beta=0.0, **neutre)
         assert r["ierr"] == ma.IERR_NOMINAL
-        assert [r["cx"], r["cz"], r["cm"]] == [float(tab.tcx[i, j]), float(tab.tcz[i, j]), float(tab.tcm[i, j])]
+        assert r["valid_tab_dcxb"] == 0.0  # |beta| = 0 : première colonne de TDCXB, nulle
+        assert [r["cx"], r["cz"], r["cm"]] == [float(tab.tcx[i, j]) + r["valid_tab_dcxb"],
+                                               float(tab.tcz[i, j]) + r["valid_tab_dczr"], float(tab.tcm[i, j])]
         r = modele.calcul_point(**INIT, mach=tab.tmach[i], alpha=0.0, beta=tab.tbeta[j], **neutre)
         assert [r["cy"], r["cl"], r["cn"]] == [float(tab.tcy[i, j]), float(tab.tcl[i, j]), float(tab.tcn[i, j])]
 
@@ -323,7 +328,7 @@ def test_centre_de_maille(modele: Any, bibliotheques: dict[str, Any]) -> None:
     tab = bibliotheques["t0"].aertab
     m, a = 0.5 * (tab.tmach[2] + tab.tmach[3]), 0.5 * (tab.talpha[4] + tab.talpha[5])
     r = modele.calcul_point(**INIT, mach=m, alpha=a, beta=0.0, xg=1.2, yg=0.0, zg=0.0, ipropu=0, dm=0.0, dn=0.0)
-    assert r["cz"] == pytest.approx(tab.tcz[2:4, 4:6].mean(), abs=1e-15)
+    assert r["cz"] - r["valid_tab_dczr"] == pytest.approx(tab.tcz[2:4, 4:6].mean(), abs=1e-15)
 
 
 @avec_compilateur
@@ -530,7 +535,7 @@ def test_sondes_facultatives(bibliotheques: dict[str, Any]) -> None:
 @avec_compilateur
 def test_calcul_aero_elementaire_vide(modele: Any) -> None:
     sortie = modele.calcul_aero_elementaire(_plan().iloc[:0])
-    assert len(sortie) == 0 and list(sortie.columns)[-15:] == [*NOMS, "ierr", *SONDES]
+    assert len(sortie) == 0 and list(sortie.columns)[-17:] == [*NOMS, "ierr", *SONDES]
 
 
 # -- surcouche : paramètres standard ------------------------------------------
@@ -629,7 +634,8 @@ def test_exemple_appel(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
 def test_sondes_lues_avant_toute_transformation(modele: Any) -> None:
     """Les sondes valent la lecture brute : propulsion, gouvernes et transport viennent après."""
     r = modele.calcul_point(**INIT, **POINT)
-    assert r["cx"] == pytest.approx(r["valid_tab_cx"] + r["valid_tab_dcxp"], abs=1e-15)
+    assert r["cx"] == pytest.approx(r["valid_tab_cx"] + r["valid_tab_dcxb"] + r["valid_tab_dcxp"], abs=1e-15)
+    assert r["valid_tab_dcxb"] < 0.0 and r["valid_tab_dczr"] != 0.0
     assert r["valid_tab_dcmg"] != 0.0
     au_cdg_de_reference = modele.calcul_point(**INIT, **{**POINT, "xg": 1.2, "yg": 0.0, "zg": 0.0})
     assert au_cdg_de_reference["cm"] == pytest.approx(r["valid_tab_cm"] + r["valid_tab_dcmg"], abs=1e-15)
@@ -661,6 +667,8 @@ def test_lire_common(modele: Any, bibliotheques: dict[str, Any]) -> None:
 
 VALIDATION = PROJET / "VALIDATION"
 LECTURE = VALIDATION / "01_LECTURE_TABLES" / "01_lecture_tables.py"
+#: 10 tables, DCXB (tabulée en |beta|) déclarée des deux côtés : 11 déclarations.
+TABLES_DECLAREES = {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCZR", "DCXB", "DCXB_NEG", "DCMG"}
 
 
 def _lecture(bibliotheques: dict[str, Any], sortie: Path, *options: str) -> subprocess.CompletedProcess[str]:
@@ -677,9 +685,9 @@ def test_lecture_tables_conforme(bibliotheques: dict[str, Any], tmp_path: Path) 
     assert res.returncode == 0, res.stdout + res.stderr
     resume = json.loads((tmp_path / "L" / "resume.json").read_text())
     tables = {t["nom"]: t for t in resume["tables"]}
-    assert set(tables) == {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCMG"}
+    assert set(tables) == TABLES_DECLAREES
     assert all(t["conforme"] for t in tables.values())
-    assert all(t["tolerees"] == 0 for n, t in tables.items() if n != "DCMG")  # bit pour bit hors inversion
+    assert all(t["tolerees"] == 0 for n, t in tables.items() if n != "DCMG")  # aux nœuds, bit pour bit hors 5D
     assert tables["DCMG"]["noeuds"] == 3125 and tables["DCMG"]["inversion"]
     resultats = pd.read_csv(tmp_path / "L" / "RESULTATS" / "CX.csv")
     assert {"valeur_TAB", "valeur_CODE", "ecart", "conforme"} <= set(resultats.columns)
@@ -747,9 +755,9 @@ def test_run_validation(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
         capture_output=True, text=True, env={**os.environ, "CFD_VALIDATION_PYTHON": sys.executable},
     )
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
-    assert "02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels" in res.stdout
-    assert "03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels" in res.stdout
+    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "11/11 tables, 32327 appels" in res.stdout
+    assert "02_BORNES_TABLES         CONFORME      11/11 tables, 4615 appels" in res.stdout
+    assert "03_INTERPOLATION_TABLES  CONFORME      11/11 tables, 41134 appels" in res.stdout
     assert "04_INTEGRATION           CONFORME      7/7 sorties, 1016 lignes" in res.stdout
     assert (copie / "SORTIE" / "RECAP.txt").exists()
     assert (copie / "SORTIE" / "01_LECTURE_TABLES" / "resume.json").exists()
@@ -838,7 +846,8 @@ def test_production_memes_tables(bibliotheques: dict[str, Any]) -> None:
                (d.sonde, dict(d.fixes), d.bornes, d.rtol, d.atol, d.justification, d.description)
         assert (p.vers_entrees is None) == (d.vers_entrees is None)
         if d.vers_entrees is not None and p.vers_entrees is not None:
-            df = pd.DataFrame({"alphat": [0.0, 10.0, 20.0], "phia": [-90.0, 45.0, 180.0]})
+            df = pd.DataFrame({"alphat": [0.0, 10.0, 20.0], "phia": [-90.0, 45.0, 180.0],
+                               "alpha_rad": [-0.35, 0.0, 0.17], "abeta": [0.0, 2.0, 10.0]})
             for k, v in d.vers_entrees(df).items():
                 np.testing.assert_array_equal(p.vers_entrees(df)[k], v)
 
@@ -855,9 +864,9 @@ def test_run_validation_production(bibliotheques: dict[str, Any], tmp_path: Path
         capture_output=True, text=True, env={**os.environ, "CFD_VALIDATION_PYTHON": sys.executable},
     )
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "8/8 tables, 26888 appels" in res.stdout
-    assert "02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels" in res.stdout
-    assert "03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels" in res.stdout
+    assert "4/4 tests conformes — TOUT EST À 100 %" in res.stdout and "11/11 tables, 32327 appels" in res.stdout
+    assert "02_BORNES_TABLES         CONFORME      11/11 tables, 4615 appels" in res.stdout
+    assert "03_INTERPOLATION_TABLES  CONFORME      11/11 tables, 41134 appels" in res.stdout
     assert "04_INTEGRATION           CONFORME      7/7 sorties, 1016 lignes" in res.stdout
 
 
@@ -986,13 +995,18 @@ def test_bornes_tables_conforme(bibliotheques: dict[str, Any], tmp_path: Path) -
     res = _bornes(bibliotheques, tmp_path / "B", "--sans-figures")
     assert res.returncode == 0, res.stdout + res.stderr
     tables = {t["nom"]: t for t in json.loads((tmp_path / "B" / "resume.json").read_text())["tables"]}
-    assert set(tables) == {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCMG"}
+    assert set(tables) == TABLES_DECLAREES
     faces = {f["face"]: f for f in tables["CX"]["faces"]}
     assert faces["alpha+"]["observe"] == "extrapole" and faces["mach+"]["observe"] == "sature"
     dcmg = tables["DCMG"]
     assert sorted(f["face"] for f in dcmg["non_testees"]) == ["alphat−", "phia+", "phia−"]
     assert {f["face"]: f["observe"] for f in dcmg["faces"]}["alphat+"] == "extrapole"
     assert dcmg["appels"] == 7 * 625
+    for nom in ("DCXB", "DCXB_NEG"):  # |beta| < 0 n'existe pas ; au-delà de 10, des deux côtés, extrapole
+        assert [f["face"] for f in tables[nom]["non_testees"]] == ["abeta−"]
+        assert {f["face"]: f["observe"] for f in tables[nom]["faces"]}["abeta+"] == "extrapole"
+    assert {f["face"]: f["observe"] for f in tables["DCZR"]["faces"]} == {
+        "mach−": "sature", "mach+": "sature", "alpha_rad−": "extrapole", "alpha_rad+": "extrapole"}
 
 
 @avec_compilateur
@@ -1027,7 +1041,7 @@ def test_interpolation_tables_conforme(bibliotheques: dict[str, Any], tmp_path: 
     assert res.returncode == 0, res.stdout + res.stderr
     resume = json.loads((tmp_path / "I" / "resume.json").read_text())
     tables = {t["nom"]: t for t in resume["tables"]}
-    assert set(tables) == {"CX", "CZ", "CM", "CY", "CL", "CN", "DCXP", "DCMG"} and resume["appels"] == 40270
+    assert set(tables) == TABLES_DECLAREES and resume["appels"] == 41134
     assert {g["groupe"] for g in tables["DCMG"]["groupes"]} == {"mach", "alphat", "phia", "dm", "dn", "centres"}
     assert {g["observe"] for t in tables.values() for g in t["groupes"]} == {"linéaire"}
 
@@ -1046,4 +1060,53 @@ def test_interpolation_palier_detecte_et_polaires(bibliotheques: dict[str, Any],
     assert (polaires / "CM" / "POLAIRE_ALPHA" / "MACH_0.8" / "CM_vs_alpha.svg").exists()
     assert (polaires / "CM" / "POLAIRE_ALPHA" / "SUPERPOSITION" / "CM_vs_alpha_by_MACH.svg").exists()
     assert (polaires / "DCMG" / "POLAIRE_ALPHAT" / "SUPERPOSITION" / "PHIA_90" / "DCMG_vs_alphat_by_DM.svg").exists()
-    assert len(list(polaires.rglob("*.svg"))) == sum(p["courbes"] for p in resume["polaires"]) + 12 + 7  # superpositions : 2D, puis DCMG
+    assert len(list(polaires.rglob("*.svg"))) == sum(p["courbes"] for p in resume["polaires"]) + 18 + 7  # superpositions : 2D (9 × 2), puis DCMG
+
+
+# -- cas pratiques de construction : table en radians, table en |beta| ----------
+
+
+def _construire_fautif(tmp_path: Path, nom: str, avant: str, apres: str) -> Path:
+    """Une copie du projet, une faute injectée dans aero_modele.f, compilée sous ``nom``."""
+    copie = tmp_path / nom
+    shutil.copytree(PROJET, copie, ignore=shutil.ignore_patterns("*.so", "*.log", "SORTIE", "__pycache__"))
+    source = copie / "SOURCES" / "aero_modele.f"
+    texte = source.read_text()
+    assert texte.count(avant) == 1, avant
+    source.write_text(texte.replace(avant, apres))
+    res = subprocess.run(["bash", str(copie / "PYTHON" / "construire.sh")], capture_output=True, text=True,
+                         env={**os.environ, "FFLAGS": "-O0", "CFD_VALIDATION_PYTHON": sys.executable})
+    assert res.returncode == 0, res.stdout + res.stderr  # les SOURCES de la copie, pas celles du projet
+    return copie
+
+
+def _lecture_copie(copie: Path, sortie: Path) -> dict[str, Any]:
+    res = subprocess.run([sys.executable, str(copie / "VALIDATION" / "01_LECTURE_TABLES" / "01_lecture_tables.py"),
+                          "--sortie", str(sortie), "--sans-figures"], capture_output=True, text=True,
+                         env={**os.environ, "MPLBACKEND": "Agg"})
+    assert res.returncode == 2, res.stdout + res.stderr  # non conforme
+    return {t["nom"]: t for t in json.loads((sortie / "resume.json").read_text())["tables"]}
+
+
+@avec_compilateur
+@pytest.mark.parametrize(("faute", "avant", "apres", "seule_en_echec"), [
+    # le code oublie la valeur absolue : beta > 0 ne voit rien, seule DCXB_NEG échoue
+    ("abs", "MACH, ABS(BETA), IS)", "MACH, BETA, IS)", "DCXB_NEG"),
+    # le code lit la table en radians avec l'angle en degrés
+    ("rad", "     &              MACH, ARAD, IS)", "     &              MACH, ALPHA, IS)", "DCZR"),
+])
+def test_lecture_indirecte_faute_detectee(tmp_path: Path, faute: str, avant: str, apres: str,
+                                          seule_en_echec: str) -> None:
+    """Chaque déclaration indirecte attrape la faute qui la concerne, et elle seule."""
+    tables = _lecture_copie(_construire_fautif(tmp_path, faute, avant, apres), tmp_path / "L")
+    assert [n for n, t in tables.items() if not t["conforme"]] == [seule_en_echec]
+
+
+def test_declarations_indirectes() -> None:
+    """vers_entrees : radians → degrés comme l'inverse de ALPHA / DEG ; |beta| → ±beta, sans −0."""
+    tm = _charger_tables(VALIDATION, "tables_indirectes")
+    df = pd.DataFrame({"alpha_rad": [0.0, 0.17, -0.35], "abeta": [0.0, 2.0, 10.0]})
+    np.testing.assert_allclose(tm.radians_vers_degres(df)["alpha"], [0.0, 9.740282517223996, -20.053522829578812])
+    assert tm.beta_positif(df)["beta"].tolist() == [0.0, 2.0, 10.0]
+    negatif = tm.beta_negatif(df)["beta"]
+    assert negatif.tolist() == [0.0, -2.0, -10.0] and math.copysign(1.0, negatif[0]) == 1.0

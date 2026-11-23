@@ -141,6 +141,8 @@ constantes du Fortran.
 | `TCN` | Mach, β        | `TBETA`            |
 | `TDCXP` | Mach seul    | grille `TMACHP` propre |
 | `TDCMG` | Mach, alphaT, phiA, DM, DN | 5D, 5 × 5 × 5 × 5 × 5 |
+| `TDCZR` | Mach, α **en radians** | `TALFR` (§4.4) |
+| `TDCXB` | Mach, **\|β\|** | `TABETA` (§4.4) |
 
 | Grille   | Valeurs                                       |
 |----------|-----------------------------------------------|
@@ -152,6 +154,8 @@ constantes du Fortran.
 | `TALFT`  | 0 5 10 15 20 (deg), incidence totale          |
 | `TPHIA`  | −180 −90 0 90 180 (deg), azimut aérodynamique |
 | `TDMG`, `TDNG` | −20 −10 0 10 20 (deg)                   |
+| `TALFR`  | −0,35 −0,17 −0,09 0 0,09 0,17 0,35 (**rad**)  |
+| `TABETA` | 0 1 2 4 6 8 10 (deg), valeur absolue de β     |
 
 La grille propulsive est **plus étroite** que la grille aéro, exprès : entre
 Mach 0,3 et 0,4, le point est dans les tables aéro mais hors de la table
@@ -180,6 +184,83 @@ arrondies à 4 décimales. `aero_tables.f` est **généré** par
 `OUTILS/generer_tables.py` et versionné : c'est lui qui fait foi pour le
 code. `python OUTILS/generer_tables.py --verifier` échoue si le fichier ne
 correspond plus au script.
+
+### 4.4 Deux cas pratiques : une table en radians, une table en |β|
+
+Deux tables ne sont pas lues sur les entrées telles qu'`AERCAL` les reçoit.
+C'est fréquent dans un vrai code, et c'est à la **déclaration** de la table
+(`VALIDATION/tables_modele.py`) de dire comment on passe de ses axes aux
+entrées : `vers_entrees`.
+
+**`TDCZR` — incrément de CZ de la voilure, tabulé en radians.** Table reprise
+d'un autre code, grille d'incidence en radians, alors qu'`AERCAL` reçoit α en
+degrés. Le code convertit avant la lecture :
+
+```fortran
+      ARAD = ALPHA / DEG
+      DCZR = INTE2D(TMACH, NM, ISATU, TALFR, NAR, IEXTR, TDCZR, NM,
+     &              MACH, ARAD, IS)
+```
+
+La déclaration fait la conversion **inverse**, pour que le test appelle le code
+avec l'α en degrés qui retombe sur chaque nœud en radians :
+
+```python
+def radians_vers_degres(df):
+    return {"alpha": np.degrees(df["alpha_rad"].to_numpy())}
+
+TableReference("DCZR", lire("aertab.tdczr"),
+               {"mach": lire("aertab.tmach"), "alpha_rad": lire("aertab.talfr")},
+               sonde="valid_tab_dczr", vers_entrees=radians_vers_degres,
+               bornes={"mach": "sature", "alpha_rad": "extrapole"},
+               rtol=1e-12, atol=1e-15, justification="…")
+```
+
+- L'axe s'appelle `alpha_rad`, **pas** `alpha` : une colonne nommée comme une
+  entrée y est injectée telle quelle, donc des radians dans une entrée en degrés.
+- Dans l'autre sens (table en degrés, code en radians), la formule s'inverse :
+  `{"alpha_rad": np.radians(df["alpha"])}`.
+- **Tolérance.** Degrés → radians ne fait pas toujours l'aller-retour au bit
+  près : sur [−0,35 ; 0,35] rad, ~9 % des angles ratent d'1 ULP. Les 7 nœuds
+  passent, par chance, mais les tests des bornes et d'interpolation, qui tombent
+  entre les nœuds, voient 1 à 2 ULP sur la valeur lue. D'où `rtol = 1e-12`,
+  déclaré et justifié, comme pour la table 5D.
+- **Bornes.** La consigne se déclare sur l'axe de la table, dans ses unités
+  (`alpha_rad`). L'écart hors bornes est une fraction de l'étendue (10 %) : il ne
+  dépend pas de l'unité.
+
+**`TDCXB` — incrément de CX en dérapage, tabulé en |β|.** La traînée de
+dérapage est paire en β : on ne tabule que |β| ≥ 0, et le code lit
+`ABS(BETA)`. Une seule déclaration (`beta = |β|`) ne verrait que la moitié du
+domaine : un code qui oublierait la valeur absolue la passerait sans un écart.
+On la déclare donc **deux fois**, même table, même sonde :
+
+```python
+def beta_positif(df):  return {"beta": df["abeta"].to_numpy()}
+def beta_negatif(df):  return {"beta": 0.0 - df["abeta"].to_numpy()}   # pas de −0
+
+for nom, vers_beta in (("DCXB", beta_positif), ("DCXB_NEG", beta_negatif)):
+    TableReference(nom, lire("aertab.tdcxb"),
+                   {"mach": lire("aertab.tmach"), "abeta": lire("aertab.tabeta")},
+                   sonde="valid_tab_dcxb", vers_entrees=vers_beta,
+                   bornes={"mach": "sature", "abeta": ("inatteignable", "extrapole")})
+```
+
+- Aucune tolérance : `ABS` est exact, le bit près reste dû.
+- **Bornes.** Sous |β| = 0, rien : côté min `inatteignable` (déclaré, non testé,
+  dit dans le rapport). Au-delà de 10°, `extrapole` — et c'est `DCXB_NEG` qui
+  vérifie qu'à β = −11° le code extrapole aussi, et pas seulement à +11°.
+
+Le principe vaut pour toute symétrie : une table construite sur une variable
+repliée (|β|, |φ|, un angle ramené dans un secteur) se déclare une fois par
+**branche** du repliement, chacune avec son `vers_entrees`.
+
+**Preuve.** `tests/test_modele_aero.py::test_lecture_indirecte_faute_detectee`
+compile deux variantes fautives du Fortran. Avec `BETA` lu au lieu de
+`ABS(BETA)`, `DCXB` reste conforme et **seule** `DCXB_NEG` échoue (1 554 nœuds
+sur 1 813). Avec l'angle lu en degrés dans la table en radians, seule `DCZR`
+échoue. Les tests 2 et 3 et le test d'intégration échouent aussi, chacun sur sa
+table.
 
 ## 5. Interpolation et transport
 
@@ -267,9 +348,11 @@ des noms qui ne diffèrent pas que par la casse (f2py met tout en minuscules).
 
 `aero_probe.inc` déclare un `COMMON /PROBE/` avec une variable par table :
 `VALID_TAB_CX`, `VALID_TAB_CZ`, `VALID_TAB_CM`, `VALID_TAB_CY`, `VALID_TAB_CL`,
-`VALID_TAB_CN`, `VALID_TAB_DCXP`, `VALID_TAB_DCMG`. `AERCAL` y recopie la
+`VALID_TAB_CN`, `VALID_TAB_DCXP`, `VALID_TAB_DCMG`, `VALID_TAB_DCZR`,
+`VALID_TAB_DCXB`. `AERCAL` y recopie la
 valeur interpolée **juste après** chaque lecture de table, avant que le code ne
-la transforme :
+la transforme. Celles de `TDCZR` et `TDCXB` valent l'incrément lu, avant qu'il
+s'ajoute à CZ et à CX :
 
 ```fortran
       CX = INTE2D(TMACH, NM, ISATU, TALPHA, NA, IEXTR, TCX, NM,

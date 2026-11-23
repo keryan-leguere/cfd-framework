@@ -12,7 +12,7 @@ de la table ? Pour chaque table, deux familles de points, chacune un
   d'interpolations 1D) s'y voit alors qu'il passe le long des axes.
 
 ```bash
-python 03_interpolation_tables.py                  # 8 tables, 40 270 appels, 121 polaires
+python 03_interpolation_tables.py                  # 11 déclarations, 41 134 appels, 158 polaires
 python 03_interpolation_tables.py --jobs 4         # polaires tracées sur 4 processus
 python 03_interpolation_tables.py --fractions 0.1 0.5 0.9
 python 03_interpolation_tables.py --defaut         # CM relu en palier (simulé) : NON CONFORME (code 2)

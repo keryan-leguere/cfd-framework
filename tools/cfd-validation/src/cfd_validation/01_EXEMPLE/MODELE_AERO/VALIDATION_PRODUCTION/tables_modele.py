@@ -20,6 +20,26 @@ Consignes du modèle (SOURCES/aero_modele.f) :
 | alphaT (5D)         | inatteignable sous 0 (acos ≥ 0), extrapole au-delà     |
 | phiA (5D)           | inatteignable (atan2 reste dans [−180, 180])          |
 | DM, DN (5D)         | sature                                                |
+| alpha_rad (DCZR)    | extrapole (comme alpha : c'est le même angle)         |
+| abeta (DCXB)        | inatteignable sous 0 (valeur absolue), extrapole au-delà |
+
+Deux tables à lecture **indirecte**, les cas pratiques de construction
+(``DOC/01_SOURCES.md`` §4.4) :
+
+- **DCZR** est tabulée en alpha **en radians**, alors que AERCAL reçoit des
+  degrés. L'axe porte donc son propre nom (``alpha_rad``, pas ``alpha`` : une
+  colonne nommée comme une entrée y serait injectée telle quelle, en radians
+  dans une entrée en degrés) et ``vers_entrees`` fait la conversion inverse de
+  celle du code : ``alpha = degrees(alpha_rad)``. L'aller-retour degrés →
+  radians ne retombe pas toujours au bit près sur le nœud, d'où une tolérance
+  déclarée et justifiée. Cas inverse (table en degrés, code en radians) :
+  ``{"alpha_rad": np.radians(df["alpha"])}``.
+- **DCXB** est tabulée en ``|beta|`` : le code lit ``ABS(BETA)``. Une seule
+  déclaration ne verrait que la moitié du domaine ; on la déclare **deux fois**,
+  mêmes valeurs et même sonde, ``beta = +|beta|`` puis ``beta = −|beta|``
+  (``DCXB_NEG``) : c'est la seconde qui prouve que le code prend bien la valeur
+  absolue, y compris au-delà de la borne (|beta| > 10 par β < −10). Côté min,
+  ``|beta| < 0`` n'existe pas : ``inatteignable``.
 """
 
 from __future__ import annotations
@@ -43,8 +63,21 @@ if str(PYTHON) not in sys.path:
 from modele_aero import ModeleAero  # noqa: E402
 from modele_f2py import ErreurModele  # noqa: E402
 
-__all__ = ["DEFAUTS", "LIBELLES", "POLAIRES", "PYTHON", "ModeleAero", "analyseur", "charger_modele", "declarer_tables",
-           "metadonnees", "polaire_vers_cartesien"]
+__all__ = [
+    "DEFAUTS",
+    "LIBELLES",
+    "POLAIRES",
+    "PYTHON",
+    "ModeleAero",
+    "analyseur",
+    "beta_negatif",
+    "beta_positif",
+    "charger_modele",
+    "declarer_tables",
+    "metadonnees",
+    "polaire_vers_cartesien",
+    "radians_vers_degres",
+]
 
 #: Valeur de chaque argument Fortran quand la table ne le pilote pas : **celles du
 #: modèle**, rien à réécrire ici — ModeleAero.DEFAUTS pour les phases d'init (AERINI,
@@ -60,6 +93,9 @@ LIBELLES: dict[str, str | tuple[str, str]] = {
     "dm": (r"$\delta_m$", "°"), "dn": (r"$\delta_n$", "°"),
     "CX": "$C_X$", "CY": "$C_Y$", "CZ": "$C_Z$", "CL": "$C_l$", "CM": "$C_m$", "CN": "$C_n$",
     "DCXP": r"$\Delta C_{X,\mathrm{prop}}$", "DCMG": r"$\Delta C_{m,\mathrm{gouv}}$",
+    "alpha_rad": (r"$\alpha$", "rad"), "abeta": (r"$|\beta|$", "°"),
+    "DCZR": r"$\Delta C_{Z,\mathrm{voil}}$", "DCXB": r"$\Delta C_{X,\beta}$",
+    "DCXB_NEG": r"$\Delta C_{X,\beta}\ (\beta < 0)$",
 }
 
 #: Polaires : toutes par défaut (2D : une courbe par nœud de l'autre axe, dans les deux sens).
@@ -94,8 +130,23 @@ def polaire_vers_cartesien(df: pd.DataFrame) -> dict[str, np.ndarray]:
     }
 
 
+def radians_vers_degres(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    """DCZR : la table est en radians, AERCAL reçoit des degrés — l'inverse de ``ALPHA / DEG``."""
+    return {"alpha": np.degrees(df["alpha_rad"].to_numpy())}
+
+
+def beta_positif(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    """DCXB : |beta| → beta, côté positif."""
+    return {"beta": df["abeta"].to_numpy()}
+
+
+def beta_negatif(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    """DCXB_NEG : |beta| → beta, côté négatif (0.0 − x : pas de −0)."""
+    return {"beta": 0.0 - df["abeta"].to_numpy()}
+
+
 def declarer_tables(modele: ModeleAero) -> list[TableReference]:
-    """Les 8 tables du modèle, valeurs et grilles telles que le code les a en mémoire."""
+    """Les 11 déclarations (10 tables, DCXB des deux côtés) du modèle, valeurs et grilles telles que le code les a en mémoire."""
     lire = modele.lire
     mach_alpha = {"mach": lire("aertab.tmach"), "alpha": lire("aertab.talpha")}
     mach_beta = {"mach": lire("aertab.tmach"), "beta": lire("aertab.tbeta")}
@@ -117,6 +168,24 @@ def declarer_tables(modele: ModeleAero) -> list[TableReference]:
         TableReference("DCXP", lire("aertab.tdcxp"), {"mach": lire("aertab.tmachp")}, sonde="valid_tab_dcxp",
                        fixes={"ipropu": 1}, bornes={"mach": "sature"},
                        description="incrément de CX de la propulsion"),
+        # Table en radians, entrée en degrés : l'axe garde son nom, vers_entrees convertit.
+        TableReference("DCZR", lire("aertab.tdczr"), {"mach": lire("aertab.tmach"), "alpha_rad": lire("aertab.talfr")},
+                       sonde="valid_tab_dczr", vers_entrees=radians_vers_degres,
+                       bornes={"mach": "sature", "alpha_rad": "extrapole"},
+                       rtol=1e-12, atol=1e-15,
+                       justification=(
+                           "alpha_rad → degrés (numpy) → radians (ALPHA / DEG dans le code) ne retombe pas "
+                           "toujours au bit près : ~9 % des angles de [-0.35, 0.35] ratent d'1 ULP (les 7 nœuds "
+                           "passent, par chance ; bornes et interpolation montrent 1 à 2 ULP sur la valeur). "
+                           "1 ULP d'angle fois la pente reste sous 1e-15 ; 1e-12 relatif laisse un facteur 1000."
+                       ),
+                       description="incrément de CZ de la voilure, tabulé en alpha en radians"),
+        # Table en |beta| : déclarée des deux côtés, même table, même sonde.
+        *(TableReference(nom, lire("aertab.tdcxb"), {"mach": lire("aertab.tmach"), "abeta": lire("aertab.tabeta")},
+                         sonde="valid_tab_dcxb", vers_entrees=vers_beta,
+                         bornes={"mach": "sature", "abeta": ("inatteignable", "extrapole")},
+                         description=f"incrément de CX en dérapage, tabulé en |beta| — lu par beta {signe} 0")
+          for nom, vers_beta, signe in (("DCXB", beta_positif, ">"), ("DCXB_NEG", beta_negatif, "<"))),
         # 5D, en angles polaires : alphat et phia ne sont pas des entrées du modèle.
         TableReference(
             "DCMG", lire("aertb5.tdcmg"),

@@ -9,6 +9,8 @@ C     coefficients au point de reference des moments (fixe par
 C     AERINI), axes corps FRD, angles en degres.
 C     Table propulsive 1D : DCX(Mach).
 C     Table des gouvernes 5D : DCMG(Mach, alphaT, phiA, DM, DN).
+C     DCZR(Mach, alpha) : alpha en RADIANS (table d'un autre code).
+C     DCXB(Mach, |beta|) : tabulee en valeur absolue de beta.
 C----------------------------------------------------------------------
       BLOCK DATA AERTBD
       IMPLICIT NONE
@@ -28,6 +30,12 @@ C     Grilles
       DATA TMACHP /
      &    0.4000D0,   0.6000D0,   0.8000D0,   1.0000D0,
      &    1.2000D0,   1.5000D0,   1.8000D0 /
+      DATA TALFR /
+     &   -0.3500D0,  -0.1700D0,  -0.0900D0,   0.0000D0,
+     &    0.0900D0,   0.1700D0,   0.3500D0 /
+      DATA TABETA /
+     &    0.0000D0,   1.0000D0,   2.0000D0,   4.0000D0,
+     &    6.0000D0,   8.0000D0,  10.0000D0 /
 C
 C     TCX(Mach, alpha)
 C     alpha = -20 deg
@@ -208,6 +216,68 @@ C     beta = 10 deg
       DATA (TCN(I,7),I=1,NM) /
      &    0.1563D0,   0.1617D0,   0.1929D0,   0.2230D0,
      &    0.2155D0,   0.1576D0,   0.1563D0 /
+C
+C     Increment de CZ de la voilure, alpha en radians
+C     TDCZR(Mach, alpha)
+C     alpha = -0.35 rad
+      DATA (TDCZR(I,1),I=1,NM) /
+     &    0.2255D0,   0.2329D0,   0.2764D0,   0.3183D0,
+     &    0.3078D0,   0.2272D0,   0.2255D0 /
+C     alpha = -0.17 rad
+      DATA (TDCZR(I,2),I=1,NM) /
+     &    0.1167D0,   0.1206D0,   0.1431D0,   0.1648D0,
+     &    0.1593D0,   0.1176D0,   0.1167D0 /
+C     alpha = -0.09 rad
+      DATA (TDCZR(I,3),I=1,NM) /
+     &    0.0627D0,   0.0647D0,   0.0768D0,   0.0885D0,
+     &    0.0855D0,   0.0632D0,   0.0627D0 /
+C     alpha = 0 rad
+      DATA (TDCZR(I,4),I=1,NM) /
+     &    0.0000D0,   0.0000D0,   0.0000D0,   0.0000D0,
+     &    0.0000D0,   0.0000D0,   0.0000D0 /
+C     alpha = 0.09 rad
+      DATA (TDCZR(I,5),I=1,NM) /
+     &   -0.0627D0,  -0.0647D0,  -0.0768D0,  -0.0885D0,
+     &   -0.0855D0,  -0.0632D0,  -0.0627D0 /
+C     alpha = 0.17 rad
+      DATA (TDCZR(I,6),I=1,NM) /
+     &   -0.1167D0,  -0.1206D0,  -0.1431D0,  -0.1648D0,
+     &   -0.1593D0,  -0.1176D0,  -0.1167D0 /
+C     alpha = 0.35 rad
+      DATA (TDCZR(I,7),I=1,NM) /
+     &   -0.2255D0,  -0.2329D0,  -0.2764D0,  -0.3183D0,
+     &   -0.3078D0,  -0.2272D0,  -0.2255D0 /
+C
+C     Increment de CX en derapage, tabule en |beta|
+C     TDCXB(Mach, |beta|)
+C     |beta| = 0 deg
+      DATA (TDCXB(I,1),I=1,NM) /
+     &    0.0000D0,   0.0000D0,   0.0000D0,   0.0000D0,
+     &    0.0000D0,   0.0000D0,   0.0000D0 /
+C     |beta| = 1 deg
+      DATA (TDCXB(I,2),I=1,NM) /
+     &   -0.0002D0,  -0.0002D0,  -0.0002D0,  -0.0003D0,
+     &   -0.0003D0,  -0.0002D0,  -0.0002D0 /
+C     |beta| = 2 deg
+      DATA (TDCXB(I,3),I=1,NM) /
+     &   -0.0007D0,  -0.0008D0,  -0.0009D0,  -0.0011D0,
+     &   -0.0010D0,  -0.0007D0,  -0.0007D0 /
+C     |beta| = 4 deg
+      DATA (TDCXB(I,4),I=1,NM) /
+     &   -0.0029D0,  -0.0030D0,  -0.0037D0,  -0.0043D0,
+     &   -0.0042D0,  -0.0029D0,  -0.0029D0 /
+C     |beta| = 6 deg
+      DATA (TDCXB(I,5),I=1,NM) /
+     &   -0.0066D0,  -0.0068D0,  -0.0083D0,  -0.0097D0,
+     &   -0.0093D0,  -0.0066D0,  -0.0066D0 /
+C     |beta| = 8 deg
+      DATA (TDCXB(I,6),I=1,NM) /
+     &   -0.0116D0,  -0.0121D0,  -0.0147D0,  -0.0172D0,
+     &   -0.0166D0,  -0.0117D0,  -0.0116D0 /
+C     |beta| = 10 deg
+      DATA (TDCXB(I,7),I=1,NM) /
+     &   -0.0181D0,  -0.0188D0,  -0.0229D0,  -0.0268D0,
+     &   -0.0258D0,  -0.0183D0,  -0.0181D0 /
 C
 C     Propulsion : increment de CX (effet de jet sur le culot)
       DATA TDCXP /

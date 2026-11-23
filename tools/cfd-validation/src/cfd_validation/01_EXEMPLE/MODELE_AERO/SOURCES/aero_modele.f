@@ -45,10 +45,14 @@ C                      selon la consigne de chaque axe (ci-dessous)
 C                   3  IPROPU ni 0 ni 1               (sorties = 0)
 C     Consignes hors grille (aero_interp.f, ISATU / IEXTR) :
 C       Mach, braquages DM et DN, propulsion   saturation au bord
-C       alpha, beta, alphaT                    extrapolation lineaire
+C       alpha, beta, alphaT, |beta|            extrapolation lineaire
 C       phiA                                   saturation (jamais hors
 C                                              de [-180, 180] : atan2)
-C     alphaT ne peut pas sortir par le bas (acos >= 0).
+C     alphaT ne peut pas sortir par le bas (acos >= 0), |beta| non
+C     plus (la grille de TDCXB commence a 0).
+C     Deux tables a lecture indirecte : TDCZR est tabulee en alpha en
+C     RADIANS (lue avec ALPHA / DEG) ; TDCXB en |beta| (lue avec
+C     ABS(BETA), meme valeur pour +beta et -beta).
 C
 C     Les variables locales en SAVE gardent leur valeur d'un appel a
 C     l'autre : c'est ce qui lie les phases.
@@ -81,7 +85,7 @@ C     Etat conserve entre les phases
 C
 C     Locales
       INTEGER IS, ISAT
-      DOUBLE PRECISION RX, RY, RZ, DCMG, VG(5)
+      DOUBLE PRECISION RX, RY, RZ, DCMG, DCZR, DCXB, VG(5)
       INTEGER IEXG(5)
       DOUBLE PRECISION DEG, ARAD, BRAD, CALFT, ALFT, PHIA
       PARAMETER (DEG = 57.295779513082321D0)
@@ -114,6 +118,8 @@ C
       IF (.NOT. CROISS(TALPHA, NA)) RETURN
       IF (.NOT. CROISS(TBETA,  NB)) RETURN
       IF (.NOT. CROISS(TMACHP, NP)) RETURN
+      IF (.NOT. CROISS(TALFR,  NAR)) RETURN
+      IF (.NOT. CROISS(TABETA, NBA)) RETURN
       IF (LREF .LE. 0.0D0) RETURN
       SXREF = XREF
       SYREF = YREF
@@ -180,6 +186,22 @@ C     1. Coefficients au point de reference
      &            MACH, BETA,  IS)
       VALID_TAB_CN = CN
       ISAT = MAX(ISAT, IS)
+C
+C     1b. Increment de CZ de la voilure : table en RADIANS, l'angle
+C         recu en degres est converti avant la lecture
+      ARAD = ALPHA / DEG
+      DCZR = INTE2D(TMACH, NM, ISATU, TALFR, NAR, IEXTR, TDCZR, NM,
+     &              MACH, ARAD, IS)
+      VALID_TAB_DCZR = DCZR
+      ISAT = MAX(ISAT, IS)
+      CZ = CZ + DCZR
+C
+C     1c. Increment de CX en derapage : table en |beta|, symetrique
+      DCXB = INTE2D(TMACH, NM, ISATU, TABETA, NBA, IEXTR, TDCXB, NM,
+     &              MACH, ABS(BETA), IS)
+      VALID_TAB_DCXB = DCXB
+      ISAT = MAX(ISAT, IS)
+      CX = CX + DCXB
 C
 C     2. Propulsion : increment de CX fonction du Mach seul
       IF (IPROPU .EQ. 1) THEN

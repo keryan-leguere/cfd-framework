@@ -3,7 +3,7 @@
 
     cd ../../PYTHON && bash construire.sh          # une fois
     cd ../VALIDATION_PRODUCTION/03_INTERPOLATION_TABLES
-    python 03_interpolation_tables.py               # les 8 tables, ¼ ½ ¾ de chaque maille + centres, polaires
+    python 03_interpolation_tables.py               # les 11 déclarations, ¼ ½ ¾ de chaque maille + centres, polaires
     python 03_interpolation_tables.py --jobs 4      # polaires tracées sur 4 processus
 
 Version de production de ``VALIDATION/03_INTERPOLATION_TABLES/03_interpolation_tables.py`` :

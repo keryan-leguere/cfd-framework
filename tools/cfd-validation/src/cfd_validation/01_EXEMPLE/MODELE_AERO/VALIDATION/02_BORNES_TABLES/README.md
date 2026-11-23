@@ -6,7 +6,7 @@ comme on le lui demande ? Pour chaque table, chaque axe et chaque côté (une
 les autres axes parcourant tous leurs nœuds.
 
 ```bash
-python 02_bornes_tables.py                 # les 8 tables, 33 faces, 4 545 appels
+python 02_bornes_tables.py                 # 11 déclarations, 43 faces, 4 615 appels
 python 02_bornes_tables.py --ecart 0.25    # plus loin
 python 02_bornes_tables.py --defaut        # alpha de CX déclaré « sature » : NON CONFORME (code 2)
 ```

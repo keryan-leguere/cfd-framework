@@ -1,10 +1,13 @@
 # 01 — Lecture de table
 
 Le code, appelé sur chaque nœud de chaque table, rend-il la valeur de la
-table ? Les huit tables du modèle sont relues :
+table ? Les dix tables du modèle (onze déclarations : DCXB des deux côtés) sont relues :
 - six tables 2D 7×7 : CX, CZ, CM sur (mach, alpha), et CY, CL, CN sur (mach, beta) ;
 - la table de propulsion 1D (DCXP, sur mach) ;
 - la table des gouvernes 5D 5×5×5×5×5 (DCMG, sur mach, alphat, phia, dm, dn).
+- deux tables 2D à lecture indirecte (`DOC/01_SOURCES.md` §4.4) : DCZR, tabulée en
+  alpha **en radians** (`vers_entrees` convertit en degrés), et DCXB, tabulée en
+  **|beta|**, déclarée deux fois (DCXB pour beta > 0, DCXB_NEG pour beta < 0).
 
 ```bash
 python 01_lecture_tables.py                 # entrées libres aux défauts

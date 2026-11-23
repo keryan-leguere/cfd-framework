@@ -3,7 +3,7 @@
 
     cd ../../PYTHON && bash construire.sh     # une fois : le module instrumenté (sondes /PROBE/)
     cd ../VALIDATION_PRODUCTION/01_LECTURE_TABLES
-    python 01_lecture_tables.py                # les 8 tables, entrées libres aux défauts
+    python 01_lecture_tables.py                # les 11 déclarations, entrées libres aux défauts
     python 01_lecture_tables.py --combinaisons # + invariance : toutes les combinaisons des autres entrées
 
 Version de production de ``VALIDATION/01_LECTURE_TABLES/01_lecture_tables.py`` :

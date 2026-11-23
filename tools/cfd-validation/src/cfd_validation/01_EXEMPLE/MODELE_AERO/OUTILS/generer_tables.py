@@ -27,6 +27,11 @@ MACH = [0.3, 0.6, 0.8, 0.95, 1.1, 1.5, 2.0]
 ALPHA = [-20.0, -10.0, -5.0, 0.0, 5.0, 10.0, 20.0]  # degrés
 BETA = [-10.0, -5.0, -2.0, 0.0, 2.0, 5.0, 10.0]  # degrés
 MACH_PROPU = [0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 1.8]  # plus étroite que MACH : voulu
+# Deux cas pratiques de construction de table (DOC/01_SOURCES.md §4.4) :
+# - TDCZR, reprise d'un autre code, tabulée en RADIANS alors que AERCAL reçoit des degrés ;
+# - TDCXB, tabulée en |beta| (symétrique en beta) : grille de 0 à la borne, pas de beta < 0.
+ALPHA_RAD = [-0.35, -0.17, -0.09, 0.0, 0.09, 0.17, 0.35]  # radians, valeurs rondes en rad
+ABETA = [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0]  # |beta|, degrés
 
 # Table 5D des gouvernes, en angles polaires (carrée : 5⁵ = 3 125 nœuds).
 MACH_GOUV = [0.3, 0.6, 1.0, 1.5, 2.0]  # même plage que MACH
@@ -67,6 +72,16 @@ def cn(m: float, b: float) -> float:
     return (0.9 + 0.4 * pic(m)) * math.sin(b)
 
 
+def dcz_rad(m: float, a: float) -> float:
+    """Incrément de CZ (effet de voilure), a en radians."""
+    return -(0.35 + 0.15 * pic(m)) * math.sin(2.0 * a)
+
+
+def dcx_beta(m: float, b: float) -> float:
+    """Incrément de CX en dérapage, b = |beta| en radians : pair en beta, d'où la table en |beta|."""
+    return -(0.6 + 0.3 * pic(m)) * math.sin(b) ** 2
+
+
 def dcx_propu(m: float) -> float:
     return 0.08 + 0.05 * math.exp(-(((m - 1.0) / 0.4) ** 2))
 
@@ -100,12 +115,13 @@ def _data(nom: str, valeurs: list[float]) -> list[str]:
     return lignes
 
 
-def _table(nom: str, f: Callable[[float, float], float], grille2: list[float], nom2: str) -> list[str]:
+def _table(nom: str, f: Callable[[float, float], float], grille2: list[float], nom2: str,
+           unite: str = "deg") -> list[str]:
     """Table NM × N2, une colonne (Mach variable) par DATA : ordre mémoire Fortran."""
     out = [f"C     {nom}(Mach, {nom2})"]
     for j, x2 in enumerate(grille2, start=1):
-        out.append(f"C     {nom2} = {x2:g} deg")
-        vals = [f(m, math.radians(x2)) for m in MACH]
+        out.append(f"C     {nom2} = {x2:g} {unite}")
+        vals = [f(m, x2 if unite == "rad" else math.radians(x2)) for m in MACH]
         out += _data(f"({nom}(I,{j}),I=1,NM)", vals)
     return out
 
@@ -135,6 +151,8 @@ def generer() -> str:
         "C     AERINI), axes corps FRD, angles en degres.",
         "C     Table propulsive 1D : DCX(Mach).",
         "C     Table des gouvernes 5D : DCMG(Mach, alphaT, phiA, DM, DN).",
+        "C     DCZR(Mach, alpha) : alpha en RADIANS (table d'un autre code).",
+        "C     DCXB(Mach, |beta|) : tabulee en valeur absolue de beta.",
         "C" + "-" * 70,
         "      BLOCK DATA AERTBD",
         "      IMPLICIT NONE",
@@ -147,6 +165,8 @@ def generer() -> str:
     lignes += _data("TALPHA", ALPHA)
     lignes += _data("TBETA", BETA)
     lignes += _data("TMACHP", MACH_PROPU)
+    lignes += _data("TALFR", ALPHA_RAD)
+    lignes += _data("TABETA", ABETA)
     lignes.append("C")
     lignes += _table("TCX", cx, ALPHA, "alpha")
     lignes.append("C")
@@ -159,6 +179,10 @@ def generer() -> str:
     lignes += _table("TCL", cl, BETA, "beta")
     lignes.append("C")
     lignes += _table("TCN", cn, BETA, "beta")
+    lignes += ["C", "C     Increment de CZ de la voilure, alpha en radians"]
+    lignes += _table("TDCZR", dcz_rad, ALPHA_RAD, "alpha", unite="rad")
+    lignes += ["C", "C     Increment de CX en derapage, tabule en |beta|"]
+    lignes += _table("TDCXB", dcx_beta, ABETA, "|beta|")
     lignes += ["C", "C     Propulsion : increment de CX (effet de jet sur le culot)"]
     lignes += _data("TDCXP", [dcx_propu(m) for m in MACH_PROPU])
     lignes += ["C", "C     Gouvernes : increment de CM, angles polaires"]

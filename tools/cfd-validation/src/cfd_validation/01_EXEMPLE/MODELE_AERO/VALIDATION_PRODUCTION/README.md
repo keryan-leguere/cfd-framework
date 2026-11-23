@@ -22,7 +22,7 @@ pièces d'un passage nominal sont donc les mêmes dans les deux dossiers.
 VALIDATION_PRODUCTION/
 ├── RUN_VALIDATION.sh      lance tous les tests, puis le récapitulatif
 ├── recapituler.py         SORTIE/RECAP.txt (copie conforme de ../VALIDATION/)
-├── tables_modele.py       les 8 tables, sans paramètre de falsification
+├── tables_modele.py       les 10 tables (11 déclarations), sans paramètre de falsification
 ├── 01_LECTURE_TABLES/
 ├── 02_BORNES_TABLES/
 ├── 03_INTERPOLATION_TABLES/

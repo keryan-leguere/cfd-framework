@@ -7,7 +7,7 @@ Python (`../PYTHON`), un répertoire par test.
 VALIDATION/
 ├── RUN_VALIDATION.sh      lance tous les tests, puis le récapitulatif
 ├── recapituler.py         SORTIE/RECAP.txt : un test par ligne, conforme ou non, en %
-├── tables_modele.py       les 8 tables du modèle, leurs polaires et libellés, déclarés une fois
+├── tables_modele.py       les 10 tables du modèle (11 déclarations), polaires et libellés, déclarés une fois
 ├── 01_LECTURE_TABLES/     chaque nœud de chaque table, relu par le code
 ├── 02_BORNES_TABLES/      au-delà des bornes : sature ou extrapole comme demandé ?
 ├── 03_INTERPOLATION_TABLES/  entre les nœuds : interpolation multilinéaire ? + les polaires
@@ -46,9 +46,9 @@ RÉCAPITULATIF DE LA VALIDATION — 2026-11-21T23:42:01+00:00 (UTC)
 ==============================================================================
 Test                     Verdict       Détail                   Conformes
 ------------------------------------------------------------------------------
-01_LECTURE_TABLES        CONFORME      8/8 tables, 26888 appels     100 %
-02_BORNES_TABLES         CONFORME      8/8 tables, 4545 appels      100 %
-03_INTERPOLATION_TABLES  CONFORME      8/8 tables, 40270 appels     100 %
+01_LECTURE_TABLES        CONFORME      11/11 tables, 32327 appels    100 %
+02_BORNES_TABLES         CONFORME      11/11 tables, 4615 appels    100 %
+03_INTERPOLATION_TABLES  CONFORME      11/11 tables, 41134 appels    100 %
 04_INTEGRATION           CONFORME      7/7 sorties, 1016 lignes         100 %
 ------------------------------------------------------------------------------
 4/4 tests conformes — TOUT EST À 100 %

@@ -3,7 +3,7 @@
 
     cd ../../PYTHON && bash construire.sh     # une fois
     cd ../VALIDATION_PRODUCTION/02_BORNES_TABLES
-    python 02_bornes_tables.py                 # les 8 tables, à 10 % de l'étendue au-delà de chaque borne
+    python 02_bornes_tables.py                 # les 11 déclarations, à 10 % de l'étendue au-delà de chaque borne
     python 02_bornes_tables.py --ecart 0.25    # plus loin
 
 Version de production de ``VALIDATION/02_BORNES_TABLES/02_bornes_tables.py`` :
