@@ -13,7 +13,9 @@ Deux niveaux :
 - ``calcul_aero_elementaire(df)`` : une colonne par argument de AERINI, AERCFG
   et AERCAL, dans les unités et conventions du Fortran (CDG en m en axes corps
   FRD, ``ipropu`` 0/1, ``xref`` … ``lref``, ``biaicx``). Rien entre le code et l'appelant :
-  c'est par là que passe la validation.
+  c'est par là que passe la validation. Les arguments des phases d'init
+  (``xref`` … ``lref``, ``biaicx``) sont facultatifs : absents, ou vides sur une
+  ligne, ils prennent ``DEFAUTS`` ; ceux de AERCAL restent obligatoires.
 - ``calcul_aero(df)`` : les paramètres tels qu'on les donne d'habitude
   (``PARAMETRES``), convertis en arguments élémentaires par
   ``vers_elementaire``, puis les sorties complétées par ``completer_sorties``
@@ -71,21 +73,39 @@ class ModeleAero(ModeleF2py):
         "dm": "braquage de profondeur (deg)",
         "dn": "braquage de direction (deg)",
     }
-    #: Valeurs prises par ``calcul_aero`` quand la colonne est absente : le point
+    #: Valeurs prises par les deux calculs quand la colonne est absente : le point
     #: de référence des moments des tables (m, FRD), leur longueur de référence (m),
     #: et le biais de configuration sur CX (AERCFG).
     DEFAUTS: ClassVar[dict[str, float]] = {"xref": 1.2, "yref": 0.0, "zref": 0.0, "lref": 0.2, "biaicx": 0.0}
 
-    def __init__(self, bibliotheque: ModuleType | str | None = None, dossier: str | Path | None = None) -> None:
-        # Sans argument : aerolib, à côté de ce fichier. Les deux arguments ne servent
+    def __init__(
+        self,
+        bibliotheque: ModuleType | str | None = None,
+        dossier: str | Path | None = None,
+        *,
+        sondes: bool | None = None,
+    ) -> None:
+        # Sans argument : aerolib, à côté de ce fichier. Les deux premiers ne servent
         # qu'à charger une autre compilation (aerolib_o3…) ; l'init Fortran est faite par le calcul.
-        super().__init__(bibliotheque, dossier)
+        # sondes : None = COMMON /PROBE/ s'il existe, True = exigé, False = ignoré (ModeleF2py).
+        super().__init__(bibliotheque, dossier, sondes=sondes)
 
     # -- niveau élémentaire : le Fortran tel quel ----------------------------
 
+    def completer_init(self, entrees: pd.DataFrame) -> pd.DataFrame:
+        """Arguments des phases d'init absents, ou vides sur une ligne : la valeur de ``DEFAUTS``."""
+        df = entrees.copy()
+        for nom in self.arguments_init:
+            if nom in self.DEFAUTS:
+                df[nom] = df[nom].fillna(self.DEFAUTS[nom]) if nom in df.columns else self.DEFAUTS[nom]
+        return df
+
     def calcul_aero_elementaire(self, entrees: pd.DataFrame, *, csv: str | Path | None = None) -> pd.DataFrame:
-        """Colonnes xref … lref, biaicx, mach … dn → l'entrée + cx … cn, ierr, sondes (``csv`` : aussi en fichier)."""
-        return self.calcul_elementaire(entrees, csv=csv)
+        """Colonnes mach … dn (xref … lref, biaicx : ``DEFAUTS`` si absentes) → l'entrée + cx … cn, ierr, sondes.
+
+        ``csv`` : aussi en fichier.
+        """
+        return self.calcul_elementaire(self.completer_init(entrees), csv=csv)
 
     # -- niveau standard : conversions, puis sorties en plus -----------------
 
@@ -100,9 +120,7 @@ class ModeleAero(ModeleF2py):
         manquants = [p for p in self.PARAMETRES if p not in entrees.columns]
         if manquants:
             raise ErreurModele(f"paramètre(s) absent(s) : {', '.join(manquants)}")
-        df = entrees.copy()
-        for nom, valeur in self.DEFAUTS.items():  # absente, ou vide sur certaines lignes : le défaut
-            df[nom] = df[nom].fillna(valeur) if nom in df.columns else valeur
+        df = self.completer_init(entrees)  # xref … lref, biaicx : le défaut s'ils manquent
         # FLU (mm) → FRD (m) : y et z changent de signe
         df["xg"] = df["xg_mm"] / 1000.0
         df["yg"] = 0.0 - df["yg_mm"] / 1000.0  # 0.0 − x et non −x : pas de −0 dans le CSV

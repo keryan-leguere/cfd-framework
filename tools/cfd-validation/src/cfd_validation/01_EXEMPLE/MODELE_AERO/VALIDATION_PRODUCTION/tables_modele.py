@@ -162,7 +162,7 @@ def analyseur(description: str) -> argparse.ArgumentParser:
 def charger_modele(module: str, dossier: Path) -> ModeleAero | None:
     """Le modèle, ou ``None`` après avoir dit comment construire le module."""
     try:
-        return ModeleAero(module, dossier=dossier)
+        return ModeleAero(module, dossier=dossier, sondes=True)  # les tests de tables lisent les sondes
     except ModuleNotFoundError as erreur:
         print(f"{erreur}\n  → cd {PYTHON} && bash construire.sh", file=sys.stderr)
         return None

@@ -9,6 +9,7 @@ Le fichier (voir ``exemple_pdv.yaml``) ::
 
     fonction: calcul_aero              # ou calcul_aero_elementaire (arguments Fortran)
     sortie: SORTIE/exemple_pdv.csv     # relatif au fichier YAML
+    sondes: false                      # true : les sorties sondées (valid_tab_*) en plus
     commun:                            # valeurs communes à tous les blocs (facultatif)
       xg_mm: 1050.0
     pdv:                               # un bloc, ou une liste de blocs
@@ -22,7 +23,13 @@ vite) ; les blocs sont mis bout à bout. Une plage s'écrit ``{de, a, pas}``
 (bornes comprises, ``a`` atteint si l'écart est un multiple du pas) ou
 ``{de, a, n}`` (n valeurs régulières). Les noms de clés sont ceux de la
 fonction appelée : ``ModeleAero.PARAMETRES`` pour ``calcul_aero``, les
-arguments Fortran pour ``calcul_aero_elementaire``.
+arguments Fortran pour ``calcul_aero_elementaire`` — ceux des phases d'init
+(``xref`` … ``lref``, ``biaicx``) facultatifs dans les deux cas : absents, ils
+prennent ``ModeleAero.DEFAUTS``.
+
+``sondes`` (booléen, défaut ``false``) : ``true`` ajoute au CSV les sorties
+sondées (COMMON /PROBE/), et le code doit alors en avoir ; ``false`` ne les lit
+pas, ce qui marche aussi sur un code pas encore sondé.
 """
 
 from __future__ import annotations
@@ -33,7 +40,7 @@ import math
 import sys
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -42,7 +49,7 @@ from modele_aero import ModeleAero
 from modele_f2py import ErreurModele
 
 FONCTIONS = ("calcul_aero", "calcul_aero_elementaire")
-CLES = {"fonction", "sortie", "commun", "pdv"}
+CLES = {"fonction", "sortie", "sondes", "commun", "pdv"}
 CLES_PLAGE = ({"de", "a", "pas"}, {"de", "a", "n"})
 #: Colonne du nom de bloc dans le CSV.
 BLOC = "bloc"
@@ -50,6 +57,15 @@ BLOC = "bloc"
 
 class ErreurYaml(ValueError):
     """Le fichier de points de vol est mal formé ; le message dit où."""
+
+
+class Pdv(NamedTuple):
+    """Le fichier lu : quoi appeler, où écrire, avec ou sans sondes, et les points."""
+
+    fonction: str
+    sortie: Path
+    df: pd.DataFrame
+    sondes: bool = False
 
 
 def valeurs(cle: str, spec: Any) -> list[Any]:
@@ -90,8 +106,8 @@ def bloc_vers_df(bloc: Mapping[str, Any], commun: Mapping[str, Any], numero: int
     return df
 
 
-def lire_pdv(chemin: Path) -> tuple[str, Path, pd.DataFrame]:
-    """Le fichier YAML → (fonction, fichier CSV de sortie, DataFrame des points)."""
+def lire_pdv(chemin: Path) -> Pdv:
+    """Le fichier YAML → fonction, fichier CSV de sortie, DataFrame des points, sondes ou non."""
     contenu = yaml.safe_load(chemin.read_text(encoding="utf-8"))
     if not isinstance(contenu, Mapping):
         raise ErreurYaml(f"{chemin} : un dictionnaire est attendu à la racine")
@@ -101,6 +117,9 @@ def lire_pdv(chemin: Path) -> tuple[str, Path, pd.DataFrame]:
     fonction = contenu.get("fonction", "calcul_aero")
     if fonction not in FONCTIONS:
         raise ErreurYaml(f"fonction : {fonction!r}, attendue parmi {', '.join(FONCTIONS)}")
+    sondes = contenu.get("sondes", False)
+    if not isinstance(sondes, bool):
+        raise ErreurYaml(f"sondes : {sondes!r}, true ou false attendu")
     if "pdv" not in contenu:
         raise ErreurYaml("clé « pdv » absente : les points de vol à calculer")
     blocs = contenu["pdv"] if isinstance(contenu["pdv"], list) else [contenu["pdv"]]
@@ -111,7 +130,7 @@ def lire_pdv(chemin: Path) -> tuple[str, Path, pd.DataFrame]:
     sortie = Path(contenu.get("sortie", chemin.with_suffix(".csv").name))
     if not sortie.is_absolute():
         sortie = chemin.resolve().parent / sortie
-    return fonction, sortie, df
+    return Pdv(fonction, sortie, df, sondes)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -122,8 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dossier", type=Path, default=None, help="où chercher le module")
     args = p.parse_args(argv)
     try:
-        fonction, sortie, df = lire_pdv(args.fichier)
-        modele = ModeleAero(args.module, dossier=args.dossier)
+        fonction, sortie, df, sondes = lire_pdv(args.fichier)
+        # sondes demandées : COMMON /PROBE/ exigé ; sinon pas lu du tout
+        modele = ModeleAero(args.module, dossier=args.dossier, sondes=sondes)
         resultat = getattr(modele, fonction)(df, csv=args.sortie or sortie)
     except (ErreurYaml, ErreurModele, OSError, yaml.YAMLError) as erreur:
         print(f"erreur : {erreur}", file=sys.stderr)
@@ -131,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
     except ModuleNotFoundError as erreur:
         print(f"{erreur}\n  → bash construire.sh", file=sys.stderr)
         return 1
-    print(f"{args.fichier.name} : {len(df)} points, {df[BLOC].nunique()} bloc(s), {fonction}")
+    print(f"{args.fichier.name} : {len(df)} points, {df[BLOC].nunique()} bloc(s), {fonction}"
+          + (f", {len(modele.sondes)} sondes" if sondes else ", sans sondes"))
     if "ierr" in resultat:
         print("  ierr :", resultat["ierr"].value_counts().sort_index().to_dict())
     print(f"  → {args.sortie or sortie}")

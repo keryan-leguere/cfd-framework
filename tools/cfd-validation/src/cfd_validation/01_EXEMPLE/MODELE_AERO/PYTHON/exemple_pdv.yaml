@@ -8,12 +8,18 @@
 #   une plage, en n points alpha: {de: 0, a: 10, n: 5}     -> 0, 2.5, 5, 7.5, 10
 
 # calcul_aero : paramètres standard (ModeleAero.PARAMETRES, CDG en mm axes FLU,
-# propulsion booléenne ; xref, yref, zref, lref, biaicx facultatifs).
-# calcul_aero_elementaire : les arguments Fortran tels quels, tous obligatoires.
+# propulsion booléenne).
+# calcul_aero_elementaire : les arguments Fortran tels quels (voir exemple_pdv_elementaire.yaml).
+# Dans les deux cas, les arguments des phases d'init (xref, yref, zref, lref de
+# AERINI, biaicx de AERCFG) sont facultatifs : absents, ModeleAero.DEFAUTS.
 fonction: calcul_aero
 
 # CSV de sortie, relatif à ce fichier
 sortie: SORTIE/exemple_pdv.csv
+
+# Sorties sondées (valid_tab_cx …, COMMON /PROBE/) dans le CSV : true ou false
+# (défaut false ; false marche aussi sur un code pas encore sondé)
+sondes: false
 
 # Valeurs communes à tous les blocs ; un bloc peut les surcharger
 commun:

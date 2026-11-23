@@ -719,8 +719,18 @@ not part of the Bash framework's runtime:
       `verifier_tables`/`tables`, `nettoyer`/`nettoyer_tout` (`OUTILS/nettoyer.cmake`), `aide`; ctest
       with a `modele` fixture; in-source build refused; `CMakePresets.json` (`defaut`, `o3`);
       `gitignore.exemple` is a template, not active. `PYTHON/`: `construire.sh` (plain bash, user request — `bash construire.sh [NOM [DOSSIER]]`,
-      `FFLAGS`/`FC` env; one `python -m numpy.f2py -c --backend meson` call in a temp dir, needs
-      meson+ninja = extra `[f2py]`, the interpreter's bin dir prepended to PATH; sources are a
+      `FFLAGS`/`FC` env; one `python -m numpy.f2py -c` call in a temp dir with **no `--backend`**
+      (user request: `--backend meson` failed on their machine) — f2py picks distutils while
+      `numpy.distutils` exists (then `FFLAGS` goes through `--opt`, since as an env var
+      numpy.distutils would also drop `-fPIC`), else meson (needs meson+ninja = extra `[f2py]`, reads
+      `FFLAGS` env); writes `<NOM>.compilation.log` next to the `.so`, also on failure (machine, CPU,
+      `-march=native` target, compilers, backend, SHA-256 of sources and module, the *actual*
+      compiler flags per source from meson's `compile_commands.json` — meson's release buildtype
+      puts `-O3` before `FFLAGS` —, then the raw f2py output); `PYTHON/README.md` « Options de
+      compilation » holds measured flag suggestions (`-O3 -march=native` 1.6× over `-O2`, validation
+      still 100 %); `cmake.sh` (front door: configures `build/` when `CMakeCache.txt` is missing,
+      then `cmake --build`, from any cwd — « build is not a directory » was a skipped `cmake -B
+      build`); the interpreter's bin dir prepended to PATH; sources are a
       **directory** (`DOSSIER_SOURCES` + `MOTIFS` `*.f *.F *.for *.f90 *.F90`, user request — every
       matching file is compiled), `INCLUDES` a list of dirs; refuses non-ASCII sources and includes; a module's name is baked into the binary, so two builds to compare get two names and
       load side by side with separate Fortran state), `modele_f2py.py` (`ModeleF2py`, generic, **holds no argument value** — user request, no
@@ -730,7 +740,7 @@ not part of the Bash framework's runtime:
       state is process-global; `calcul_point(**point)`; `SONDES` = COMMON blocks reset to NaN before
       each call and returned as columns; `lire("bloc.var")` copies any COMMON variable),
       `modele_aero.py` (`ModeleAero`, the model's overlay, user design: `__init__()` takes no model
-      argument; `calcul_aero_elementaire(df)` = the Fortran args as is — **what validation calls**;
+      argument; `calcul_aero_elementaire(df)` = the Fortran args as is — **what validation calls** — except init-phase args (`xref…lref`, `biaicx`), which are optional and take `DEFAUTS` when absent/empty (`completer_init`, user request; the generic `calcul_elementaire` still has no defaults); probes are optional (user request: a code not yet probed): `sondes=None` reads the `SONDES` blocks present and warns about absent ones (`sondes_absentes`), `True` requires them (validation's `charger_modele`), `False` reads none;
       `calcul_aero(df)` = standard `PARAMETRES` (CDG in mm body FLU, `propulsion` bool, `xref…lref`
       optional from `DEFAUTS`) → `vers_elementaire` → elementary → `completer_sorties` (`etat`,
       `modele`, `version`, `bibliotheque` — where extra output columns go); Fortran-convention
@@ -739,7 +749,7 @@ not part of the Bash framework's runtime:
       (user request) writes the returned frame too (`ecrire_csv`: pandas' default `repr` floats —
       shortest exact, no `0.80000000000000004` —, named index kept, dir created). `calcul_yaml.py
       FILE.yaml [--sortie CSV]` (user request) runs flight points from YAML (`exemple_pdv.yaml`):
-      `fonction`, `sortie` (relative to the YAML), `commun`, `pdv` = one block or a list, each block
+      `fonction`, `sortie` (relative to the YAML), `sondes` (bool, default false — true adds the `valid_tab_*` columns and *requires* the probe COMMON, false never reads it), `commun`, `pdv` = one block or a list, each block
       the cross product of its keys (last fastest), a key = scalar / list / `{de, a, pas}` (bounds
       included) / `{de, a, n}`; errors name the spot (`pdv[0].alpha`), exit 1; CMake target `pdv`. `VALIDATION_PRODUCTION/` (user request) is the **deliverable copy** of `VALIDATION/` with no fault option (`--defaut`, `cm_faussee`, `consigne_cx_alpha`, `cm_en_palier` absent; `declarer_tables(modele)` only); an unknown option exits **1** (`tables_modele.analyseur`), never 2, so it cannot read as « non conforme »; `recapituler.py` byte-identical and `RUN_VALIDATION.sh` identical outside comments — both asserted, as are identical tables/tolerances from the two declarations; CMake target `validation_production`; kept in sync by hand. `VALIDATION/04_INTEGRATION/` (user request, VAL-INT-04): `REFERENCE/*.csv` stand for results from another environment (here the same Fortran built `-O3 -ffast-math -march=native` by `generer_reference.py`, demo only, under two foreign header conventions `Alpha (deg)` / `ALPHA [deg]`, propulsion ON/OFF; ≤ 1 ULP mostly, 64 ULP on Cm near zero); `04_integration.py` holds the small helper `normaliser_colonnes` (`nom_type`: strip unit in ()/[], lower, `_`, then `ALIAS`; unknown/duplicate columns refused), reads with the new package function `lire_dossier(dir, renommer=, colonne_fichier="campagne")` (same columns required across files, `attrs["fichiers"]` = SHA-256, also exported: `lire_table`, `ErreurLecture`), replays the inputs through `calcul_aero_elementaire` and calls `valider_integration` with `campagne` as an input (failures attributable to a file), rtol 1e-12/atol 1e-14 justified, `ierr` exact; `--defaut` shifts Cm by 1e-9 at |DM| = 20 → attributed to dm (V = 1). Production copy has the CSVs byte-identical, no generator. `recapituler.py` now reads integration `resume.json` (`k/n sorties, N lignes`, %). Package changes made for it: integration report gives each distinct justification once as a numbered note; per-input figures (04/05/06) drop inputs with a single level; integration figure titles bold (`axes.titleweight`/`figure.titleweight`), subtitles grey, legends capitalised; long category tick labels rotated. `VALIDATION/` holds **one directory per
       test** (user request) + `RUN_VALIDATION.sh` (explicit `TESTS=(dir|script|options)` list; script

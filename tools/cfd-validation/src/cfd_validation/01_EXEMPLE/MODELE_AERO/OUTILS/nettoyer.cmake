@@ -1,7 +1,7 @@
 # Efface les sorties du projet : cmake -DRACINE=<MODELE_AERO> [-DTOUT=ON] -P nettoyer.cmake
 #
 # Sorties : tout dossier nommé SORTIE/ ou __pycache__/ sous RACINE.
-# TOUT=ON : aussi les modules compilés PYTHON/*.so (à reconstruire ensuite).
+# TOUT=ON : aussi les modules compilés PYTHON/*.so et leurs journaux *.compilation.log.
 # Rien d'autre n'est touché : ni les sources, ni le dossier de construction CMake.
 cmake_minimum_required(VERSION 3.17)
 
@@ -18,7 +18,7 @@ foreach(chemin IN LISTS _tout)
     endif()
 endforeach()
 if(TOUT)
-    file(GLOB _modules "${RACINE}/PYTHON/*.so" "${RACINE}/PYTHON/*.pyd")
+    file(GLOB _modules "${RACINE}/PYTHON/*.so" "${RACINE}/PYTHON/*.pyd" "${RACINE}/PYTHON/*.compilation.log")
     list(APPEND _effaces ${_modules})
 endif()
 

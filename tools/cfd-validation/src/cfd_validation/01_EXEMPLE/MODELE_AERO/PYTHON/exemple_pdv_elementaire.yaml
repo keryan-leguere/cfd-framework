@@ -1,0 +1,28 @@
+# Points de vol en arguments Fortran : python calcul_yaml.py exemple_pdv_elementaire.yaml
+#
+# Les arguments de AERCAL, dans les conventions du code : CDG xg, yg, zg en m,
+# axes corps FRD ; ipropu 0/1. Ceux des phases d'init (xref, yref, zref, lref,
+# biaicx) sont facultatifs : absents, ce sont les valeurs de ModeleAero.DEFAUTS ;
+# donnés, ils priment (ici lref dans le second bloc).
+fonction: calcul_aero_elementaire
+sortie: SORTIE/exemple_pdv_elementaire.csv
+sondes: true          # les lectures de table brutes (valid_tab_*) en plus
+
+commun:
+  beta: 0.0
+  xg: 1.05
+  yg: 0.0
+  zg: 0.0
+  ipropu: 0
+  dm: 0.0
+  dn: 0.0
+
+pdv:
+  - nom: balayage_alpha
+    mach: [0.8, 1.2]
+    alpha: {de: 0, a: 10, pas: 2}
+
+  - nom: autre_longueur_de_reference
+    mach: 0.9
+    alpha: 5.0
+    lref: 0.25

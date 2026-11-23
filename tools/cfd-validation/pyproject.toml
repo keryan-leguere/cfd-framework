@@ -24,7 +24,8 @@ dependencies = [
 # Sans lui, rapport terminal, journal, CSV et JSON sont produits quand même.
 figures = ["matplotlib>=3.5"]
 # Encapsulation f2py du modèle Fortran d'exemple (01_EXEMPLE/MODELE_AERO/PYTHON) :
-# numpy.f2py passe par meson + ninja (le backend distutils n'existe plus en 3.12).
+# numpy.f2py passe par meson + ninja dès que numpy.distutils manque (Python >= 3.12) ;
+# avant, il prend distutils et n'en a pas besoin.
 f2py = ["meson", "ninja"]
 # Lecture des fichiers Parquet/Feather par la commande ``cfd-validation integration``.
 parquet = ["pyarrow"]
@@ -50,6 +51,7 @@ cfd_validation = [
     # Projet Fortran d'exemple : sources, doc, encapsulation — jamais le module compilé (*.so)
     "01_EXEMPLE/MODELE_AERO/*.md", "01_EXEMPLE/MODELE_AERO/CMakeLists.txt",
     "01_EXEMPLE/MODELE_AERO/CMakePresets.json", "01_EXEMPLE/MODELE_AERO/gitignore.exemple",
+    "01_EXEMPLE/MODELE_AERO/cmake.sh",
     "01_EXEMPLE/MODELE_AERO/OUTILS/*.cmake", "01_EXEMPLE/MODELE_AERO/SOURCES/*",
     "01_EXEMPLE/MODELE_AERO/DOC/*", "01_EXEMPLE/MODELE_AERO/PYTHON/*.py",
     "01_EXEMPLE/MODELE_AERO/PYTHON/*.md", "01_EXEMPLE/MODELE_AERO/PYTHON/*.yaml", "01_EXEMPLE/MODELE_AERO/PYTHON/*.sh", "01_EXEMPLE/MODELE_AERO/OUTILS/*.py",

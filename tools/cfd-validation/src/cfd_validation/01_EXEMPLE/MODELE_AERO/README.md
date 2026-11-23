@@ -39,6 +39,7 @@ MODELE_AERO/
 │   ├── generer_tables.py    régénère SOURCES/aero_tables.f
 │   └── nettoyer.cmake       efface les sorties (cibles nettoyer, nettoyer_tout)
 ├── CMakeLists.txt         les commandes de base en un point d'entrée (facultatif)
+├── cmake.sh               une cible CMake en une commande (configure build/ au besoin)
 ├── CMakePresets.json
 └── gitignore.exemple      un .gitignore complet pour ce genre de projet (à renommer)
 ```
@@ -47,7 +48,7 @@ MODELE_AERO/
 
 ```bash
 cd PYTHON
-bash construire.sh            # gfortran + f2py (meson, ninja) → aerolib*.so
+bash construire.sh            # gfortran + f2py → aerolib*.so + aerolib.compilation.log
 python exemple_appel.py       # un point, un DataFrame de 180 cas
 python calcul_yaml.py exemple_pdv.yaml   # points de vol en YAML → SORTIE/exemple_pdv.csv
 cd ../VALIDATION
@@ -79,7 +80,7 @@ compile rien lui-même, il appelle les scripts ci-dessus, qui restent
 utilisables sans lui.
 
 ```bash
-cmake -B build                       # une fois : choisit Python, vérifie gfortran, numpy, meson, ninja
+cmake -B build                       # une fois : choisit Python, vérifie gfortran, numpy (meson, ninja si besoin)
 cmake --build build                  # construit PYTHON/aerolib*.so
 cmake --build build -t validation    # les quatre tests, puis SORTIE/RECAP.txt
 cmake --build build -t validation_production   # idem avec VALIDATION_PRODUCTION/
@@ -87,6 +88,18 @@ cmake --build build -t nettoyer      # efface SORTIE/ et __pycache__/ (nettoyer_
 cmake --build build -t aide          # toutes les cibles et les réglages
 ctest --test-dir build               # construit, puis un test ctest par test de validation
 ```
+
+`cmake --build build …` sans le `cmake -B build` d'abord, ou lancé depuis un
+autre dossier que celui-ci, donne « build is not a directory ». `cmake.sh` fait
+les deux étapes et marche depuis n'importe où :
+
+```bash
+bash cmake.sh                        # configure build/ s'il manque, construit le module
+bash cmake.sh validation             # n'importe quelle cible, ou plusieurs
+```
+
+Les réglages restent ceux de `build/` : `cmake -B build -DFFLAGS="-O3 -march=native"`
+une fois, puis `bash cmake.sh` comme d'habitude.
 
 Autres cibles : `exemple`, `pdv` (points de vol d'un YAML → CSV, `-DPDV_YAML=…`), `lecture`, `bornes`, `interpolation` (un test
 seul), `verifier_tables`, `tables`. Réglages : `-DPYTHON=…` (défaut
@@ -99,7 +112,9 @@ le preset `o3` construit `aerolib_o3` (`-O3 -ffast-math`) dans `build-o3/`.
 `gitignore.exemple` ne s'applique pas tel quel : le copier en `.gitignore` à la
 racine d'un projet du même genre.
 
-Prérequis : `gfortran`, numpy ≥ 1.26, `meson` et `ninja` (`pip install meson
-ninja`). Le détail de l'encapsulation et la marche à suivre pour un autre
+Prérequis : `gfortran`, numpy ≥ 1.26 ; `meson` et `ninja` (`pip install meson
+ninja`) seulement quand f2py passe par meson (Python ≥ 3.12).
+Options pour un module plus rapide (mesurées, et ce qu'elles coûtent) :
+`PYTHON/README.md`, « Options de compilation ». Le détail de l'encapsulation et la marche à suivre pour un autre
 code sont dans `PYTHON/README.md` ; les sources sont expliquées dans
 `DOC/01_SOURCES.md`.

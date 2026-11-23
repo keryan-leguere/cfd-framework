@@ -166,8 +166,8 @@ def _exemple(args: argparse.Namespace, sortie: _Sortie) -> int:
     dest: Path = args.dest
     if dest.exists():
         _echec(sortie, f"{dest} existe déjà", indice="Choisissez un autre dossier : rien n'est écrasé.")
-    # ni module compilé, ni sorties, ni dossier de construction CMake de MODELE_AERO
-    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.so", "SORTIE", "SORTIE_INTEGRATION",
+    # ni module compilé (ni son journal), ni sorties, ni dossier de construction CMake de MODELE_AERO
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.so", "*.compilation.log", "SORTIE", "SORTIE_INTEGRATION",
                                     "build", "build-*", "CMakeFiles", "CMakeCache.txt")
     shutil.copytree(EXEMPLE_DIR, dest, ignore=ignore)
     sortie.out.print(f"Exemple recopié dans [cyan]{dest}[/]. Pour le lancer :\n\n    cd {dest} && bash RUN_EXEMPLE.sh\n")

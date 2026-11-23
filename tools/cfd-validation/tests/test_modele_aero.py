@@ -34,9 +34,15 @@ from cfd_validation.paths import EXEMPLE_DIR
 PROJET = EXEMPLE_DIR / "MODELE_AERO"
 PYTHON = PROJET / "PYTHON"
 BIN = str(Path(sys.executable).parent)
-OUTILLAGE = all(
-    shutil.which(o, path=os.pathsep.join([BIN, os.environ.get("PATH", "")])) for o in ("gfortran", "meson", "ninja")
-)
+# f2py prend distutils tant que numpy.distutils existe, meson sinon : meson et ninja ne
+# sont requis que dans le second cas (construire.sh n'impose aucun backend).
+try:
+    import numpy.distutils  # type: ignore[import-not-found,unused-ignore]  # absent en Python >= 3.12
+
+    _OUTILS: tuple[str, ...] = ("gfortran",)
+except ImportError:
+    _OUTILS = ("gfortran", "meson", "ninja")
+OUTILLAGE = all(shutil.which(o, path=os.pathsep.join([BIN, os.environ.get("PATH", "")])) for o in _OUTILS)
 avec_compilateur = pytest.mark.skipif(not OUTILLAGE, reason="gfortran, meson ou ninja absent")
 
 
@@ -193,8 +199,8 @@ def test_yaml_valeurs() -> None:
 
 
 def test_yaml_exemple_et_refus(tmp_path: Path) -> None:
-    fonction, sortie, df = cy.lire_pdv(PYTHON / "exemple_pdv.yaml")
-    assert fonction == "calcul_aero" and sortie == PYTHON / "SORTIE" / "exemple_pdv.csv"
+    fonction, sortie, df, sondes = cy.lire_pdv(PYTHON / "exemple_pdv.yaml")
+    assert fonction == "calcul_aero" and sortie == PYTHON / "SORTIE" / "exemple_pdv.csv" and sondes is False
     assert df.groupby("bloc", sort=False).size().to_dict() == {
         "balayage_alpha": 12, "balayage_mach_propulse": 8, "gouverne_et_biais": 10}
     premier = df[df["bloc"] == "balayage_alpha"]
@@ -202,12 +208,16 @@ def test_yaml_exemple_et_refus(tmp_path: Path) -> None:
     assert df["propulsion"].tolist().count(True) == 8  # « commun » surchargé par un bloc
     f = tmp_path / "f.yaml"
     for texte, motif in (("pdv: {mach: 1}\nautre: 1\n", "inconnue"), ("fonction: x\npdv: {mach: 1}\n", "fonction"),
-                         ("sortie: a.csv\n", "pdv")):
+                         ("sortie: a.csv\n", "pdv"), ("sondes: oui\npdv: {mach: 1}\n", "sondes")):
         f.write_text(texte)
         with pytest.raises(cy.ErreurYaml, match=motif):
             cy.lire_pdv(f)
     f.write_text("pdv: {mach: 1}\n")
     assert cy.lire_pdv(f)[1] == tmp_path / "f.csv"  # sortie par défaut : à côté du YAML
+    assert cy.lire_pdv(f).sondes is False  # sondes : faux par défaut
+    elem = cy.lire_pdv(PYTHON / "exemple_pdv_elementaire.yaml")
+    assert elem.fonction == "calcul_aero_elementaire" and elem.sondes is True
+    assert "xref" not in elem.df.columns and elem.df["lref"].isna().sum() == 12  # init : défauts au calcul
 
 
 # --------------------------------------------------------------------------
@@ -231,6 +241,16 @@ def _construire(dossier: Path, nom: str, fflags: str) -> None:
     assert "aerini(xref,yref,zref,lref)" in res.stdout and "ierr = aerini" not in res.stdout
     assert "aercfg(biaicx)" in res.stdout
     assert "cx,cy,cz,cl,cm,cn,ierr = aercal(mach,alpha,beta,xg,yg,zg,ipropu,dm,dn)" in res.stdout
+    journal = (dossier / f"{nom}.compilation.log").read_text(encoding="utf-8")
+    assert journal.startswith(f"# Compilation f2py de {nom} — réussie")
+    for rubrique in ("## Machine", "## Compilateurs", "## Python et f2py", "## Sources (SHA-256)",
+                     "## Commandes réelles du compilateur Fortran", "## Module", "## Sortie complète de f2py"):
+        assert rubrique in journal, rubrique
+    # les options demandées arrivent bien au compilateur, sur chaque source
+    commandes = journal.split("## Commandes réelles du compilateur Fortran")[1].split("## Module")[0]
+    for source in ("aero_interp.f", "aero_modele.f", "aero_tables.f"):
+        ligne = next(x for x in commandes.splitlines() if x.strip().startswith(source))
+        assert all(o in ligne.split() for o in fflags.split()), ligne
 
 
 @pytest.fixture(scope="module")
@@ -440,8 +460,10 @@ def test_calcul_aero_elementaire_refus(modele: Any) -> None:
     df = _plan()
     with pytest.raises(mf.ErreurModele, match=r"absente.*alpha"):
         modele.calcul_aero_elementaire(df.drop(columns="alpha"))
+    with pytest.raises(mf.ErreurModele, match=r"absente.*alpha"):
+        modele.calcul_elementaire(df.drop(columns="alpha"))
     with pytest.raises(mf.ErreurModele, match=r"absente.*lref"):
-        modele.calcul_aero_elementaire(df.drop(columns="lref"))  # l'init aussi est obligatoire
+        modele.calcul_elementaire(df.drop(columns="lref"))  # le générique n'a aucune valeur par défaut
     with pytest.raises(mf.ErreurModele, match=r"déjà présentes.*cx"):
         modele.calcul_aero_elementaire(df.assign(cx=0.0))
     with pytest.raises(mf.ErreurModele, match=r"ipropu = 0.5"):
@@ -449,6 +471,40 @@ def test_calcul_aero_elementaire_refus(modele: Any) -> None:
     flottant = modele.calcul_aero_elementaire(df.assign(ipropu=1.0))["ierr"]
     entier = modele.calcul_aero_elementaire(df.assign(ipropu=1))["ierr"]
     assert list(flottant) == list(entier)
+
+
+@avec_compilateur
+def test_calcul_aero_elementaire_init_par_defaut(modele: Any) -> None:
+    """xref … lref, biaicx absents ou vides : ModeleAero.DEFAUTS ; donnés, ils priment."""
+    df = _plan()
+    init = list(ma.ModeleAero.DEFAUTS)
+    assert set(init) == set(modele.arguments_init)
+    complet = modele.calcul_aero_elementaire(df.assign(**ma.ModeleAero.DEFAUTS))
+    sans = modele.calcul_aero_elementaire(df.drop(columns=init))
+    pd.testing.assert_frame_equal(sans[complet.columns.drop(init)], complet[complet.columns.drop(init)])
+    assert {k: sans[k].unique().tolist() for k in init} == {k: [v] for k, v in ma.ModeleAero.DEFAUTS.items()}
+    trou = df.drop(columns=init).assign(lref=[0.4] + [math.nan] * (len(df) - 1))
+    r = modele.calcul_aero_elementaire(trou)
+    assert r["lref"].iloc[0] == 0.4 and set(r["lref"].iloc[1:]) == {ma.ModeleAero.DEFAUTS["lref"]}
+    assert r["cm"].iloc[0] != sans["cm"].iloc[0] and r["cm"].iloc[1:].tolist() == sans["cm"].iloc[1:].tolist()
+
+
+@avec_compilateur
+def test_sondes_facultatives(bibliotheques: dict[str, Any]) -> None:
+    """Code pas encore sondé : sondes=None ignore le bloc absent (avertissement), True le refuse, False n'en lit aucun."""
+    NonSonde = type("NonSonde", (ma.ModeleAero,), {"SONDES": ("probe", "inexistant")})
+
+    with pytest.warns(UserWarning, match="inexistant"):
+        m = NonSonde(bibliotheques["t0"])
+    assert m.sondes_absentes == ("inexistant",) and tuple(m.sondes) == SONDES
+    with pytest.raises(mf.ErreurModele, match="inexistant"):
+        NonSonde(bibliotheques["t0"], sondes=True)
+    sans = ma.ModeleAero(bibliotheques["t0"], sondes=False)
+    assert sans.sondes == {} and sans.colonnes_sortie == (*NOMS, "ierr")
+    r = sans.calcul_aero_elementaire(_plan())
+    assert not [c for c in r.columns if c.startswith("valid_tab_")]
+    avec = ma.ModeleAero(bibliotheques["t0"]).calcul_aero_elementaire(_plan())
+    assert r["cm"].tolist() == avec["cm"].tolist()  # les sorties ne dépendent pas des sondes
 
 
 @avec_compilateur
@@ -516,9 +572,23 @@ def test_calcul_yaml(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
     assert len(d) == 30 and set(d["ierr"]) == {0}
     assert d.groupby("bloc")["biaicx"].unique().map(list).to_dict() == {
         "balayage_alpha": [0.0], "balayage_mach_propulse": [0.0], "gouverne_et_biais": [0.01]}
+    assert not [c for c in d.columns if c.startswith("valid_tab_")]  # sondes: false
     f = tmp_path / "e.yaml"
     f.write_text("fonction: calcul_aero_elementaire\npdv: {mach: 1}\n")
     assert cy.main([str(f), "--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"])]) == 1
+
+
+@avec_compilateur
+def test_calcul_yaml_elementaire_sans_init(bibliotheques: dict[str, Any], tmp_path: Path) -> None:
+    """En arguments Fortran sans xref … biaicx : les défauts ; sondes: true les ajoute au CSV."""
+    sortie = tmp_path / "elem.csv"
+    assert cy.main([str(PYTHON / "exemple_pdv_elementaire.yaml"), "--module", "aerolib_t0",
+                    "--dossier", str(bibliotheques["dossier"]), "--sortie", str(sortie)]) == 0
+    d = _lire_csv(sortie)
+    assert len(d) == 13 and set(d["ierr"]) == {0} and set(SONDES) <= set(d.columns)
+    assert d.groupby("bloc")["lref"].unique().map(list).to_dict() == {
+        "balayage_alpha": [ma.ModeleAero.DEFAUTS["lref"]], "autre_longueur_de_reference": [0.25]}
+    assert set(d["xref"]) == {ma.ModeleAero.DEFAUTS["xref"]}
 
 
 @avec_compilateur
@@ -843,6 +913,18 @@ def test_construire_refuse_non_ascii_ou_dossier_vide(tmp_path: Path) -> None:
         f.unlink()
     res = lancer()
     assert res.returncode == 1 and "aucune source" in res.stderr
+
+
+def test_construire_n_impose_pas_de_backend() -> None:
+    """« --backend meson » échoue là où meson manque : f2py choisit seul (retour utilisateur)."""
+    texte = (PYTHON / "construire.sh").read_text()
+    assert "--backend" not in texte.replace("aucun --backend", "")
+
+
+def test_cmake_sh_configure_au_besoin() -> None:
+    """« build is not a directory » : cmake.sh configure build/ s'il manque, depuis n'importe où."""
+    texte = (PROJET / "cmake.sh").read_text()
+    assert 'cmake -S "$ICI" -B "$BUILD"' in texte and "CMakeCache.txt" in texte
 
 
 def test_construire_prend_le_dossier() -> None:

@@ -23,7 +23,11 @@ cours de calcul pour la validation (une valeur lue dans une table, avant que le
 code la transforme). Leurs variables réelles sont remises à NaN avant chaque
 appel, puis rendues avec les sorties, sous leur nom f2py (``valid_tab_cx``) :
 une sonde que l'appel n'a pas atteinte vaut NaN, jamais la valeur de l'appel
-précédent. ``lire("aertab.tcx")`` rend une copie de n'importe quelle variable
+précédent. Les sondes sont **facultatives** : un code pas encore sondé n'a pas
+de bloc, et ``sondes=`` à la construction dit quoi en faire — ``None`` (défaut)
+lit les blocs de ``SONDES`` présents et ignore les absents (avertissement,
+liste dans ``sondes_absentes``) ; ``True`` les exige tous (erreur sinon) ;
+``False`` n'en lit aucun. ``lire("aertab.tcx")`` rend une copie de n'importe quelle variable
 de COMMON — les tables et leurs grilles, telles que le code les voit.
 
 L'état Fortran (variables SAVE, COMMON) est **global au processus** : deux
@@ -42,6 +46,7 @@ import importlib.util
 import math
 import re
 import sys
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -212,6 +217,10 @@ class ModeleF2py:
     dossier
         Où chercher le module par son nom. Défaut : ``DOSSIER`` de la
         sous-classe, sinon ``sys.path``.
+    sondes
+        ``None`` : les blocs de ``SONDES`` présents dans le module, les absents
+        ignorés avec un avertissement (code pas encore sondé) ; ``True`` : tous
+        exigés ; ``False`` : aucune sonde lue ni rendue.
 
     L'objet ne garde aucune valeur d'argument : construire l'objet charge le
     module et lit les signatures, rien de plus. Les phases d'init sont
@@ -225,7 +234,13 @@ class ModeleF2py:
     # Blocs COMMON de sondes, lus après chaque calcul (voir le module).
     SONDES: ClassVar[tuple[str, ...]] = ()
 
-    def __init__(self, bibliotheque: ModuleType | str | None = None, dossier: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        bibliotheque: ModuleType | str | None = None,
+        dossier: str | Path | None = None,
+        *,
+        sondes: bool | None = None,
+    ) -> None:
         if isinstance(bibliotheque, ModuleType):
             self.bibliotheque = bibliotheque
         else:
@@ -238,7 +253,8 @@ class ModeleF2py:
 
         self.signatures_init = tuple(self._signature(p) for p in self.PHASES_INIT)
         self.signature_calcul = self._signature(self.PHASE_CALCUL)
-        self.sondes = self._sondes()
+        self.sondes_absentes: tuple[str, ...] = ()
+        self.sondes = self._sondes(sondes)
         self._types = {a.nom: a for s in (*self.signatures_init, self.signature_calcul) for a in s.entrees}
 
     # -- description -------------------------------------------------------
@@ -265,15 +281,31 @@ class ModeleF2py:
             )
         return objet, variables
 
-    def _sondes(self) -> dict[str, tuple[Any, bool]]:
-        """``{variable: (bloc, réelle)}`` pour chaque bloc de ``SONDES``."""
+    def _sondes(self, mode: bool | None) -> dict[str, tuple[Any, bool]]:
+        """``{variable: (bloc, réelle)}`` pour chaque bloc de ``SONDES`` retenu (voir ``sondes=``)."""
         sondes: dict[str, tuple[Any, bool]] = {}
+        if mode is False:
+            return sondes
+        absents = []
         for bloc in self.SONDES:
-            objet, variables = self._common(bloc)
+            try:
+                objet, variables = self._common(bloc)
+            except ErreurModele:
+                if mode:  # exigées : l'erreur dit quels COMMON existent
+                    raise
+                absents.append(bloc)
+                continue
             for nom, type_ in variables.items():
                 if "array" in type_:
                     raise ErreurModele(f"sonde {bloc}.{nom} : tableau ({type_}), une sonde est un scalaire")
                 sondes[nom] = (objet, type_.startswith(("'d'", "'f'")))
+        if absents:
+            self.sondes_absentes = tuple(absents)
+            warnings.warn(
+                f"{self.bibliotheque.__name__} : pas de COMMON de sondes {', '.join(absents)} "
+                "(code pas encore sondé ?) — calcul sans ces sondes",
+                stacklevel=3,
+            )
         doublons = sorted(set(sondes) & set(self.signature_calcul.noms_sorties))
         if doublons:
             raise ErreurModele(f"sonde(s) homonyme(s) d'une sortie de {self.PHASE_CALCUL} : {', '.join(doublons)}")

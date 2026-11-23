@@ -10,13 +10,14 @@ PYTHON/
 ├── modele_aero.py    ModeleAero : la surcouche propre à ce code (conversions, sorties en plus)
 ├── exemple_appel.py  paramètres standard, arguments Fortran, une constante qui varie
 ├── calcul_yaml.py    points de vol d'un fichier YAML → CSV
-└── exemple_pdv.yaml  un fichier de points de vol commenté
+├── exemple_pdv.yaml  un fichier de points de vol commenté (paramètres standard)
+└── exemple_pdv_elementaire.yaml  le même en arguments Fortran, init par défaut, avec sondes
 ```
 
 ## 1. Construire le module
 
 ```bash
-pip install meson ninja             # ou : pip install -e "tools/cfd-validation[f2py]"
+pip install meson ninja             # seulement si f2py passe par meson (voir plus bas)
 bash construire.sh                                      # aerolib.cpython-*.so dans ce dossier
 FFLAGS="-O3 -ffast-math" bash construire.sh aerolib_o3  # une autre compilation, sous un autre nom
 FC=ifx bash construire.sh aerolib /ailleurs             # autre compilateur, autre dossier
@@ -27,9 +28,14 @@ tout fichier `*.f *.F *.for *.f90 *.F90` est compilé (`MOTIFS`), et `INCLUDES`
 la liste des dossiers des `INCLUDE`. Ajouter un fichier au dossier suffit ; n'y
 laisser que le code livré.
 
-C'est un script bash de quelques lignes : un appel à `python -m numpy.f2py -c
---backend meson`, dans un dossier temporaire, avec `FC` et `FFLAGS`. L'interpréteur
-est `CFD_VALIDATION_PYTHON` (`python3` par défaut) ; son dossier passe en tête du
+C'est un script bash de quelques lignes : un appel à `python -m numpy.f2py -c`,
+dans un dossier temporaire, avec `FC` et `FFLAGS`. Aucun backend n'est imposé
+(`--backend meson` échouait là où meson manque) : f2py prend **distutils** tant
+que `numpy.distutils` existe (Python < 3.12), **meson** sinon, et
+il faut alors `pip install meson ninja`. Avec distutils, `FFLAGS` passe par
+`--opt` (en variable d'environnement, numpy.distutils remplacerait aussi
+`-fPIC`) ; avec meson, par la variable `FFLAGS`. L'interpréteur est
+`CFD_VALIDATION_PYTHON` (`python3` par défaut) ; son dossier passe en tête du
 `PATH`, là où pip a installé meson et ninja. Le script refuse un source non ASCII (f2py ne le lit pas : un accent
 dans un commentaire suffit) et affiche, une fois le module construit, ce que
 f2py a exposé :
@@ -59,6 +65,75 @@ scalaires : chaque scalaire est une colonne nommée.
 Le nom du module est figé dans le binaire : deux compilations à comparer se
 construisent sous deux noms (`aerolib_o0`, `aerolib_o3`) et se chargent côte
 à côte dans le même processus, chacune avec son propre état Fortran.
+
+### Journal de compilation
+
+Chaque compilation écrit `<NOM>.compilation.log` à côté du module, **aussi en
+cas d'échec** (le chemin est rappelé à l'écran) :
+
+```
+# Compilation f2py de aerolib — réussie
+## Machine          système, distribution, processeur, cœurs, mémoire, jeux SIMD,
+                    ce que -march=native désigne (znver2…), travail SLURM s'il y en a un
+## Compilateurs     FC (chemin, version, cible), FFLAGS, compilateur C de l'enveloppe
+## Python et f2py   interpréteur, numpy, backend, meson/ninja, commande f2py
+## Sources          SHA-256 de chaque source et de chaque INCLUDE
+## Commandes réelles du compilateur Fortran
+                    une ligne par source : les options effectivement passées
+## Module           SHA-256 et taille du .so produit
+## Sortie complète de f2py
+```
+
+La rubrique « commandes réelles » est la seule qui fasse foi : avec meson, le
+`buildtype=release` ajoute `-O3` *avant* `FFLAGS` (`… -O3 -O2 …` : c'est le
+dernier qui l'emporte, donc `-O2`). Le journal se joint à une preuve de
+validation : il dit avec quoi le module validé a été construit, et les SHA-256
+permettent de vérifier qu'on parle bien du même.
+
+### Options de compilation pour aller plus vite
+
+Mesuré sur ce modèle (un appel `aercal` depuis Python, Ryzen 7 4700U,
+gfortran 13) :
+
+| FFLAGS | µs / appel | validation |
+|---|---|---|
+| `-O0` | 2,0 | — |
+| `-O2` (défaut) | 1,17 | 100 % |
+| `-O3 -march=native` | 0,73 | 100 % (4/4, copie de production) |
+| `-O3 -march=native -flto` | 0,74 | — |
+
+Pistes, de la plus sûre à la plus risquée :
+
+1. **`-O3 -march=native`** : le gain mesuré ci-dessus. Le binaire n'est valable
+   que sur ce type de processeur (le journal dit lequel) ; pour un cluster
+   hétérogène ou un module à livrer, viser un niveau x86-64 commun :
+   `-O3 -march=x86-64-v3` (AVX2/FMA, tout x86 depuis ~2015) ou `-v2`.
+2. **`-funroll-loops`**, **`-fno-semantic-interposition`** : petits gains
+   possibles sur les boucles de recherche dans les tables (`CHERCH`) ; à
+   mesurer, sans risque numérique.
+3. **Optimisation guidée par profil** : compiler `-O3 -fprofile-generate`,
+   lancer la validation (elle balaie tout le domaine), recompiler
+   `-O3 -fprofile-use -fprofile-correction`. Les tests de validation servent
+   alors de jeu d'entraînement.
+4. **`-flto`** : n'apporte rien ici (le gain demanderait l'inlining de `CHERCH`
+   et `INTE*D` dans `AERO`, d'un fichier à l'autre, et l'éditeur de liens de f2py
+   ne reçoit pas l'option) ; à réessayer sur un code où les sous-programmes
+   chauds sont dans des fichiers différents.
+5. **`-ffast-math` / `-Ofast`** : réordonne les calculs, donc plus de
+   bit-à-bit garanti (la référence de `04_INTEGRATION` en est l'exemple : jusqu'à
+   64 ULP sur Cm). Avec gfortran < 13, il lie en plus `crtfastmath.o`, qui passe
+   **tout le processus Python** en flush-to-zero : numpy et le reste en sont
+   affectés. À réserver à une compilation sous un autre nom, comparée à la
+   compilation de référence par la validation.
+
+Au-delà des options : à 0,7 µs, l'appel Fortran ne pèse plus beaucoup devant
+l'emballage Python de chaque ligne de DataFrame. Le gain suivant viendrait
+d'une `ENTRY` qui prend des tableaux (`intent(in) MACH(N)`, boucle en Fortran)
+plutôt que d'options supplémentaires.
+
+Pour mettre au point plutôt que pour aller vite :
+`FFLAGS="-O0 -g -fcheck=all -ffpe-trap=invalid,zero,overflow -finit-real=snan -Wall"`
+(débordements de tableaux, NaN, variables non initialisées).
 
 ## 2. Appeler le modèle
 
@@ -99,7 +174,7 @@ sortie = modele.calcul_aero(df)                # paramètres standard → sortie
 
 | Fonction | Entrée | Sortie |
 |----------|--------|--------|
-| `calcul_aero_elementaire` | les arguments de AERINI, AERCFG et AERCAL, unités et conventions du Fortran (CDG en m, axes FRD, `ipropu` 0/1) | + `cx … cn`, `ierr`, sondes |
+| `calcul_aero_elementaire` | les arguments de AERCAL, unités et conventions du Fortran (CDG en m, axes FRD, `ipropu` 0/1) ; ceux de AERINI et AERCFG (`xref … lref`, `biaicx`) facultatifs (`DEFAUTS`) | + `cx … cn`, `ierr`, sondes |
 | `calcul_aero` | `ModeleAero.PARAMETRES` : CDG en mm en axes FLU (`xg_mm`, `yg_mm`, `zg_mm`), `propulsion` booléen ; `xref … lref`, `biaicx` facultatifs (`DEFAUTS`) | + les arguments élémentaires calculés, les sorties, et `etat`, `modele`, `version`, `bibliotheque` |
 
 `calcul_aero` = `vers_elementaire` (conversions : unités, signes, valeurs par
@@ -108,6 +183,13 @@ retrouver en plus dans le vecteur de sortie). Une colonne en convention Fortran
 (`xg`, `ipropu`) mêlée aux paramètres standard est refusée : on passe par l'un
 ou par l'autre. **La validation passe par `calcul_aero_elementaire`** : elle
 teste le code, pas la surcouche.
+
+**Init par défaut.** Les deux fonctions complètent les arguments des phases
+d'init par `ModeleAero.DEFAUTS` (`completer_init`) : une colonne absente, ou
+vide sur certaines lignes, prend le défaut ; une valeur donnée prime. Les
+arguments de AERCAL restent obligatoires. `ModeleF2py.calcul_elementaire`, le
+générique, n'a toujours aucune valeur par défaut : c'est la surcouche du code
+qui les connaît. La validation donne les siennes explicitement.
 
 **CSV.** Les trois fonctions prennent `csv=` : `modele.calcul_aero(df,
 csv="resultats.csv")` rend le DataFrame **et** l'écrit (dossier créé au
@@ -131,6 +213,18 @@ rendues avec les sorties, sous leur nom f2py (`valid_tab_cx`), en colonnes
 valeur de l'appel précédent. Les variables sont lues dans la docstring f2py du
 bloc ; une sonde tableau ou homonyme d'une sortie est refusée.
 
+Les sondes sont **facultatives** — un code pas encore sondé n'a pas de bloc —,
+réglées par `sondes=` à la construction :
+
+| `ModeleAero(…, sondes=)` | blocs de `SONDES` |
+|---|---|
+| `None` (défaut) | lus s'ils existent ; un absent est ignoré avec un avertissement (`modele.sondes_absentes`) |
+| `True` | tous exigés : erreur s'il en manque un (c'est ce que fait la validation, `tables_modele.charger_modele`) |
+| `False` | aucun lu, aucune colonne `valid_tab_*` |
+
+Les sorties du code n'en dépendent pas. Pour un autre code sans sondes du tout,
+`SONDES = ()` dans la sous-classe.
+
 **`lire("bloc.variable")`** rend une copie d'une variable de COMMON (casse
 indifférente), avec la forme et l'ordre d'indices du Fortran : `TCX(NM, NA)`
 donne `(7, 7)`, `[i, j]` valant `TCX(I+1, J+1)`. C'est là que les tests de
@@ -146,6 +240,7 @@ python calcul_yaml.py mes_pdv.yaml --sortie res.csv     # ailleurs
 ```yaml
 fonction: calcul_aero              # ou calcul_aero_elementaire (arguments Fortran tels quels)
 sortie: SORTIE/exemple_pdv.csv     # relatif au YAML (défaut : <nom du YAML>.csv à côté)
+sondes: false                      # true : sorties sondées valid_tab_* dans le CSV (défaut false)
 commun: {beta: 0.0, xg_mm: 1050.0, yg_mm: 0.0, zg_mm: 0.0, propulsion: false, dm: 0.0, dn: 0.0}
 pdv:
   - nom: balayage_alpha            # colonne « bloc » du CSV
@@ -158,8 +253,16 @@ pdv:
 
 Chaque bloc est le **produit croisé** de ses clés, la dernière variant le plus
 vite ; les blocs sont mis bout à bout ; `commun` complète chaque bloc, qui peut
-le surcharger. Les noms de clés sont ceux de la fonction appelée. Une clé à
-défaut (`biaicx`) absente d'un bloc prend son défaut sur ces lignes. Une plage,
+le surcharger. Les noms de clés sont ceux de la fonction appelée. Les
+arguments des phases d'init (`xref … lref`, `biaicx`) sont facultatifs **avec
+les deux fonctions** : absents, ou absents d'un bloc seulement, ils prennent
+`ModeleAero.DEFAUTS` sur ces lignes (`exemple_pdv_elementaire.yaml` : arguments
+Fortran sans init, `lref` donné dans un seul bloc).
+
+`sondes: true` ajoute les sorties sondées et **exige** le COMMON de sondes
+(erreur, code 1, sur un code pas encore sondé) ; `sondes: false` (défaut) ne les
+lit pas du tout, ce qui marche sur tout code. Toute autre valeur que
+`true`/`false` est refusée. Une plage,
 une fonction ou une clé de premier niveau mal écrites sont refusées avec leur
 emplacement (`pdv[0].alpha : …`), code 1. Depuis `MODELE_AERO/` : `cmake --build
 build -t pdv` (fichier : `-DPDV_YAML=…`).
