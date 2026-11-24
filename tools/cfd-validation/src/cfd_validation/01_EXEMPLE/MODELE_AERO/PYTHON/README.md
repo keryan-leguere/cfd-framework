@@ -282,7 +282,28 @@ build -t pdv` (fichier : `-DPDV_YAML=…`).
    l'extérieur), une ligne `Cf2py intent(in)`, et une ligne `Cf2py intent(out)`
    pour la phase de calcul (les phases d'init n'ont pas de code de retour) ;
 2. dans `construire.sh`, `DOSSIER_SOURCES` (et au besoin `MOTIFS`, `INCLUDES`) ;
-3. une sous-classe, sur le modèle de `ModeleAero` :
+3. une sous-classe, sur le modèle de `ModeleAero`. **Ne pas recopier les noms
+   d'arguments à la main** : une fois le module construit,
+
+   ```bash
+   python ../OUTILS/generer_squelettes.py --module moncode           # liste les routines
+   python ../OUTILS/generer_squelettes.py --module moncode --calcul moncal --init monini moncfg
+   ```
+
+   imprime l'en-tête de la classe (`BIBLIOTHEQUE`, `PHASES_INIT`,
+   `PHASE_CALCUL`, `SONDES` — un COMMON de scalaires réels est proposé en
+   sondes), `DEFAUTS` et `DEFAUTS_CALCUL` avec **une ligne par argument**, dans
+   l'ordre et avec le type que f2py expose, et un fichier YAML de points de vol
+   complet. Les valeurs à remplir valent 0 ou 0.0 selon le type et sont
+   marquées `À RENSEIGNER` (leur nombre est affiché : un 0 oublié passe pour une
+   valeur). `--sortie DIR` écrit aussi `classe.py` et `pdv.yaml`.
+   `--depuis modele_moncode:MonCode` part d'une classe existante (ses phases et
+   ses valeurs, après une modification du Fortran par exemple) et la **vérifie**
+   contre le module : phase absente, clé hors de sa phase, argument sans valeur,
+   réel donné à un entier, sondes oubliées — code 1 si quelque chose cloche.
+   La liste des COMMON clôt la sortie : ce sont les `lire("bloc.var")` des tables
+   de `VALIDATION/tables_modele.py`.
+
 
 ```python
 class MonCode(ModeleF2py):

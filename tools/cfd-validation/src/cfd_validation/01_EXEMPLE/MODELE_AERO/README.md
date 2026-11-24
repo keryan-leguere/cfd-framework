@@ -37,6 +37,7 @@ MODELE_AERO/
 ├── VALIDATION_PRODUCTION/ les mêmes tests sans option pour les fausser (--defaut) : à livrer
 ├── OUTILS/
 │   ├── generer_tables.py    régénère SOURCES/aero_tables.f
+│   ├── generer_squelettes.py  blocs à coller pour un nouveau code (classe, défauts, YAML), et leur vérification
 │   └── nettoyer.cmake       efface les sorties (cibles nettoyer, nettoyer_tout)
 ├── CMakeLists.txt         les commandes de base en un point d'entrée (facultatif)
 ├── cmake.sh               une cible CMake en une commande (configure build/ au besoin)

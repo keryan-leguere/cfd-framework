@@ -1110,3 +1110,81 @@ def test_declarations_indirectes() -> None:
     assert tm.beta_positif(df)["beta"].tolist() == [0.0, 2.0, 10.0]
     negatif = tm.beta_negatif(df)["beta"]
     assert negatif.tolist() == [0.0, -2.0, -10.0] and math.copysign(1.0, negatif[0]) == 1.0
+
+
+# -- OUTILS/generer_squelettes.py : blocs à coller pour un nouveau code ----------------
+
+
+def _squelettes() -> ModuleType:
+    nom = "generer_squelettes"
+    if nom not in sys.modules:
+        spec = importlib.util.spec_from_file_location(nom, PROJET / "OUTILS" / f"{nom}.py")
+        assert spec is not None and spec.loader is not None
+        sys.modules[nom] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[nom])
+    return sys.modules[nom]
+
+
+def _classe_depuis_bloc(texte: str, nom: str = "Collee") -> Any:
+    """Le bloc 1-2 collé tel quel dans une sous-classe de ModeleAero (pour ses conversions)."""
+    espace: dict[str, Any] = {"ClassVar": Any, "Any": Any, "Base": ma.ModeleAero}
+    exec(f"class {nom}(Base):\n{texte}", espace)  # c'est le copier-coller qu'on teste
+    return espace[nom]
+
+
+@avec_compilateur
+def test_squelettes_aller_retour(bibliotheques: dict[str, Any], tmp_path: Path,
+                                 capsys: pytest.CaptureFixture[str]) -> None:
+    """--depuis : le bloc collé redonne la classe ; le YAML se calcule tel quel ; la classe est vérifiée."""
+    gs = _squelettes()
+    dossier = str(bibliotheques["dossier"])
+    assert gs.main(["--module", "aerolib_t0", "--dossier", dossier, "--depuis", "modele_aero:ModeleAero",
+                    "--sortie", str(tmp_path)]) == 0
+    sortie = capsys.readouterr()
+    assert "cohérente" in sortie.err and gs.A_RENSEIGNER not in sortie.out
+    colle = _classe_depuis_bloc((tmp_path / "classe.py").read_text())
+    assert colle.DEFAUTS == ma.ModeleAero.DEFAUTS and colle.DEFAUTS_CALCUL == ma.ModeleAero.DEFAUTS_CALCUL
+    assert list(colle.DEFAUTS_CALCUL) == list(ma.ModeleAero.DEFAUTS_CALCUL)  # ordre des arguments
+    assert (colle.PHASES_INIT, colle.PHASE_CALCUL, colle.SONDES) == (("aerini", "aercfg"), "aercal", ("probe",))
+    assert type(colle.DEFAUTS_CALCUL["ipropu"]) is int
+    pdv = tmp_path / "pdv.yaml"
+    assert cy.main([str(pdv), "--module", "aerolib_t0", "--dossier", dossier, "--sortie", str(tmp_path / "p.csv")]) == 0
+    d = _lire_csv(tmp_path / "p.csv")
+    assert d.groupby("bloc", sort=False).size().to_dict() == {"point_de_reference": 1, "balayage_mach": 5}
+    assert d.iloc[0]["mach"] == 0.8 and d.iloc[0]["lref"] == 0.2  # commun ; init par défaut
+
+
+@avec_compilateur
+def test_squelettes_nouveau_code(bibliotheques: dict[str, Any], tmp_path: Path,
+                                 capsys: pytest.CaptureFixture[str]) -> None:
+    """Sans classe : 0 / 0.0 selon le type, chacun marqué ; le bloc collé construit un modèle complet."""
+    gs = _squelettes()
+    args = ["--module", "aerolib_t0", "--dossier", str(bibliotheques["dossier"])]
+    assert gs.main(args) == 1 and "aercal(mach" in capsys.readouterr().out  # sans --calcul : la liste
+    assert gs.main([*args, "--calcul", "aercla"]) == 1 and "aercla" in capsys.readouterr().err
+    assert gs.main([*args, "--calcul", "aercal", "--init", "aerini", "aercfg", "--sortie", str(tmp_path)]) == 0
+    sortie = capsys.readouterr()
+    assert "14 valeur(s) à renseigner" in sortie.err
+    texte = (tmp_path / "classe.py").read_text()
+    assert texte.count(gs.A_RENSEIGNER) == 14 and "'ipropu': 0,  # int" in texte
+    assert "('probe',)" in texte  # COMMON de scalaires réels : proposé en sondes, les tables non
+    colle = _classe_depuis_bloc(texte)
+    modele = colle(bibliotheques["t0"])
+    assert list(modele.defauts) == list(modele.colonnes_entree)
+    assert (tmp_path / "pdv.yaml").read_text().count(gs.A_RENSEIGNER) == 14  # calcul, et init en commentaire
+
+
+@avec_compilateur
+def test_squelettes_verification(bibliotheques: dict[str, Any]) -> None:
+    """Ce que --depuis signale sur une classe existante."""
+    gs = _squelettes()
+    module = bibliotheques["t0"]
+    assert gs.verifier_classe(ma.ModeleAero, module) == []
+    sans = type("Sans", (ma.ModeleAero,), {"DEFAUTS_CALCUL": {k: v for k, v in ma.ModeleAero.DEFAUTS_CALCUL.items() if k != "dn"}})
+    assert gs.verifier_classe(sans, module) == ["sans valeur par défaut : dn"]
+    reel = type("Reel", (ma.ModeleAero,), {"DEFAUTS_CALCUL": {**ma.ModeleAero.DEFAUTS_CALCUL, "ipropu": 0.5}})
+    assert gs.verifier_classe(reel, module) == ["ipropu : entier pour f2py, 0.5 donné"]
+    faute = type("Faute", (ma.ModeleAero,), {"DEFAUTS": {**ma.ModeleAero.DEFAUTS, "lrf": 0.2}})
+    assert "lrf" in gs.verifier_classe(faute, module)[0]
+    muette = type("Muette", (ma.ModeleAero,), {"SONDES": ()})
+    assert gs.verifier_classe(muette, module) == ["SONDES vide, mais le module a des COMMON de sondes : probe"]
