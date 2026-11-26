@@ -1,29 +1,30 @@
 # Présentation : base aéro d'une fusée étudiante en 3DOF tangage
 
 Diaporama (`Fusee_3DOF_base_aero.pptx`, et sa version `.pdf`) sur le domaine de vol, le DOE,
-la modélisation des coefficients et les résultats d'une fusée étudiante à gouvernes en X. Il
-est construit **par la chaîne réelle** de `cfd-doe`, mais **toutes les valeurs sont
+la modélisation des coefficients et les résultats d'une fusée étudiante à gouvernes en X. Ses
+figures sont produites **par la chaîne réelle** de `cfd-doe`, mais **toutes les valeurs sont
 factices** : la CFD y est remplacée par un modèle aéro inventé.
 
+Le `.pptx` se modifie directement dans PowerPoint ; les scripts ne régénèrent que les
+données et les figures, rangées dans `PLANCHES/` sous des noms fixes, prêtes à y être collées.
+
 ```bash
-bash construire.sh                     # tout : données → tracés → .pptx
+bash construire.sh                     # données → figures (PLANCHES/, SORTIE/FIGURES/)
 PYTHON=~/venv/bin/python JOBS=8 bash construire.sh
 ```
 
 Prérequis : `cfd-doe`, `cfd-plot` et `cfd-atm` installés dans l'interpréteur
-(`pip install -e ../ -e ../../cfd-plot -e ../../cfd-atm`), plus pandas. Le deck demande
-Node.js ; `pptxgenjs` s'installe dans `deck/` au premier passage.
+(`pip install -e ../ -e ../../cfd-plot -e ../../cfd-atm`), plus pandas.
 
-## Les trois étapes
+## Les deux étapes
 
 | Étape | Script | Produit |
 |---|---|---|
 | 1. Données | `generer_donnees.py` | `SORTIE/DOE/doe.csv` (344 calculs), « CFD » factice, **`DONNEES/tables_carrees.csv`** (table carrée Mach × α × DM complétée par symétrie, 684 nœuds), **`DONNEES/increment_dzca.csv`** (ΔzCA(Mach, altitude)), planches hors tables, `DONNEES/chiffres_doe.json` |
-| 2. Tracés | `tracer_base_aero.py` | `SORTIE/FIGURES/` (toutes les figures), les planches du deck dans `PLANCHES/`, `PLANCHES/chiffres_tables.json` |
-| 3. Deck | `deck/deck.js` | `Fusee_3DOF_base_aero.pptx` |
+| 2. Tracés | `tracer_base_aero.py` | `SORTIE/FIGURES/` (toutes les figures), les planches dans `PLANCHES/`, `PLANCHES/chiffres_tables.json` (dérivées, marge, équilibre, nœuds écartés) |
 
-Les chiffres cités sur les planches sont **lus dans les deux JSON**, jamais recopiés à la
-main : une figure régénérée et son commentaire ne peuvent pas diverger.
+Les chiffres cités dans le diaporama sont ceux des deux JSON : après une régénération,
+c'est là qu'on relit les valeurs à reporter.
 
 ## Le cas
 
@@ -54,7 +55,9 @@ python tracer_base_aero.py TABLES.csv INCREMENT.csv \
 from tracer_base_aero import Options, tracer_base_aero
 
 planches = tracer_base_aero(
-    df_tables, df_increment, "SORTIE/FIGURES",
+    df_tables,
+    df_increment,
+    "SORTIE/FIGURES",
     colonnes={"mach": "Mach", "alpha": "ALPHA", "dm": "DM_EQ"},
     colonnes_increment={"altitude": "Z", "increment": "DCA_Z"},
     planches="PLANCHES",
@@ -68,9 +71,24 @@ planches = tracer_base_aero(
 | `CA`, `CN`, `Cm` | idem | les coefficients |
 | incrément : `mach`, `altitude`, `increment` | `mach`, `altitude`, `DZCA` | ΔzCA, altitude en m |
 
-La table doit être **carrée** (produit complet des trois axes, sans doublon ni trou) : le
-script refuse sinon, en donnant le décompte. α = 0 et DM = 0 doivent être des nœuds
-intérieurs (dérivées par différences centrées).
+La **grille** doit être carrée (produit complet des trois axes, sans doublon) : le script
+refuse sinon, en donnant le décompte. α = 0 et DM = 0 doivent être des nœuds intérieurs
+(dérivées par différences centrées).
+
+**Nœuds non convergés.** Un nœud dont **tous** les coefficients valent 0 est un calcul non
+convergé : ses coefficients passent à NaN avant tout tracé, et sa liste est écrite dans
+`SORTIE/FIGURES/non_converges.csv`. Un seul zéro ne suffit pas, puisque CN = Cm = 0 est la valeur
+attendue en α = 0, DM = 0. Effet sur chaque figure :
+
+- courbes : la courbe s'interrompt au nœud ;
+- cartes : la cellule est hachurée « non convergé » et sort de l'échelle de couleur ;
+- lecture simulateur (`Table3D`) : NaN dans les mailles qui touchent le nœud, valeur
+  exacte sur les nœuds voisins ;
+- équilibre : calculé sur les nœuds valides, `noeuds_vides` signale la courbe ;
+- dérivées : NaN si un nœud de la différence centrée manque, jamais un faux zéro.
+
+Autre critère : `Options(non_converge=lambda t: t["CA"].isna() | (t["CA"] == 0))` ;
+`--garder-zeros` (ou `non_converge=None`) garde tout.
 
 | Dossier | Figures | cfd-plot |
 |---|---|---|
@@ -89,5 +107,4 @@ anglais des feuilles repliées (la planche porte son titre). `Table3D` et
 ## Ce qui est versionné
 
 Les sources, les deux YAML de l'étude, `DONNEES/`, `PLANCHES/` et le `.pptx`/`.pdf`.
-`SORTIE/` (DOE, résultats, arborescence complète des figures) et `deck/node_modules/` sont
-régénérés et ignorés.
+`SORTIE/` (DOE, résultats, arborescence complète des figures) est régénéré et ignoré.

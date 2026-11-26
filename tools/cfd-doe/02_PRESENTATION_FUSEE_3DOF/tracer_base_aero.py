@@ -26,6 +26,12 @@ Figures                 Contenu                                      cfd-plot
 ``DERIVEES/``          CNα, Cmα, CNδ, Cmδ, marge statique / Mach    dérivées, feuille repliée ``y``
 =====================  ===========================================  ==================================
 
+Les **nœuds non convergés** — tous les coefficients à 0, règle remplaçable par
+``Options.non_converge`` — sont écartés : leurs coefficients passent à NaN, si bien qu'une
+courbe s'interrompt, qu'une carte hachure la cellule « non convergé », et que dérivées et
+équilibre ne sont jamais calculés sur un faux zéro. Leur liste est écrite dans
+``non_converges.csv`` (``--garder-zeros`` pour tout garder).
+
 Toutes les figures passent par un même crochet (:class:`Habillage`, picklable donc
 compatible ``n_jobs``) : zone α < 0 hachurée « déduit par symétrie », trait y = 0,
 bande de marge statique usuelle, légende hors des courbes. Les feuilles utiles à la
@@ -53,7 +59,7 @@ import json
 import math
 import shutil
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -128,8 +134,44 @@ def normaliser(
     return df.rename(columns={v: k for k, v in noms.items()})[list(noms)].astype(float)
 
 
+COEFFICIENTS = ("CA", "CN", "Cm")
+
+
+def non_converges_tous_nuls(t: pd.DataFrame) -> pd.Series:
+    """Règle par défaut : un nœud est non convergé si **tous** ses coefficients valent 0.
+
+    Pas « un coefficient nul » : CN = Cm = 0 est la valeur *attendue* en α = 0, DM = 0
+    (symétrie), et CN ou Cm passent par zéro sur chaque courbe. CA, lui, ne s'annule jamais
+    sur une fusée : trois zéros ensemble ne sont pas de la physique.
+    """
+    return (t[list(COEFFICIENTS)] == 0).all(axis=1)
+
+
+def ecarter_non_converges(
+    t: pd.DataFrame, regle: Callable[[pd.DataFrame], pd.Series] | None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Passe à NaN les coefficients des nœuds non convergés ; renvoie (table, nœuds écartés).
+
+    Les lignes restent : la table reste carrée (lecture multilinéaire, cartes), et un NaN
+    est ce que chaque tracé sait déjà ne pas dessiner — une courbe s'interrompt, une carte
+    hachure la cellule « non convergé », une dérivée ou un équilibre qui en dépend vaut NaN
+    au lieu d'être calculé sur un faux zéro.
+    """
+    if regle is None:
+        return t, t.iloc[0:0]
+    masque = pd.Series(regle(t), index=t.index).astype(bool)
+    ecartes = t.loc[masque, ["mach", "alpha", "dm"]].copy()
+    t = t.copy()
+    t.loc[masque, list(COEFFICIENTS)] = np.nan
+    return t, ecartes
+
+
 def verifier_carree(t: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Les trois axes ; refuse une table qui n'est pas un produit complet, sans trou."""
+    """Les trois axes ; refuse une table qui n'est pas un produit complet.
+
+    Des coefficients vides (NaN : nœuds non convergés écartés) sont admis : c'est la grille
+    qui doit être complète, pas les valeurs.
+    """
     axes = tuple(np.sort(t[c].unique()) for c in ("mach", "alpha", "dm"))
     attendu = math.prod(len(a) for a in axes)
     if len(t) != attendu or t.duplicated(["mach", "alpha", "dm"]).any():
@@ -137,13 +179,15 @@ def verifier_carree(t: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray
             f"table non carrée : {len(t)} lignes pour {' × '.join(str(len(a)) for a in axes)} "
             f"= {attendu} nœuds (doublons ou nœuds manquants)"
         )
-    if t[["CA", "CN", "Cm"]].isna().any().any():
-        raise ValueError("table trouée : des coefficients sont vides (NaN)")
     return axes
 
 
 class Table3D:
-    """Lecture multilinéaire en (Mach, α, DM), saturée aux bornes — comme le simulateur."""
+    """Lecture multilinéaire en (Mach, α, DM), saturée aux bornes — comme le simulateur.
+
+    Un nœud vide (NaN) rend vide toute lecture dans les mailles qui le touchent, sauf si
+    son poids est nul : sur un nœud voisin, la valeur lue reste celle du nœud.
+    """
 
     def __init__(self, t: pd.DataFrame, coef: str) -> None:
         self.axes = verifier_carree(t)
@@ -163,7 +207,8 @@ class Table3D:
             w = np.ones(q[0].shape)
             for k, b in enumerate(coin):
                 w = w * (poids[k] if b else 1 - poids[k])
-            sortie += w * self.valeurs[idx[0] + coin[0], idx[1] + coin[1], idx[2] + coin[2]]
+            v = self.valeurs[idx[0] + coin[0], idx[1] + coin[1], idx[2] + coin[2]]
+            sortie += np.where(w == 0, 0.0, w * v)  # 0 × NaN donnerait NaN
         return sortie
 
 
@@ -190,11 +235,14 @@ def equilibre(t: pd.DataFrame) -> pd.DataFrame:
     """α et CN d'équilibre (Cm = 0) pour chaque (Mach, DM), interpolés linéairement en α.
 
     Retient la racine stable (dCm/dα < 0) la plus proche de α = 0 ; ``n_racines`` compte
-    les passages par zéro, pour repérer un équilibre multiple.
+    les passages par zéro, pour repérer un équilibre multiple. Les nœuds vides sont sautés
+    (l'interpolation relie alors les nœuds valides qui les encadrent) et comptés dans
+    ``noeuds_vides`` : une racine trouvée à travers un trou est à regarder de près.
     """
     lignes = []
     for (m, d), g in t.groupby(["mach", "dm"]):
-        g = g.sort_values("alpha")
+        vides = int(g[["CN", "Cm"]].isna().any(axis=1).sum())
+        g = g.dropna(subset=["CN", "Cm"]).sort_values("alpha")
         a, cm, cn = g["alpha"].to_numpy(), g["Cm"].to_numpy(), g["CN"].to_numpy()
         racines = []
         for i in range(len(a) - 1):
@@ -210,6 +258,7 @@ def equilibre(t: pd.DataFrame) -> pd.DataFrame:
                 "alpha_eq": racine[0],
                 "CN_eq": racine[1],
                 "n_racines": len(racines),
+                "noeuds_vides": vides,
             }
         )
     return pd.DataFrame(lignes)
@@ -219,6 +268,8 @@ def derivees(t: pd.DataFrame) -> pd.DataFrame:
     """CNα, Cmα, CNδ, Cmδ (/rad) par différences centrées en α = 0, DM = 0, et marge statique.
 
     La marge, −Cmα/CNα, est en longueurs de référence de Cm (calibres si Lréf = D).
+    Un nœud vide parmi ceux de la différence donne NaN, jamais une dérivée calculée sur
+    un faux zéro.
     """
     lignes = []
     for m, g in t.groupby("mach"):
@@ -382,6 +433,8 @@ class Options:
     #: Plage de Mach du médaillon sur le CA total (là où les altitudes se séparent).
     zoom_mach: tuple[float, float] | None = (0.6, 0.9)
     symetrie: bool = True
+    #: Repère les nœuds non convergés, écartés des tracés (None : tout garder).
+    non_converge: Callable[[pd.DataFrame], pd.Series] | None = non_converges_tous_nuls
     n_jobs: int = 1
     habillage: Habillage = field(default_factory=Habillage)
 
@@ -469,7 +522,7 @@ def tracer_cartes(t: pd.DataFrame, sortie: Path, o: Options) -> list[Path]:
                 carto=CartoSpec(
                     max_cols=2,
                     panel_size=(3.3, 2.5),
-                    missing=False,
+                    missing={"message": "non convergé"},
                     suptitle="{qoi_symbol} dans le plan (α, DM)",
                 ),
                 style_profile=o.profil,
@@ -675,6 +728,17 @@ def tracer_base_aero(
     t = normaliser(df_tables, colonnes or {}, COLONNES, "tables carrées")
     inc = normaliser(df_increment, colonnes_increment or {}, COLONNES_INCREMENT, "incrément")
     verifier_carree(t)
+    t, ecartes = ecarter_non_converges(t, o.non_converge)
+    sortie.mkdir(parents=True, exist_ok=True)
+    noms = {**COLONNES, **(colonnes or {})}
+    ecartes.rename(columns={k: noms[k] for k in ("mach", "alpha", "dm")}).to_csv(
+        sortie / "non_converges.csv", index=False
+    )
+    if len(ecartes):
+        print(
+            f"{len(ecartes)} nœud(s) non convergé(s) écarté(s) des tracés "
+            f"(liste : {sortie / 'non_converges.csv'})"
+        )
     eq, der = equilibre(t), derivees(t)
     if not o.symetrie:
         o.habillage = Habillage(symetrie=False, marge_usuelle=o.habillage.marge_usuelle)
@@ -712,10 +776,24 @@ def tracer_base_aero(
             - t.loc[(t["dm"] == 0) & (t["alpha"] == 0), "CA"].max()
         ),
         "noeuds": len(t),
+        "non_converges": len(ecartes),
         "dm_niveaux": [float(d) for d in np.sort(t["dm"].unique())],
     }
-    (planches / "chiffres_tables.json").write_text(json.dumps(chiffres, indent=2))
+    # NaN n'est pas du JSON : une grandeur rendue indéfinie par un nœud écarté devient null.
+    (planches / "chiffres_tables.json").write_text(
+        json.dumps(_sans_nan(chiffres), indent=2, allow_nan=False)
+    )
     return copiees
+
+
+def _sans_nan(x):
+    if isinstance(x, dict):
+        return {k: _sans_nan(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_sans_nan(v) for v in x]
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    return x
 
 
 def _paires(textes: Sequence[str] | None, quoi: str) -> dict[str, str]:
@@ -755,6 +833,11 @@ def principal(argv: Sequence[str] | None = None) -> None:
         help="DM = facteur · δ physique (0 : ne pas afficher δ)",
     )
     p.add_argument("--sans-symetrie", action="store_true", help="ne pas hachurer α < 0")
+    p.add_argument(
+        "--garder-zeros",
+        action="store_true",
+        help="ne pas écarter les nœuds dont tous les coefficients valent 0 (non convergés)",
+    )
     p.add_argument("--jobs", type=int, default=1)
     a = p.parse_args(argv)
     lire = lambda f: pd.read_csv(f, sep=None, engine="python")  # noqa: E731
@@ -763,6 +846,7 @@ def principal(argv: Sequence[str] | None = None) -> None:
         profil=a.profil,
         facteur_braquage=a.facteur_braquage or None,
         symetrie=not a.sans_symetrie,
+        non_converge=None if a.garder_zeros else non_converges_tous_nuls,
         n_jobs=a.jobs,
     )
     planches = tracer_base_aero(

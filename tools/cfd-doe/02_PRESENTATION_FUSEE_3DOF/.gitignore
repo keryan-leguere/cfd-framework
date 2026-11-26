@@ -1,4 +1,2 @@
 # Sorties intermédiaires (régénérées par construire.sh)
 SORTIE/
-deck/node_modules/
-deck/package-lock.json

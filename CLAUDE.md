@@ -911,9 +911,12 @@ not part of the Bash framework's runtime:
       `increment_dzca.csv` ΔzCA(M, z) from cfd-atm), `tracer_base_aero.py` (model-agnostic:
       two DataFrames, column names as parameters, every plot through cfd-plot `batch_plot`/
       `batch_carto`/`ZoomSpec`/`FoldSpec` + one picklable `Habillage` hook; `Table3D` /
-      `lire_increment` are the simulator's read), `deck/deck.js` (pptxgenjs; numbers read from
-      the two JSON, never typed; `deck/theme.js` writes the colour scheme itself).
-      `bash construire.sh` rebuilds all; `SORTIE/` and `deck/node_modules/` are ignored.
+      `lire_increment` are the simulator's read). **Non-converged nodes** (all coefficients
+      exactly 0 — not one: CN = Cm = 0 is the expected value at α = 0, DM = 0) are set to NaN
+      before plotting (`Options.non_converge`, `--garder-zeros`), listed in `non_converges.csv`:
+      curves break, maps hatch « non convergé », derivatives/equilibrium never use a fake zero.
+      The `.pptx`/`.pdf` are edited by hand (user has no Node.js: no deck build step);
+      `bash construire.sh` regenerates data + figures (`PLANCHES/`); `SORTIE/` is ignored.
     - The **orbit test** (`tests/test_reduction.py`) is the guarantee: every grid point's full
       orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
       trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200

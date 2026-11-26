@@ -67,6 +67,7 @@
   ],
   "CA_max_braquage": 0.09869604400999998,
   "noeuds": 684,
+  "non_converges": 0,
   "dm_niveaux": [
     -42.4264068712,
     -31.8198051534,
