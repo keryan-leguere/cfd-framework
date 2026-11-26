@@ -264,29 +264,61 @@ def equilibre(t: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(lignes)
 
 
-def derivees(t: pd.DataFrame) -> pd.DataFrame:
-    """CNα, Cmα, CNδ, Cmδ (/rad) par différences centrées en α = 0, DM = 0, et marge statique.
+def _indice_zero(axe: np.ndarray) -> int | None:
+    trouves = np.flatnonzero(np.isclose(axe, 0.0, atol=1e-9))
+    return int(trouves[0]) if trouves.size else None
 
-    La marge, −Cmα/CNα, est en longueurs de référence de Cm (calibres si Lréf = D).
-    Un nœud vide parmi ceux de la différence donne NaN, jamais une dérivée calculée sur
-    un faux zéro.
+
+def _pente(axe: np.ndarray, i0: int | None, f) -> tuple[float, str]:
+    """Pente de ``f`` (fonction de l'indice) en ``axe[i0]`` = 0, par radian.
+
+    Centrée si 0 est un nœud intérieur ; décentrée (ordre 1, vers le seul voisin) s'il est
+    une borne — typiquement une table en α ≥ 0 non complétée par symétrie ; NaN si 0 n'est
+    pas un nœud ou s'il n'a pas de voisin.
     """
-    lignes = []
+    if i0 is None or len(axe) < 2:
+        return math.nan, "absent"
+    if 0 < i0 < len(axe) - 1:
+        bas, haut, schema = i0 - 1, i0 + 1, "centré"
+    elif i0 == 0:
+        bas, haut, schema = 0, 1, "décentré"
+    else:
+        bas, haut, schema = i0 - 1, i0, "décentré"
+    return (f(haut) - f(bas)) / math.radians(axe[haut] - axe[bas]), schema
+
+
+def derivees(t: pd.DataFrame) -> pd.DataFrame:
+    """CNα, Cmα, CNδ, Cmδ (/rad) en α = 0, DM = 0, et marge statique −Cmα/CNα.
+
+    Différences centrées quand α = 0 et DM = 0 sont des nœuds intérieurs, décentrées quand
+    ils sont une borne de la table, NaN quand ils n'en sont pas un nœud : le reste des
+    figures est produit quoi qu'il arrive. Le schéma retenu est dans ``attrs["schemas"]``.
+    La marge est en longueurs de référence de Cm (calibres si Lréf = D). Un nœud vide
+    parmi ceux de la différence donne NaN, jamais une dérivée calculée sur un faux zéro.
+    """
+    lignes, schemas = [], set()
     for m, g in t.groupby("mach"):
         a, d = np.sort(g["alpha"].unique()), np.sort(g["dm"].unique())
-        ia, idd = int(np.argmin(np.abs(a))), int(np.argmin(np.abs(d)))
-        if not (0 < ia < len(a) - 1 and 0 < idd < len(d) - 1):
-            raise ValueError("dérivées : α = 0 et DM = 0 doivent être des nœuds intérieurs")
+        ia, idd = _indice_zero(a), _indice_zero(d)
 
         def val(c, i, j, g=g, a=a, d=d):
-            return float(g.loc[(g["alpha"] == a[i]) & (g["dm"] == d[j]), c].iloc[0])
+            sel = g.loc[np.isclose(g["alpha"], a[i]) & np.isclose(g["dm"], d[j]), c]
+            return float(sel.iloc[0]) if len(sel) else math.nan
 
-        da = math.radians(a[ia + 1] - a[ia - 1])
-        dd = math.radians(d[idd + 1] - d[idd - 1])
-        cna = (val("CN", ia + 1, idd) - val("CN", ia - 1, idd)) / da
-        cma = (val("Cm", ia + 1, idd) - val("Cm", ia - 1, idd)) / da
-        cnd = (val("CN", ia, idd + 1) - val("CN", ia, idd - 1)) / dd
-        cmd = (val("Cm", ia, idd + 1) - val("Cm", ia, idd - 1)) / dd
+        # Pente en α à DM = 0, pente en DM à α = 0 ; sans l'un des deux nœuds, NaN.
+        def en_alpha(c, j=idd, val=val):
+            return lambda i: val(c, i, j)
+
+        def en_dm(c, i=ia, val=val):
+            return lambda j: val(c, i, j)
+
+        ia_ok = ia if idd is not None else None
+        idd_ok = idd if ia is not None else None
+        cna, sa = _pente(a, ia_ok, en_alpha("CN"))
+        cma, _ = _pente(a, ia_ok, en_alpha("Cm"))
+        cnd, sd = _pente(d, idd_ok, en_dm("CN"))
+        cmd, _ = _pente(d, idd_ok, en_dm("Cm"))
+        schemas |= {("α", sa), ("DM", sd)}
         lignes.append(
             {
                 "mach": m,
@@ -294,11 +326,13 @@ def derivees(t: pd.DataFrame) -> pd.DataFrame:
                 "Cma": cma,
                 "CNd": cnd,
                 "Cmd": cmd,
-                "marge": -cma / cna,
-                "CA0": val("CA", ia, idd),
+                "marge": -cma / cna if cna else math.nan,
+                "CA0": val("CA", ia, idd) if ia is not None and idd is not None else math.nan,
             }
         )
-    return pd.DataFrame(lignes)
+    der = pd.DataFrame(lignes)
+    der.attrs["schemas"] = sorted(schemas)
+    return der
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +576,9 @@ def tracer_increment(t: pd.DataFrame, inc: pd.DataFrame, sortie: Path, o: Option
         altitudes = np.asarray(o.altitudes, float)
     teintes = plt.get_cmap("Blues")(np.linspace(0.35, 1.0, len(altitudes)))
     ca = Table3D(t, "CA")
-    machs = np.linspace(min(inc["mach"].min(), t["mach"].min()), t["mach"].max(), 141)
+    # Les Mach des deux tables : la lecture est linéaire entre eux, rien à voir entre deux.
+    machs = np.unique(np.concatenate([inc["mach"].to_numpy(), t["mach"].to_numpy()]))
+    machs = machs[machs <= max(inc["mach"].max(), t["mach"].max())]
     a0, d0 = o.point_ca_total
     config = {}
     for z, c in zip(altitudes, teintes):
@@ -557,7 +593,8 @@ def tracer_increment(t: pd.DataFrame, inc: pd.DataFrame, sortie: Path, o: Option
             "df": df,
             "color": tuple(c),
             "lw": 1.6,
-            "marker": "none",
+            "marker": "o",
+            "ms": 2.5,
         }
     mach_zoom = dict(SWEEP_MACH)
     if o.zoom_mach:  # l'écart entre altitudes, invisible à l'échelle du saut transsonique
@@ -739,13 +776,28 @@ def tracer_base_aero(
             f"{len(ecartes)} nœud(s) non convergé(s) écarté(s) des tracés "
             f"(liste : {sortie / 'non_converges.csv'})"
         )
-    eq, der = equilibre(t), derivees(t)
     if not o.symetrie:
         o.habillage = Habillage(symetrie=False, marge_usuelle=o.habillage.marge_usuelle)
+    # Les coefficients d'abord : ce sont les figures qui doivent sortir quoi qu'il arrive.
     tracer_courbes(t, sortie, o)
     tracer_cartes(t, sortie, o)
     tracer_increment(t, inc, sortie, o)
-    tracer_derivees(eq, der, sortie, o)
+    # Les grandeurs dérivées ensuite : un échec y est signalé, il n'arrête rien.
+    eq = der = None
+    try:
+        eq, der = equilibre(t), derivees(t)
+        for axe, schema in der.attrs["schemas"]:
+            if schema == "décentré":
+                print(
+                    f"dérivées en {axe} : 0 est une borne de la table, différence décentrée (ordre 1)"
+                )
+            elif schema == "absent":
+                print(
+                    f"dérivées en {axe} : 0 n'est pas un nœud de la table, dérivées non calculées"
+                )
+        tracer_derivees(eq, der, sortie, o)
+    except Exception as erreur:  # n'empêche pas les figures des coefficients
+        print(f"équilibre et dérivées ignorés : {type(erreur).__name__}: {erreur}")
     if planches is None:
         return {}
     planches = Path(planches)
@@ -753,27 +805,32 @@ def tracer_base_aero(
     copiees = {}
     for nom, (dossier, fichier) in PLANCHES_ATTENDUES.items():
         source = sortie / dossier / f"{fichier}.png"
-        if not source.is_file():
-            raise FileNotFoundError(f"planche {nom} : {source} absent (formats sans png ?)")
-        copiees[nom] = Path(shutil.copy(source, planches / f"{nom}.png"))
-    a0 = t[(t["alpha"] == 0)]
+        if source.is_file():
+            copiees[nom] = Path(shutil.copy(source, planches / f"{nom}.png"))
+        else:
+            print(f"planche {nom} non produite ({source.relative_to(sortie)} absent)")
+    machs = np.sort(t["mach"].unique())
     butee = t["dm"].abs().max()
+
+    def lire(df, colonne, **filtre) -> float:
+        """Une valeur de ``df`` ; NaN si la ligne n'existe pas (nœud absent de la grille)."""
+        sel = np.ones(len(df), bool)
+        for c, v in filtre.items():
+            sel &= np.isclose(df[c], v)
+        return float(df.loc[sel, colonne].iloc[0]) if sel.any() else math.nan
+
     chiffres = {
-        "machs": [float(m) for m in np.sort(t["mach"].unique())],
-        "derivees": der.to_dict(orient="list"),
-        "alpha_eq_butee": [
-            float(eq[(eq["mach"] == m) & np.isclose(eq["dm"], -butee)]["alpha_eq"].iloc[0])
-            for m in np.sort(t["mach"].unique())
-        ],
-        "racines_par_courbe": sorted({int(n) for n in eq["n_racines"]}),
-        "courbes_equilibre": len(eq),
-        "CN_butee_alpha0": [
-            float(a0[(a0["mach"] == m) & np.isclose(a0["dm"], butee)]["CN"].iloc[0])
-            for m in np.sort(t["mach"].unique())
-        ],
-        "CA_max_braquage": float(
-            t.loc[np.isclose(t["dm"].abs(), butee) & (t["alpha"] == 0), "CA"].max()
-            - t.loc[(t["dm"] == 0) & (t["alpha"] == 0), "CA"].max()
+        "machs": [float(m) for m in machs],
+        "derivees": der.to_dict(orient="list") if der is not None else None,
+        "alpha_eq_butee": [lire(eq, "alpha_eq", mach=m, dm=-butee) for m in machs]
+        if eq is not None
+        else None,
+        "racines_par_courbe": sorted({int(n) for n in eq["n_racines"]}) if eq is not None else None,
+        "courbes_equilibre": len(eq) if eq is not None else 0,
+        "CN_butee_alpha0": [lire(t, "CN", mach=m, alpha=0.0, dm=butee) for m in machs],
+        "CA_max_braquage": max(
+            lire(t, "CA", mach=m, alpha=0.0, dm=butee) - lire(t, "CA", mach=m, alpha=0.0, dm=0.0)
+            for m in machs
         ),
         "noeuds": len(t),
         "non_converges": len(ecartes),

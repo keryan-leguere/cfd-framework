@@ -72,8 +72,14 @@ planches = tracer_base_aero(
 | incrément : `mach`, `altitude`, `increment` | `mach`, `altitude`, `DZCA` | ΔzCA, altitude en m |
 
 La **grille** doit être carrée (produit complet des trois axes, sans doublon) : le script
-refuse sinon, en donnant le décompte. α = 0 et DM = 0 doivent être des nœuds intérieurs
-(dérivées par différences centrées).
+refuse sinon, en donnant le décompte. C'est la seule exigence pour les figures des
+coefficients (`COURBES/`, `CARTES/`, `INCREMENT/`), toujours produites en premier.
+
+Les dérivées (`DERIVEES/`) sont prises en α = 0 et DM = 0 : différences **centrées** quand
+ce sont des nœuds intérieurs, **décentrées** (ordre 1) quand ce sont des bornes — une table en
+α ≥ 0 non complétée par symétrie —, **non calculées** quand ce ne sont pas des nœuds ; le
+script le dit en console. Un échec de l'équilibre ou des dérivées est signalé et n'empêche
+aucune autre figure ; une planche non produite est nommée au lieu d'arrêter la copie.
 
 **Nœuds non convergés.** Un nœud dont **tous** les coefficients valent 0 est un calcul non
 convergé : ses coefficients passent à NaN avant tout tracé, et sa liste est écrite dans
