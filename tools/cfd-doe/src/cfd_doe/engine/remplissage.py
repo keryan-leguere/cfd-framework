@@ -41,6 +41,7 @@ from cfd_doe.core.domaine_fondamental import Disque
 from cfd_doe.core.expression import Condition, compiler
 from cfd_doe.core.intervalle import Intervalle
 from cfd_doe.core.metamodeles import plan_variance_maximale
+from cfd_doe.data.format import nombre_csv
 from cfd_doe.data.remplissage import (
     ErreurRemplissage,
     Parametre,
@@ -1587,10 +1588,6 @@ def colonnes_csv(plan: PlanDOE, contexte: Contexte) -> list[str]:
     return colonnes
 
 
-def _nombre(x: float) -> str:
-    return f"{round(x, 9) + 0.0:.10g}"
-
-
 def ecrire_csv(plan: PlanDOE, contexte: Contexte, chemin: Path) -> int:
     """Écrit le DOE, une ligne par calcul, séparé par des tabulations ; renvoie le nombre de lignes.
 
@@ -1623,13 +1620,16 @@ def ecrire_csv(plan: PlanDOE, contexte: Contexte, chemin: Path) -> int:
                 "table": code_table(p.table),
                 "sous_domaine": str(p.sous_domaine),
                 "fidelite": p.fidelite,
-                **{col: _nombre(p.valeurs[col]) for col in contexte.colonnes},
+                **{col: nombre_csv(p.valeurs[col]) for col in contexte.colonnes},
             }
             if polaire:
                 alpha, beta = vers_alpha_beta(p.valeurs["alphat"], p.valeurs["phia"])
                 dm, dn = braquages_engin(p.valeurs["DMB"], p.valeurs["DNB"], p.valeurs["phia"])
                 ligne.update(
-                    alpha=_nombre(alpha), beta=_nombre(beta), DM=_nombre(dm), DN=_nombre(dn)
+                    alpha=nombre_csv(alpha),
+                    beta=nombre_csv(beta),
+                    DM=nombre_csv(dm),
+                    DN=nombre_csv(dn),
                 )
             ecrivain.writerow([ligne[col] for col in colonnes])
     return len(points)

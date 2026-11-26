@@ -45,6 +45,7 @@ from cfd_doe.core.metamodeles import (
     indices_smolyak,
     plan_variance_maximale,
 )
+from cfd_doe.data.format import DECIMALES_NOEUD, nombre_csv
 from cfd_doe.data.remplissage import ErreurRemplissage
 from cfd_doe.engine.remplissage import (
     _DERIVEES,
@@ -71,7 +72,7 @@ __all__ = [
     "reconstruire",
 ]
 
-_CLE = 9  # arrondi des clés de nœud
+_CLE = DECIMALES_NOEUD  # arrondi des clés de nœud, partagé avec l'écriture des CSV
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ def ecrire_mesures(mesures: Mesures, contexte: Contexte, chemin: Path) -> Path:
                     p.table,
                     p.sous_domaine,
                     p.fidelite,
-                    *(_nombre(p.valeurs[c]) for c in contexte.colonnes),
+                    *(nombre_csv(p.valeurs[c]) for c in contexte.colonnes),
                     *(_nombre(float(mesures.coefficients[c][i])) for c in mesures.noms),
                 ]
             )
@@ -740,6 +741,6 @@ def ecrire_tables(
             ecrivain = csv.writer(fichier, delimiter="\t", lineterminator="\n")
             ecrivain.writerow([*tables.grille.colonnes, coef])
             for ligne, valeur in zip(points, tables.valeurs[coef]):
-                ecrivain.writerow([*(_nombre(float(x)) for x in ligne), _nombre(float(valeur))])
+                ecrivain.writerow([*(nombre_csv(float(x)) for x in ligne), _nombre(float(valeur))])
         fichiers.append(chemin)
     return fichiers

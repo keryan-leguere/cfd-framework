@@ -47,7 +47,7 @@ from cfd_doe.engine.reconstruction import (
     lot_suivant,
     reconstruire,
 )
-from cfd_doe.engine.remplissage import Contexte, PlanDOE, Resultat, remplir
+from cfd_doe.engine.remplissage import Contexte, PlanDOE, Resultat, ecrire_csv, remplir
 from cfd_doe.paths import EXEMPLE_DIR
 from cfd_doe.report import figures
 
@@ -472,6 +472,43 @@ class TestReconstruction:
         a = reconstruire(plan, c, mesures).valeurs["Cm"]
         b = reconstruire(plan, c, relues).valeurs["Cm"]
         assert np.allclose(a, b, atol=1e-8)
+
+    def test_niveaux_non_ronds_relus_sur_leurs_noeuds(self, tmp_path: Path) -> None:
+        # Braquage équivalent d'un X : DM = √2 · δ physique. Au-delà de 10, un format en
+        # chiffres significatifs tronquait 42,4264068712 : relu, le point quittait son nœud
+        # et la table restait trouée. Chemin documenté : doe.csv complété → lire_mesures.
+        dm = [k * 7.5 * math.sqrt(2.0) for k in range(-4, 5)]
+        donnees = {
+            "etude": {
+                "etude": {"nom": "X"},
+                "trajectoire": "3DOF_TANGAGE",
+                "geometrie": "cruciforme",
+                "variables": {"alpha": [0, 45], "DM": [dm[0], dm[-1]]},
+            },
+            "mach": [0.6, 1.5],
+            "niveaux": {"alpha": {"pas": 15}, "DM": dm},
+            "plans": {"complet": "factoriel"},
+        }
+        resultat = remplir(remplissage_depuis_dict(donnees))
+        c, plan = resultat.contexte, resultat.plan("complet")
+        doe = tmp_path / "doe.csv"
+        ecrire_csv(plan, c, doe)
+        with doe.open(encoding="utf-8", newline="") as f:
+            lignes = list(csv.DictReader(f, delimiter="\t"))
+        for ligne in lignes:
+            ligne["Cm"] = repr(float(ligne["alpha"]) - 0.5 * float(ligne["DM"]))
+        complete = tmp_path / "doe_resultats.csv"
+        with complete.open("w", encoding="utf-8", newline="") as f:
+            ecrivain = csv.DictWriter(f, fieldnames=list(lignes[0]), delimiter="\t")
+            ecrivain.writeheader()
+            ecrivain.writerows(lignes)
+        tables = reconstruire(plan, c, lire_mesures(complete, c))
+        assert tables.trous == 0
+        # Les tables écrites se relisent sur la même grille.
+        fichier = ecrire_tables(tables, tmp_path / "TABLES")[0]
+        with fichier.open(encoding="utf-8") as f:
+            relus = {float(ligne["DM"]) for ligne in csv.DictReader(f, delimiter="\t")}
+        assert relus == {round(x, 9) + 0.0 for x in dm}
 
     def test_une_table_par_coefficient_carree(self, resultat: Resultat, tmp_path: Path) -> None:
         c = resultat.contexte
