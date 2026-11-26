@@ -1053,6 +1053,10 @@ class TestConfigurationExtraKeys:
         assert "masse" in out
 
 
+# The fine fixture varies beta too, and some tests draw the alpha polar alone:
+# their curves do mix two betas, which batch_plot rightly warns about. These
+# tests only count paths.
+@pytest.mark.filterwarnings("ignore:some curves hold several rows per abscissa")
 class TestDeclaredValues:
     """``values`` say which levels to write — they are not decoration.
 
@@ -1337,3 +1341,158 @@ class TestSeveralHooks:
 
         _compare(compare_configuration_dict, tmp_path, on_before_save=[one, two])
         assert calls and calls[:2] == ["one", "two"]
+
+
+# ---------------------------------------------------------------------------
+# Studies without flight points
+# ---------------------------------------------------------------------------
+
+
+_NO_FP_SEEN: list = []
+
+
+def _no_fp_hook(fig, ax, context):
+    _NO_FP_SEEN.append((dict(context.flight_point), ax.get_title()))
+
+
+class TestNoFlightPoint:
+    """``flight_point_dict`` is optional: one figure per polar, no FP level."""
+
+    @staticmethod
+    def _config(**extra_columns) -> dict:
+        alpha = [0.0, 2.0, 4.0, 6.0]
+        rows = [
+            {"alpha": a, "beta": b, "CN": 0.1 * a + 0.01 * b, "CA": 0.02 + 0.001 * a * a,
+             **extra_columns}
+            for a in alpha
+            for b in (0.0, 2.0)
+        ]
+        df = pd.DataFrame(rows)
+        return {
+            "KW": {"df": df, "label": "KW", "color": "C0"},
+            "SA": {"df": df.assign(CN=df["CN"] * 1.05), "label": "SA", "color": "C1"},
+        }
+
+    Y = {"CN": {"col_name": "CN", "symbol": r"$C_N$"}, "CA": {"col_name": "CA"}}
+    ALPHA_ONLY = {"alpha": {"col_name": "alpha", "symbol": r"$\alpha$"}}
+
+    @pytest.mark.parametrize("fp", ["absent", None, {}])
+    def test_every_way_of_saying_none(self, tmp_path, fp):
+        config = self._config()
+        for entry in config.values():
+            entry["df"] = entry["df"][entry["df"]["beta"] == 0.0]
+        kwargs = {} if fp == "absent" else {"flight_point_dict": fp}
+        planned = batch_plot(
+            configuration_dict=config, y_axis_dict=self.Y, sweep_dict=self.ALPHA_ONLY,
+            output_base=tmp_path, dry_run=True, report=False, **kwargs,
+        )
+        assert sorted(p.relative_to(tmp_path).as_posix() for p in planned) == [
+            "ALPHA_POLAR/CA_vs_alpha.svg",
+            "ALPHA_POLAR/CN_vs_alpha.svg",
+        ]
+
+    def test_defaults_keep_the_columns_the_data_has(self, tmp_path):
+        config = self._config()
+        frames = [entry["df"].assign(Mach=m) for entry in config.values() for m in (0.5, 0.9)]
+        config = {"KW": {"df": pd.concat(frames[:2], ignore_index=True)}}
+        planned = batch_plot(
+            configuration_dict=config, y_axis_dict={"CN": {"col_name": "CN"}},
+            sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+            output_base=tmp_path, dry_run=True, report=False,
+        )
+        # Mach (a default key present in the data) still splits the tree;
+        # Altitude_m, DL, DM, DN (absent) are no longer required.
+        assert {p.relative_to(tmp_path).parts[1] for p in planned} == {"MACH_0.5", "MACH_0.9"}
+
+    def test_full_pipeline_renders(self, tmp_path):
+        _NO_FP_SEEN.clear()
+        written = batch_plot(
+            configuration_dict=self._config(),
+            y_axis_dict=self.Y,
+            sweep_dict={
+                "alpha": {"col_name": "alpha", "symbol": r"$\alpha$",
+                          "zoom": {"xlim": (2, 4), "mode": "both"}},
+                "beta": {"col_name": "beta", "symbol": r"$\beta$"},
+            },
+            flight_point_dict={},
+            output_base=tmp_path,
+            formats=("png",),
+            fold=["y", "context", "overlay"],
+            on_before_save=_no_fp_hook,
+            pdf_report=tmp_path / "report.pdf",
+            report=True,
+            verbose=True,
+        )
+        names = {p.relative_to(tmp_path).as_posix() for p in written}
+        assert "ALPHA_POLAR/BETA_0/CN_vs_alpha.png" in names
+        assert "ALPHA_POLAR/BETA_0/CN_vs_alpha_ZOOM_2_4.png" in names
+        assert "BETA_POLAR/ALPHA_2/CA_vs_beta.png" in names
+        assert any("/FOLD/" in name for name in names)
+        assert any("/FOLD_OVERLAY/" in name for name in names)
+        assert "report.pdf" in names
+        assert all(p.stat().st_size > 0 for p in written)
+        assert all(point == {} for point, _ in _NO_FP_SEEN)
+
+    def test_title_without_context_has_no_empty_brackets(self, tmp_path):
+        _NO_FP_SEEN.clear()
+        config = self._config()
+        for entry in config.values():
+            entry["df"] = entry["df"][entry["df"]["beta"] == 0.0]
+        batch_plot(
+            configuration_dict=config, y_axis_dict=self.Y, sweep_dict=self.ALPHA_ONLY,
+            flight_point_dict={}, output_base=tmp_path, formats=("png",),
+            on_before_save=_no_fp_hook, report=False,
+        )
+        titles = {title for _, title in _NO_FP_SEEN}
+        assert titles == {r"$C_N$ vs. $\alpha$", r"CA vs. $\alpha$"}
+
+    def test_parallel(self, tmp_path):
+        written = batch_plot(
+            configuration_dict=self._config(), y_axis_dict=self.Y,
+            sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+            flight_point_dict={}, output_base=tmp_path, formats=("png",),
+            n_jobs=2, report=False,
+        )
+        assert len(written) == 2 * 2 + 4 * 2
+
+    def test_undeclared_varying_column_is_named(self, tmp_path):
+        config = self._config()
+        df = config["KW"]["df"]
+        mixed = pd.concat([df.assign(Mach=0.5), df.assign(Mach=0.9)], ignore_index=True)
+        with pytest.warns(RuntimeWarning, match=r"several rows per abscissa.*KW: Mach"):
+            batch_plot(
+                configuration_dict={"KW": {"df": mixed, "label": "KW"}},
+                y_axis_dict=self.Y,
+                sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+                flight_point_dict={}, output_base=tmp_path, dry_run=True, report=False,
+            )
+
+    def test_exact_duplicates_are_not_reported(self, tmp_path, recwarn):
+        config = self._config()
+        df = config["KW"]["df"]
+        batch_plot(
+            configuration_dict={"KW": {"df": pd.concat([df, df], ignore_index=True)}},
+            y_axis_dict=self.Y,
+            sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+            flight_point_dict={}, output_base=tmp_path, dry_run=True, report=False,
+        )
+        assert not [w for w in recwarn if "abscissa" in str(w.message)]
+
+    def test_compare_refuses_without_flight_points(self, tmp_path):
+        with pytest.raises(ValueError, match="at least one flight-point key"):
+            batch_compare_flight_points(
+                configuration_dict=self._config(), y_axis_dict=self.Y,
+                sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+                flight_point_dict={}, compare_flight_points={"A": {}, "B": {}},
+                output_base=tmp_path, dry_run=True, report=False,
+            )
+
+    def test_carto_without_flight_points(self, tmp_path):
+        from cfd_plot import batch_carto
+
+        written = batch_carto(
+            configuration_dict=self._config(), y_axis_dict=self.Y,
+            sweep_dict=self.ALPHA_ONLY | {"beta": {"col_name": "beta"}},
+            flight_point_dict={}, output_base=tmp_path, formats=("png",), report=False,
+        )
+        assert sorted(p.name for p in written) == ["CA_vs_alpha_beta.png", "CN_vs_alpha_beta.png"]

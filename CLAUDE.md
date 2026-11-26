@@ -314,6 +314,10 @@ not part of the Bash framework's runtime:
   several insets *jointly* (never on a magnified region or on each other), shrinks before giving up,
   and leaves an invisible reserve rectangle so legend `loc="best"` avoids them. Folds and compare
   figures ignore zooms.
+  **`flight_point_dict` is optional**: `{}` means no flight point (one figure per polar, titles
+  without empty brackets); `None` keeps only the `DEFAULT_FLIGHT_POINT_KEYS` the tables hold.
+  `batch_compare_flight_points` refuses zero keys (identical panels). A curve holding several rows
+  per abscissa warns, naming the undeclared columns that split them (`_columns_splitting_abscissa`).
   `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
   out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
   hook's own limits are the last word. `on_before_save` takes one callable **or a sequence**

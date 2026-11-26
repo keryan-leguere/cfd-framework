@@ -234,10 +234,25 @@ def _normalize_sweep_spec(key: str, spec: Any) -> dict[str, Any]:
     return normalized
 
 
-def _resolve_flight_point_keys(flight_point_dict: dict[str, Any] | None) -> list[str]:
-    if flight_point_dict:
+def _resolve_flight_point_keys(
+    flight_point_dict: dict[str, Any] | None,
+    available: Iterable[str] | None = None,
+) -> list[str]:
+    """Flight-point keys: the declared ones, else the defaults the data holds.
+
+    ``{}`` is a declaration — *no* flight point: one figure per polar, no
+    flight-point directory level. ``None`` (the argument left out) falls back
+    to :data:`DEFAULT_FLIGHT_POINT_KEYS`, keeping only those the tables
+    actually have as columns: a study with no ``Altitude_m`` — or none of
+    them at all — runs instead of dying on a ``KeyError`` for a key it never
+    asked for.
+    """
+    if flight_point_dict is not None:
         return list(flight_point_dict.keys())
-    return list(DEFAULT_FLIGHT_POINT_KEYS)
+    if available is None:
+        return list(DEFAULT_FLIGHT_POINT_KEYS)
+    present = set(available)
+    return [key for key in DEFAULT_FLIGHT_POINT_KEYS if key in present]
 
 
 def _coalesce_sweep_dict(
@@ -423,6 +438,15 @@ def _normalize_compare_flight_points(
 
     normalized: dict[str, dict[str, float]] = {}
     key_list = list(flight_point_keys)
+    if not key_list:
+        # Without a flight-point key every panel filters the tables the same
+        # way, so the figure would be N copies of one panel. batch_plot is
+        # the call for a study with no flight point.
+        raise ValueError(
+            "batch_compare_flight_points needs at least one flight-point key: each "
+            "panel is one flight point, and with none every panel draws the same "
+            "curves. Use batch_plot for a study without flight points."
+        )
     for name, raw in compare_flight_points.items():
         if not isinstance(raw, dict):
             raise TypeError(
@@ -653,6 +677,8 @@ def format_plot_title(
     flight_suffix = _combined_flight_point_suffix(
         flight_point, flight_point_keys, flight_point_specs, fixed_sweeps, sweep_specs
     )
+    if not flight_suffix:  # no flight point and no pinned sweep: nothing to say
+        return f"{y_label} vs. {x_label}"
     return f"{y_label} vs. {x_label} ({flight_suffix})"
 
 
@@ -661,10 +687,12 @@ def _prepare_flight_point_dict(
     flight_point_dict: dict[str, Any] | None,
     sweep_keys: Sequence[str],
 ) -> dict[str, dict[str, Any]]:
-    all_keys = _resolve_flight_point_keys(flight_point_dict)
+    all_keys = _resolve_flight_point_keys(
+        flight_point_dict, _concat_configurations(configuration_dict).columns
+    )
     flight_keys = [key for key in all_keys if key not in sweep_keys]
     discovered = discover_flight_point_values(configuration_dict, flight_keys)
-    if not flight_point_dict:
+    if flight_point_dict is None:
         return {
             key: {"values": discovered[key], "label": key, "save_name": key.upper()}
             for key in flight_keys
@@ -754,8 +782,14 @@ def _collect_source_curves(
     x_col: str,
     y_col: str,
     include_curve: Callable[..., bool] | None,
+    ambiguity: dict[str, set[str]] | None = None,
+    quantity_cols: Iterable[str] = (),
 ) -> list[_SourceCurve]:
-    """Filter and extract drawable curves for one figure."""
+    """Filter and extract drawable curves for one figure.
+
+    *ambiguity*, when given, collects per source the columns that tell apart
+    rows sharing one abscissa — see :func:`_columns_splitting_abscissa`.
+    """
     filter_context = {**flight_point, **fixed_sweeps}
     filter_keys = list(flight_point_keys) + list(fixed_sweeps.keys())
     curves: list[_SourceCurve] = []
@@ -780,6 +814,13 @@ def _collect_source_curves(
                 f"Columns {missing_cols} not found in configuration {source_key!r}."
             )
 
+        if ambiguity is not None and filtered[x_col].duplicated().any():
+            columns = _columns_splitting_abscissa(
+                filtered, x_col, {y_col, *quantity_cols}
+            )
+            if columns:
+                ambiguity.setdefault(config.get("label", source_key), set()).update(columns)
+
         sorted_df = filtered.sort_values(x_col)
         x_values = sorted_df[x_col].to_numpy()
         y_values = sorted_df[y_col].to_numpy()
@@ -797,6 +838,42 @@ def _collect_source_curves(
     return curves
 
 
+def _columns_splitting_abscissa(
+    df: pd.DataFrame, x_col: str, quantity_cols: set[str]
+) -> list[str]:
+    """Columns that differ between rows sharing one abscissa.
+
+    Such rows are several curves the batch is about to draw as one — a Mach
+    number that is neither a flight point nor a sweep, typically, and most
+    likely with ``flight_point_dict={}``. Sorting by x then interleaves them
+    into a zigzag that looks like noisy data. The quantities themselves are
+    left out: they always differ there, and say nothing about the cause.
+    Exact duplicate rows split nothing and are not reported.
+    """
+    rows = df[df[x_col].duplicated(keep=False)]
+    candidates = [col for col in rows.columns if col != x_col and col not in quantity_cols]
+    if not candidates:
+        return []
+    counts = rows.groupby(x_col)[candidates].nunique(dropna=False)
+    return [col for col in candidates if bool((counts[col] > 1).any())]
+
+
+def _warn_ambiguous_curves(ambiguity: dict[str, set[str]], *, stacklevel: int = 3) -> None:
+    if not ambiguity:
+        return
+    detail = "; ".join(
+        f"{source}: {', '.join(sorted(columns))}" for source, columns in ambiguity.items()
+    )
+    warnings.warn(
+        "some curves hold several rows per abscissa, told apart by columns that are "
+        f"neither a flight point nor a sweep ({detail}). They are drawn as one curve. "
+        "Declare those columns in flight_point_dict (or sweep_dict), or filter the "
+        "tables first.",
+        RuntimeWarning,
+        stacklevel=stacklevel,
+    )
+
+
 def _enumerate_jobs(
     *,
     configuration_dict: dict[str, dict[str, Any]],
@@ -812,6 +889,8 @@ def _enumerate_jobs(
     varying_fp_keys = varying_flight_keys(configuration_dict, flight_point_keys)
     varying_sw_keys = varying_flight_keys(configuration_dict, sweep_keys)
     jobs: list[_BatchPlotJob] = []
+    ambiguity: dict[str, set[str]] = {}
+    quantity_cols = [spec["col_name"] for spec in y_axis_dict.values()]
 
     for x_key, x_spec in completed_sweeps.items():
         polar_prefix = x_spec["polar_prefix"]
@@ -843,6 +922,8 @@ def _enumerate_jobs(
                         x_col=x_col,
                         y_col=y_col,
                         include_curve=include_curve,
+                        ambiguity=ambiguity,
+                        quantity_cols=quantity_cols,
                     )
                     if not curves:
                         continue
@@ -902,6 +983,7 @@ def _enumerate_jobs(
                             ),
                         )
                     )
+    _warn_ambiguous_curves(ambiguity, stacklevel=4)
     return jobs
 
 
@@ -2248,7 +2330,7 @@ def _print_batch_file_report(jobs: Sequence[_BatchPlotJob], formats: Sequence[st
     if _RICH and _console is not None:
         for polar, points in groups.items():
             for flight_point_label, point_jobs in points.items():
-                point = _cli_text(flight_point_label) if flight_point_label else "(none)"
+                point = _cli_text(flight_point_label) if flight_point_label else "no flight point"
                 n_files = len(point_jobs) * len(formats)
                 table = Table(
                     title=f"{polar}  —  {point}  —  {n_files} file(s)",
@@ -2278,7 +2360,7 @@ def _print_batch_file_report(jobs: Sequence[_BatchPlotJob], formats: Sequence[st
     for polar, points in groups.items():
         print(f"\n{polar}:")
         for flight_point_label, point_jobs in points.items():
-            point = _cli_text(flight_point_label) if flight_point_label else "(none)"
+            point = _cli_text(flight_point_label) if flight_point_label else "no flight point"
             print(f"  {point}:")
             for job in point_jobs:
                 case = _cli_text(job.case_label) if job.case_label else "—"
@@ -2586,6 +2668,8 @@ def _enumerate_compare_jobs(
     varying_sw_keys = varying_flight_keys(configuration_dict, sweep_keys)
     compare_folder_name = "_".join(compare_flight_points.keys())
     jobs: list[_ComparePlotJob] = []
+    ambiguity: dict[str, set[str]] = {}
+    quantity_cols = [spec["col_name"] for spec in y_axis_dict.values()]
 
     for x_key, x_spec in completed_sweeps.items():
         polar_prefix = x_spec["polar_prefix"]
@@ -2616,6 +2700,8 @@ def _enumerate_compare_jobs(
                         x_col=x_col,
                         y_col=y_col,
                         include_curve=include_curve,
+                        ambiguity=ambiguity,
+                        quantity_cols=quantity_cols,
                     )
                     if not curves:
                         continue
@@ -2675,6 +2761,7 @@ def _enumerate_compare_jobs(
                         sync_axes=sync_axes,
                     )
                 )
+    _warn_ambiguous_curves(ambiguity, stacklevel=4)
     return jobs
 
 

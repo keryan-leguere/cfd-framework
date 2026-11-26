@@ -708,7 +708,34 @@ flight_point_dict = {"alpha": {"values": [0, 10], ...}, "Mach": {"values": [0.8,
 Without the `values`, every alpha the table holds becomes a directory on the beta polar, and
 the sheet count follows the discretisation rather than the study. A declared value that no row
 holds is **named in a warning** rather than costing a directory that silently never appears.
-`DEFAULT_FLIGHT_POINT_KEYS` is `("Mach", "Altitude_m", "DL", "DM", "DN")`.
+
+**`flight_point_dict` is optional.** A study with no flight point at all — one table of
+polars, a single condition — keeps the same formalism:
+
+| You pass | Flight-point keys |
+|:---|:---|
+| `flight_point_dict={}` | **none**: one figure per (polar, pinned sweeps, Y), no flight-point directory level |
+| nothing, or `None` | the keys of `DEFAULT_FLIGHT_POINT_KEYS` = `("Mach", "Altitude_m", "DL", "DM", "DN")` **that the tables actually hold** — none of them is required any more |
+| `{"Mach": {...}, …}` | exactly those |
+
+```python
+batch_plot(configuration_dict=configuration_dict, y_axis_dict=y_axis_dict,
+           sweep_dict={"alpha": {...}}, flight_point_dict={}, output_base="FIGURE")
+# → FIGURE/ALPHA_POLAR/CN_vs_alpha.svg      title: "C_N vs. α", no empty brackets
+```
+
+Everything else works unchanged — pinned sweeps, folds, zooms, hooks (`context.flight_point`
+is `{}`), `pdf_report`, `n_jobs`, `batch_carto`. The one exception is
+`batch_compare_flight_points`, whose panels *are* flight points: without any key every panel
+would draw the same curves, so it refuses with a message pointing to `batch_plot`.
+
+With no flight point, a column you did not declare is no longer split into directories — and if
+it still varies (two Mach numbers in the table, say), the rows of both land in one curve, sorted
+by x into a zigzag that looks like noisy data. `batch_plot` (and the compare) **warn** whenever a
+curve holds several rows for one abscissa, naming the columns that tell them apart
+(`KW: Mach`); declare those as flight points or sweeps, or filter the tables first. Rows that are
+exact duplicates split nothing and are not reported. The check is not specific to `{}`: it
+fires for any column left out of both dictionaries.
 
 ### Running it
 
