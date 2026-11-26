@@ -203,6 +203,8 @@ Facultatif. Le vent rencontré le long du vol, lu dans trois colonnes de la traj
 (une valeur par instant), converti en ENU à la lecture. Il donne à la télémétrie
 `incidence`, `derapage`, `vitesse_air` et `vent_horizontal`, et à l'interface
 (`cfd-trajcast gui`) les flèches de vent, le panneau Vent et le repère aérodynamique.
+`cfd-trajcast vent` en tire des roses Nord/Est synchronisées avec le profil vertical,
+en figure et en vidéo (`10_FIGURES_VENT.md`).
 
 | Clé | Défaut | Rôle |
 |---|---|---|

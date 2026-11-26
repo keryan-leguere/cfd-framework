@@ -100,7 +100,9 @@ pendant que l'interface dessine, sont des sources de plantage. Le sous-processus
 tout, la barre de progression suit ses lignes `PROGRES`, et « Annuler » le tue et efface
 le fichier partiel.
 
-Les vidéos exportées ne montrent pas (encore) les repères ni les flèches de vent.
+Les vidéos exportées ne montrent pas (encore) les repères ni les flèches de vent. Pour
+exporter le vent hors de l'interface (roses Nord/Est + profil vertical, figure et vidéo),
+voir `cfd-trajcast vent` (`10_FIGURES_VENT.md`).
 
 ## Nouveau vol depuis un CSV
 

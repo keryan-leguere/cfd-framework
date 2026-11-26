@@ -20,4 +20,5 @@ clos qu'après relecture.
 | J4 | `CONFIG_MULTIVUES` sobre ∣ conférence côte à côte ; `CONFIG_VIRAGE` : planche 4 instants + vol complet 1080p avec ralentis |
 | J4b | jets par phases et scénarios `01_EXEMPLE/SCENARIOS/` : une planche de 6 instants et une vidéo 1080p par scénario |
 | J5 | `ROCKETPY/CONFIG_ROCKETPY.yaml` : planche 6 instants + vidéo 1080p rendue en parallèle (événements et télémétrie venus de RocketPy) ; temps de simulation et de relecture du cache ; débit série / parallèle ; scénarios avion re-rendus avec l’Aim9 |
+| V | figures de vent (`cfd-trajcast vent`) : roses Nord/Est + profil vertical à 3, 8 et 5 instants (16 et 8,5 cm), vidéo sans rendu de tout le vol et 3 images extraites |
 | J6 | `FUSEE_NUIT_4K` : planche 6 instants + vidéo 4K complète (préréglage nuit) ; `FUSEE_NUIT_BLENDER` : extrait rendu par Blender ; comparaison PyVista ∣ Blender aux mêmes instants. Se lance avec un Python qui a bpy (3.13) |

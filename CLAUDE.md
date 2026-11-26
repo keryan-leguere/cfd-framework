@@ -1080,6 +1080,18 @@ not part of the Bash framework's runtime:
       kill). Qt tests run `offscreen` with QSettings redirected (NativeFormat too — otherwise
       they write to the user's `~/.config`; asserted). mypy: three PyQt5-stub error codes are
       disabled for `cfd_trajcast.gui.*` only.
+    - **Wind figures** (`cfd-trajcast vent CONFIG [--instants N|t,…|evt] [--sens vers|depuis]
+      [--video]`, `VueVent` in `engine/vue_vent.py`, `00_DOC/10_FIGURES_VENT.md`, control jalon
+      `V`): needs a `vent:` section (exit 1 otherwise) and cfd-plot (no fallback). A **Nord/Est
+      rose** (polar, N up, E right, clockwise azimuth) with the horizontal wind as an arrow and the
+      whole-flight hodograph in grey, synchronised with the **vertical profile = altitude vs time**
+      (user choice). Static figure: one rose per instant (default: events) under a shared profile,
+      instant number/colour/marker repeated on both; roses per row = what the width fits
+      (`DIAMETRE_MIN`), six at most. Video (`animation_vent`, no 3D render): big rose + revealed
+      profile + state text, instants from the `video` section like `VueEnsemble.animer`. `--sens
+      depuis` flips the *display* only (met. convention); the YAML `vent.sens` still governs reading.
+      One **common radius** for every rose; wind interpolated **per component**, never on the angle
+      (`core/vent_polaire.py`, NumPy). Close events share one top label (`_grouper_evenements`).
     - J0 findings that bind later milestones: OSMesa is **not** in the VTK wheel (crashes) → EGL,
       then EGL llvmpipe, then xvfb (without `DISPLAY` the engine sets
       `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` itself — `WAYLAND_DISPLAY` must not count,

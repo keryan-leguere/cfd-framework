@@ -121,6 +121,8 @@ cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --sans-rendu --apercu   # …
 cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu   # … ou rendue en 3D (PyVista)
 cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --schema  # schéma SVG maison (sans cfd-plot)
 python vue_ensemble.py [--sans-rendu]                # la même chose depuis Python
+cfd-trajcast vent CONFIG_GUI.yaml --video --apercu   # roses Nord/Est du vent + profil vertical, et leur vidéo
+python figures_vent.py                               # la même chose depuis Python
 cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu      # style conférence, images clés, ralentis
 bash SCENARIOS/RUN_SCENARIOS.sh                      # avion, panne en spirale, fusée bi-étage
 cfd-trajcast image CONFIG.yaml --t 12.5
@@ -148,6 +150,7 @@ nez/vitesse, à demander seulement si la trajectoire contient une montée.
 | `00_DOC/07_4K_NUIT_BLENDER.md` | 4K, préréglage nuit (étoiles, lueur, lumière des jets), moteur Blender |
 | `00_DOC/08_FIGURE_ET_ANIMATION.md` | vue d'ensemble : figure paper, animation sans rendu 3D, repère NED local |
 | `00_DOC/09_INTERFACE.md` | interface interactive (`cfd-trajcast gui`) : vent, CDG, repères, exports, installation |
+| `00_DOC/10_FIGURES_VENT.md` | `cfd-trajcast vent` : roses Nord/Est synchronisées avec le profil vertical, figure et vidéo |
 | `00_DOC/04_RENDU_HORS_ECRAN.md` | bilan du jalon J0 : rendu sans écran, mesures |
 | `02_CONTROLE/README.md` | contrôle qualitatif de chaque jalon |
 

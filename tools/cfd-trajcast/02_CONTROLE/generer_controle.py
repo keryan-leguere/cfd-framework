@@ -722,7 +722,41 @@ def controle_g(sortie: Path) -> list[str]:
     return lignes
 
 
-JALONS = {"G": controle_g, "J1": controle_j1, "J2": controle_j2, "J3": controle_j3, "J3b": controle_j3b, "J4": controle_j4,
+def controle_v(sortie: Path) -> list[str]:
+    """Figures de vent : roses Nord/Est + profil vertical, figure paper et vidéo sans rendu."""
+    import subprocess
+
+    import imageio_ffmpeg
+
+    from cfd_trajcast import VueVent
+
+    vue = VueVent.depuis_yaml(EXEMPLE_DIR / "CONFIG_GUI.yaml")
+    lignes = ["Jalon V — figures de vent (cfd-trajcast vent), CONFIG_GUI.yaml / vol_vent_cdg.csv", ""]
+    for nom, kw, quoi in (
+        ("vent_evenements", {}, "une rose par événement (Mach 1, fin de propulsion, apogée), flèche « vers »"),
+        ("vent_8_depuis", {"instants": 8, "sens": "depuis"}, "8 instants répartis, convention météo, 2 rangées de 4"),
+        ("vent_etroite", {"instants": 5, "largeur_cm": 8.5}, "une colonne d'article (8,5 cm) : 2 roses par rangée"),
+    ):
+        f = vue.figure(sortie / nom, formats=("pdf", "png"), **kw)  # type: ignore[arg-type]
+        lignes.append(f"  {nom}.pdf/.png : {quoi} ({f.taille_cm[0]:.1f} × {f.taille_cm[1]:.1f} cm)")
+    a = vue.animer(sortie / "vent_anime.mp4", duree=20.0)
+    lignes.append(f"  vent_anime.mp4 : vol complet en {a.duree:.0f} s, {a.taille[0]}×{a.taille[1]}, {a.images} images")
+    for t in (2.0, 8.0, 15.0):
+        image = sortie / f"vent_anime_{t:04.1f}s.png"
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-y", "-ss", f"{t}", "-i",
+                        str(a.chemin), "-frames:v", "1", str(image)], check=True)
+        lignes.append(f"  {image.name} : image de la vidéo à {t:g} s de vidéo")
+    lignes += ["", "À regarder",
+               "  - Nord en haut, Est à droite ; flèche « vers » = où va l'air, « depuis » retournée de 180°",
+               "  - même rayon sur toutes les roses ; le dernier anneau porte « m/s »",
+               "  - marqueur, couleur et numéro de chaque instant identiques sur le profil et sur sa rose",
+               "  - ascendant vers 2 500 m (« vertical … montant » à t ≈ 8 s) ; vent qui tourne avec l'altitude",
+               "  - vidéo : flèche au bout de la trace sombre, point du profil au même instant, événements allumés",
+               "  - aucun chevauchement : O/E de roses voisines, titres des roses, axe du temps"]
+    return lignes
+
+
+JALONS = {"G": controle_g, "V": controle_v, "J1": controle_j1, "J2": controle_j2, "J3": controle_j3, "J3b": controle_j3b, "J4": controle_j4,
           "J4b": controle_j4b, "J5": controle_j5, "J6": controle_j6}
 
 

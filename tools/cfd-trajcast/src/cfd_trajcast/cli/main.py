@@ -10,6 +10,8 @@
     cfd-trajcast ensemble CONFIG.yaml --video --sans-rendu   … et cette figure animée en MP4
     cfd-trajcast ensemble CONFIG.yaml --video   … ou la vue d'ensemble rendue en 3D (PyVista)
     cfd-trajcast ensemble CONFIG.yaml --schema  le schéma SVG maison (aucune dépendance)
+    cfd-trajcast vent CONFIG.yaml            roses Nord/Est du vent + profil vertical (PDF, SVG, PNG)
+    cfd-trajcast vent CONFIG.yaml --video    … et leur animation en MP4 (sans rendu 3D)
     cfd-trajcast gui [CONFIG.yaml]           interface interactive : naviguer dans le vol
     cfd-trajcast exporter CONFIG.yaml        la trajectoire lue (RocketPy compris) en CSV
     cfd-trajcast diagnostic                  ffmpeg, extras, fenêtres de rendu possibles
@@ -45,14 +47,17 @@ from cfd_trajcast.engine.figure_ensemble import (
 )
 from cfd_trajcast.engine.pipeline import Film
 from cfd_trajcast.engine.scene import ErreurPlan
+from cfd_trajcast.engine.vue_vent import VueVent
 from cfd_trajcast.paths import EXEMPLE_DIR
 from cfd_trajcast.report import theme
 from cfd_trajcast.report.console import panneau_erreur, rapport_check
 from cfd_trajcast.report.rendu import (
     barre_progression,
     rapport_animation,
+    rapport_animation_vent,
     rapport_diagnostic,
     rapport_figure,
+    rapport_figure_vent,
     rapport_rendu,
     rapport_schema,
 )
@@ -151,6 +156,27 @@ def build_parser() -> argparse.ArgumentParser:
     ens.add_argument("-j", "--processus", type=int, default=0, metavar="N",
                      help="processus de rendu en parallèle (0 : automatique, 1 : en série)")
     ens.add_argument("--sans-cache", action="store_true", help="refaire la simulation RocketPy")
+    vent = sous.add_parser(
+        "vent", help="vent le long du vol : roses Nord/Est et profil vertical (figure paper), et leur vidéo",
+    )
+    vent.add_argument("config", type=Path, help="fichier YAML (avec une section `vent`)")
+    vent.add_argument("--sortie", type=Path, help="base des fichiers de la figure, sans extension (défaut : <config>_vent)")
+    vent.add_argument("--formats", type=_formats, default=FORMATS_FIGURE, metavar="pdf,svg,png",
+                      help="formats de la figure (défaut : pdf,svg,png)")
+    vent.add_argument("--largeur-cm", type=float, default=16.0, help="largeur de la figure (défaut 16 cm)")
+    vent.add_argument("--instants", type=_poses, default=None, metavar="N|t,…",
+                      help="une rose par instant : un nombre (répartis sur le vol) ou une liste d'instants (s) "
+                      "et de noms d'événements séparés par des virgules (défaut : aux événements)")
+    vent.add_argument("--sens", choices=("vers", "depuis"), default="vers",
+                      help="flèche vers où va l'air (défaut) ou depuis d'où vient le vent (convention météo)")
+    vent.add_argument("--titre", default="", help="titre de la figure (défaut : aucun) ; la vidéo prend celui de l'étude")
+    vent.add_argument("--video", action="store_true", help="écrire aussi la vidéo MP4 (sans rendu 3D)")
+    vent.add_argument("--mp4", type=Path, help="fichier MP4 (défaut : <config>_vent_anime[_apercu].mp4) ; implique --video")
+    vent.add_argument("--apercu", action="store_true", help="vidéo en 540p, 15 ips, encodage rapide")
+    vent.add_argument("--duree", type=float, help="durée de la vidéo (s) pour tout le vol")
+    vent.add_argument("--de", type=float, help="vidéo : début du vol montré (s)")
+    vent.add_argument("--a", type=float, help="vidéo : fin du vol montré (s)")
+    vent.add_argument("--sans-cache", action="store_true", help="refaire la simulation RocketPy")
     gui = sous.add_parser("gui", help="interface interactive : vue d'ensemble, temps, télémétrie, repères, vent")
     gui.add_argument("config", type=Path, nargs="?", help="fichier YAML (facultatif : Fichier \u203a Ouvrir)")
     gui.add_argument("--moteur", choices=("mpl", "vtk"), default="mpl",
@@ -286,6 +312,34 @@ def _ensemble(args: argparse.Namespace, out: Console, err: Console) -> int:
     return EXIT_OK
 
 
+def _vent(args: argparse.Namespace, out: Console, err: Console) -> int:
+    try:
+        cfg = charger_configuration(args.config)
+        vue = VueVent.depuis_configuration(cfg, utiliser_cache=not args.sans_cache)
+    except ValueError as exc:  # ErreurConfiguration, ErreurTrajectoire, ErreurVent (section absente)
+        err.print(panneau_erreur(str(exc), indice=f"configuration : {args.config}"))
+        return EXIT_ERREUR_ENTREE
+    if not cfd_plot_disponible():
+        err.print(panneau_erreur("les figures de vent demandent cfd-plot", indice="pip install tools/cfd-plot"))
+        return EXIT_ERREUR_ENTREE
+    try:
+        base = args.sortie or args.config.with_name(f"{args.config.stem}_vent")
+        out.print(rapport_figure_vent(vue.figure(base, instants=args.instants, sens=args.sens, formats=args.formats,
+                                                 largeur_cm=args.largeur_cm, titre=args.titre)))
+        if not (args.video or args.mp4):
+            return EXIT_OK
+        suffixe = "_vent_anime_apercu.mp4" if args.apercu else "_vent_anime.mp4"
+        mp4 = args.mp4 or args.config.with_name(args.config.stem + suffixe)
+        with barre_progression(out, "animation") as rappel:
+            animation = vue.animer(mp4, de=args.de, a=args.a, sens=args.sens, apercu=args.apercu,
+                                   duree=args.duree, progression=rappel)
+    except (ErreurFigure, ValueError) as exc:
+        err.print(panneau_erreur(str(exc)))
+        return EXIT_ERREUR_ENTREE
+    out.print(rapport_animation_vent(animation))
+    return EXIT_OK
+
+
 def _gui(args: argparse.Namespace, err: Console) -> int:
     from cfd_trajcast.gui import ErreurInterface, lancer
 
@@ -340,6 +394,7 @@ def _exemple(dest: Path, force: bool, out: Console, err: Console) -> int:
     out.print("  cfd-trajcast rendre CONFIG_ENSEMBLE.yaml --apercu", style=theme.DISCRET)
     out.print("  cfd-trajcast ensemble CONFIG_ENSEMBLE.yaml --video --apercu", style=theme.DISCRET)
     out.print("  python vue_ensemble.py   (la même chose depuis Python)", style=theme.DISCRET)
+    out.print("  cfd-trajcast vent CONFIG_GUI.yaml --video --apercu   (roses du vent + profil)", style=theme.DISCRET)
     out.print("  cfd-trajcast rendre CONFIG_VIRAGE.yaml --apercu", style=theme.DISCRET)
     out.print("  cd ROCKETPY && cfd-trajcast rendre CONFIG_ROCKETPY.yaml --apercu   (RocketPy, Python ≥ 3.10)",
               style=theme.DISCRET)
@@ -366,6 +421,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _gui(args, err)
     if args.commande == "ensemble":
         return _ensemble(args, out, err)
+    if args.commande == "vent":
+        return _vent(args, out, err)
     if args.commande == "exporter":
         return _exporter(args, out, err)
     if args.commande == "diagnostic":

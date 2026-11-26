@@ -15,12 +15,13 @@ from rich.text import Text
 
 from cfd_trajcast.engine.diagnostic import Sonde, cause_probable
 from cfd_trajcast.engine.figure_ensemble import AnimationEnsemble, FigureEnsemble
+from cfd_trajcast.engine.figure_vent import AnimationVent, FigureVent
 from cfd_trajcast.engine.pipeline import Progression, ResultatRendu
 from cfd_trajcast.engine.schema_ensemble import Schema
 from cfd_trajcast.report import theme
 
-__all__ = ["barre_progression", "rapport_animation", "rapport_diagnostic", "rapport_figure", "rapport_rendu",
-           "rapport_schema"]
+__all__ = ["barre_progression", "rapport_animation", "rapport_animation_vent", "rapport_diagnostic",
+           "rapport_figure", "rapport_figure_vent", "rapport_rendu", "rapport_schema"]
 
 
 @contextmanager
@@ -94,6 +95,38 @@ def rapport_animation(a: AnimationEnsemble) -> Panel:
     table.add_row("format", f"{a.taille[0]}×{a.taille[1]}, {a.ips} ips, {a.images} images, {a.duree:.1f} s")
     table.add_row("encodage", f"{a.encodeur} (figure Matplotlib animée, sans rendu 3D)")
     return Panel(table, title=Text("cfd-trajcast · ensemble · animation", style=theme.TITRE), title_align="left",
+                 border_style=theme.DISCRET, box=box.ROUNDED)
+
+
+def _sens_vent(sens: str) -> str:
+    return "vers : où va l'air" if sens == "vers" else "depuis : d'où vient le vent (météo)"
+
+
+def rapport_figure_vent(f: FigureVent) -> Panel:
+    """La figure de vent écrite, et la légende qu'on peut lui donner dans un article."""
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column(style=theme.DISCRET)
+    table.add_column(style=theme.VALEUR)
+    for chemin in f.fichiers:
+        table.add_row("fichier", Text(f"{chemin}  ({chemin.stat().st_size / 1000:.0f} ko)"))
+    table.add_row("taille", f"{f.taille_cm[0]:.1f} × {f.taille_cm[1]:.1f} cm")
+    table.add_row("instants", ", ".join(f"{t:.1f} s" for t in f.instants))
+    table.add_row("flèche", f"{_sens_vent(f.sens)}, rayon commun {f.rayon:g} m/s")
+    table.add_row("légende", Text(f.legende))
+    return Panel(table, title=Text("cfd-trajcast · vent · figure", style=theme.TITRE), title_align="left",
+                 border_style=theme.DISCRET, box=box.ROUNDED)
+
+
+def rapport_animation_vent(a: AnimationVent) -> Panel:
+    """La vidéo de vent sans rendu 3D écrite."""
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column(style=theme.DISCRET)
+    table.add_column(style=theme.VALEUR)
+    table.add_row("fichier", Text(f"{a.chemin}  ({a.chemin.stat().st_size / 1e6:.1f} Mo)"))
+    table.add_row("format", f"{a.taille[0]}×{a.taille[1]}, {a.ips} ips, {a.images} images, {a.duree:.1f} s")
+    table.add_row("flèche", f"{_sens_vent(a.sens)}, rayon {a.rayon:g} m/s")
+    table.add_row("encodage", f"{a.encodeur} (figure Matplotlib animée, sans rendu 3D)")
+    return Panel(table, title=Text("cfd-trajcast · vent · animation", style=theme.TITRE), title_align="left",
                  border_style=theme.DISCRET, box=box.ROUNDED)
 
 

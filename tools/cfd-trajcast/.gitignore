@@ -14,3 +14,10 @@ src/cfd_trajcast/01_EXEMPLE/*_ensemble*.mp4
 .venv/
 src/cfd_trajcast/01_EXEMPLE/*_ensemble*.pdf
 src/cfd_trajcast/01_EXEMPLE/*_ensemble*.png
+src/cfd_trajcast/01_EXEMPLE/SORTIE_VENT/
+src/cfd_trajcast/01_EXEMPLE/*_vent*.svg
+src/cfd_trajcast/01_EXEMPLE/*_vent*.pdf
+src/cfd_trajcast/01_EXEMPLE/*_vent*.png
+src/cfd_trajcast/01_EXEMPLE/*_vent*.mp4
+02_CONTROLE/V*/*
+!02_CONTROLE/V*/MANIFESTE.txt

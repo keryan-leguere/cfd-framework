@@ -1,0 +1,20 @@
+Jalon V — figures de vent (cfd-trajcast vent), CONFIG_GUI.yaml / vol_vent_cdg.csv
+
+  vent_evenements.pdf/.png : une rose par événement (Mach 1, fin de propulsion, apogée), flèche « vers » (15.0 × 13.2 cm)
+  vent_8_depuis.pdf/.png : 8 instants répartis, convention météo, 2 rangées de 4 (15.3 × 17.3 cm)
+  vent_etroite.pdf/.png : une colonne d'article (8,5 cm) : 2 roses par rangée (7.8 × 42.7 cm)
+  vent_anime.mp4 : vol complet en 21 s, 1920×1080, 630 images
+  vent_anime_02.0s.png : image de la vidéo à 2 s de vidéo
+  vent_anime_08.0s.png : image de la vidéo à 8 s de vidéo
+  vent_anime_15.0s.png : image de la vidéo à 15 s de vidéo
+
+À regarder
+  - Nord en haut, Est à droite ; flèche « vers » = où va l'air, « depuis » retournée de 180°
+  - même rayon sur toutes les roses ; le dernier anneau porte « m/s »
+  - marqueur, couleur et numéro de chaque instant identiques sur le profil et sur sa rose
+  - ascendant vers 2 500 m (« vertical … montant » à t ≈ 8 s) ; vent qui tourne avec l'altitude
+  - vidéo : flèche au bout de la trace sombre, point du profil au même instant, événements allumés
+  - aucun chevauchement : O/E de roses voisines, titres des roses, axe du temps
+
+Généré le 2026-11-26 10:28 en 65.3 s
+cfd-trajcast 0.1.0, Python 3.12.3, pyvista 0.49.2, vtk 9.7.2, DISPLAY=':0'
