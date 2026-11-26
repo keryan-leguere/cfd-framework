@@ -675,6 +675,50 @@ def fig_batch() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 37/38 — zooms on part of the x axis
+# ---------------------------------------------------------------------------
+
+def fig_batch_zoom() -> None:
+    """Two zooms on one polar: the stall as inset *and* extra figure, the
+    origin as inset only. Self-contained data: a linear polar that stalls
+    past 12°, so there is a peak worth magnifying."""
+    import shutil
+
+    alpha = np.linspace(-4.0, 20.0, 49)
+
+    def frame(scale: float, offset: float) -> pd.DataFrame:
+        cn = 0.1 * alpha * scale + offset - 0.06 * np.maximum(alpha - 12.0, 0.0) ** 2
+        return pd.DataFrame({"Mach": 0.8, "alpha": alpha, "CN": cn})
+
+    cfg = {
+        "KW": {"df": frame(1.0, 0.0), "label": r"$k$-$\omega$", "color": "C0", "marker": "o"},
+        "SA": {"df": frame(1.02, 0.03), "label": "SA", "color": "C1", "marker": "s"},
+    }
+    sweep = {
+        "alpha": {
+            "col_name": "alpha", "symbol": r"$\alpha$", "unit": "°",
+            "zoom": [
+                {"xlim": (10, 16), "mode": "both", "name": "decrochage"},
+                {"xlim": (-1, 1), "mode": "inset"},
+            ],
+        }
+    }
+    tmp = FIGURES / "_tmp_zoom"
+    written = batch_plot(
+        configuration_dict=cfg,
+        y_axis_dict={"CN": {"col_name": "CN", "symbol": r"$C_N$", "unit": "-"}},
+        sweep_dict=sweep, flight_point_dict={"Mach": {}}, output_base=tmp,
+        style_profile="paper", formats=("png",), report=False,
+    )
+    by_name = {path.name: path for path in written}
+    shutil.copy(by_name["CN_vs_alpha.png"], FIGURES / "37_batch_zoom_inset.png")
+    shutil.copy(by_name["CN_vs_alpha_ZOOM_decrochage.png"], FIGURES / "38_batch_zoom_figure.png")
+    print("  37_batch_zoom_inset.png")
+    print("  38_batch_zoom_figure.png")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # 26-30 — folded batch sheets
 # ---------------------------------------------------------------------------
 
@@ -1202,6 +1246,7 @@ def main() -> None:
     fig_declassify()
     fig_batch()
     fig_batch_fold()
+    fig_batch_zoom()
     fig_animation()
     fig_domains()
     fig_carto()

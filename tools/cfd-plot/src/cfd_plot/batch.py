@@ -35,6 +35,7 @@ from cfd_plot._compat import figure_set_layout_pad, zip_strict
 from .cleanup import CleanReport, clean_figure_dir
 from .mpl_template import (
     make_legend,
+    mathtext_safe,
     plot_line,
     save_figure,
     set_suptitle,
@@ -44,6 +45,7 @@ from .mpl_template import (
 )
 from .pdf import PdfReportSpec
 from .pdf.assemble import ReportBuilder
+from .zoom import ZoomSpec, add_zoom_insets, resolve_zooms, zoom_data_ylim, zoom_factor_label
 
 # NOTE: do *not* call matplotlib.use("Agg") in this module. It is re-exported by
 # cfd_plot/__init__.py, so an import-time backend switch applies to anyone who
@@ -122,6 +124,9 @@ class BatchPlotContext:
     # Set on a cartography's difference panel only ("absolute" / "relative"),
     # where `carto_source` is None because the panel belongs to no one source.
     carto_delta: str | None = None
+    # Set on the extra figure of a zoom declared with mode="figure"/"both":
+    # the limits are already the zoom's when the hook runs.
+    zoom: ZoomSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +156,12 @@ class _BatchPlotJob:
     flight_point_label: str
     case_label: str
     curves: tuple[_SourceCurve, ...]
+    # The extra figure of one zoom (None on an ordinary figure) ...
+    zoom: ZoomSpec | None = None
+    # ... and the zooms drawn as insets on this figure.
+    insets: tuple[ZoomSpec, ...] = ()
+    # Text appended to the title of a zoom figure, e.g. "Zoom ×4".
+    zoom_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -199,7 +210,9 @@ def _normalize_param_spec(key: str, spec: Any, *, default_save_name: str | None 
             "label": spec.get("label", key),
             "save_name": spec.get("save_name", save_default),
         }
-        for meta_key in ("col_name", "literal_name", "symbol", "unit", "x_save_name", "polar_prefix"):
+        for meta_key in (
+            "col_name", "literal_name", "symbol", "unit", "x_save_name", "polar_prefix", "zoom",
+        ):
             if meta_key in spec:
                 normalized[meta_key] = spec[meta_key]
         return normalized
@@ -699,6 +712,8 @@ def _prepare_sweep_dict(
             values = _normalize_flight_point_spec(key, shared[key])["values"]
         _warn_unknown_values(key, values, discovered[key], "sweep_dict")
         completed[key] = {**spec, "values": list(values or discovered[key])}
+        if "zoom" in spec:
+            completed[key]["zoom"] = resolve_zooms(spec["zoom"], f"sweep_dict[{key!r}]['zoom']")
     return completed
 
 
@@ -804,6 +819,7 @@ def _enumerate_jobs(
         x_save_name = x_spec.get("x_save_name", x_key)
         other_sweep_keys = [key for key in sweep_keys if key != x_key]
         varying_other_sweep_keys = [key for key in other_sweep_keys if key in varying_sw_keys]
+        inset_specs = tuple(spec for spec in x_spec.get("zoom", ()) if spec.wants_inset)
 
         for flight_point in iter_flight_points(
             configuration_dict, flight_point_keys, completed_flight_points
@@ -879,9 +895,61 @@ def _enumerate_jobs(
                             flight_point_label=flight_point_label,
                             case_label=case_label,
                             curves=tuple(curves),
+                            insets=tuple(
+                                spec
+                                for spec in inset_specs
+                                if any(spec.overlaps(curve.x) for curve in curves)
+                            ),
                         )
                     )
     return jobs
+
+
+def _expand_zoom_jobs(jobs: Sequence[_BatchPlotJob]) -> list[_BatchPlotJob]:
+    """Insert each zoom's extra figure right after the figure it magnifies.
+
+    Kept beside its parent so the PDF report, the terminal report and the
+    directory listing all read "full view, then its zooms". A zoom whose range
+    holds no point of a figure gets no file there — an empty frame is not a
+    zoom — and the count of those is warned about once, so a mistyped range
+    does not pass for a study with no data.
+    """
+    expanded: list[_BatchPlotJob] = []
+    skipped: Counter[str] = Counter()
+    for job in jobs:
+        expanded.append(job)
+        for spec in job.x_spec.get("zoom", ()):
+            if not spec.wants_figure:
+                continue
+            if not any(spec.overlaps(curve.x) for curve in job.curves):
+                skipped[f"{job.sweep_key} {spec.xlim}"] += 1
+                continue
+            finite = [curve.x[np.isfinite(curve.x)] for curve in job.curves]
+            finite = [x for x in finite if x.size]
+            full_span = (
+                float(max(x.max() for x in finite) - min(x.min() for x in finite))
+                if finite
+                else None
+            )
+            label = zoom_factor_label(spec, full_span)
+            stem = f"{job.output_path.name}_{spec.file_suffix}"
+            expanded.append(
+                replace(
+                    job,
+                    output_path=job.output_path.with_name(stem),
+                    zoom=spec,
+                    zoom_label=label,
+                    insets=(),
+                )
+            )
+    if skipped:
+        detail = ", ".join(f"{name} on {count} figure(s)" for name, count in skipped.items())
+        warnings.warn(
+            f"zoom range(s) holding no data, extra figure not written: {detail}.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return expanded
 
 
 
@@ -1796,6 +1864,7 @@ def _print_batch_plan(
             f"Parallel     : {parallel_note}",
             f"Clean        : {_clean_note(clean)}",
             f"Fold         : {_fold_note(fold_specs, fold_jobs)}",
+            f"Zoom         : {_zoom_note(jobs)}",
             f"Figures      : {len(jobs)} + {len(fold_jobs)} folded  →  {n_files} file(s)",
         ]
     )
@@ -1870,6 +1939,14 @@ def _print_batch_plan(
             print(f"  {polar}: {count} (+{folds_by_polar.get(polar, 0)} folded)")
     for fold_label, fold_count in _fold_plan_rows(fold_specs, fold_jobs):
         print(f"  fold {fold_label}: {fold_count} sheet(s)")
+
+
+def _zoom_note(jobs: Sequence[_BatchPlotJob]) -> str:
+    n_figures = sum(1 for job in jobs if job.zoom is not None)
+    n_insets = sum(len(job.insets) for job in jobs)
+    if not n_figures and not n_insets:
+        return "no"
+    return f"{n_figures} extra figure(s) (incl. above), {n_insets} inset(s)"
 
 
 def _clean_note(clean: bool | str) -> str:
@@ -1976,8 +2053,18 @@ def _render_one_job(
 
     ax.set_xlabel(format_axis_label(job.x_spec, job.sweep_key))
     ax.set_ylabel(format_axis_label(job.y_spec, job.y_key))
+    if job.zoom is not None:
+        ax.set_xlim(*job.zoom.xlim)
+        ylim = zoom_data_ylim(job.zoom, [(curve.x, curve.y) for curve in job.curves])
+        if ylim is not None:
+            ax.set_ylim(*ylim)
     make_legend(ax)
-    set_title(ax, job.title)
+    title = job.title
+    if job.zoom_label:
+        # Composed here, under the job's style: the font probe behind
+        # mathtext_safe must judge the fonts the figure is drawn with.
+        title = f"{title} [{mathtext_safe(job.zoom_label)}]"
+    set_title(ax, title)
 
     context = BatchPlotContext(
         flight_point=job.flight_point,
@@ -1988,9 +2075,16 @@ def _render_one_job(
         y_spec=job.y_spec,
         polar_prefix=job.polar_prefix,
         output_path=job.output_path,
+        zoom=job.zoom,
     )
     if on_before_save is not None:
         on_before_save(fig, ax, context)
+
+    # Insets come after the hook: they magnify the figure as it ships, so a
+    # band or reference curve the hook drew is in the inset too, and the
+    # placement avoids it.
+    if job.insets:
+        add_zoom_insets(ax, job.insets)
 
     written = save_figure(fig, job.output_path, formats=formats)
     if builder is not None:
@@ -2171,7 +2265,8 @@ def _print_batch_file_report(jobs: Sequence[_BatchPlotJob], formats: Sequence[st
                         size_kb = path.stat().st_size / 1024
                         table.add_row(
                             case,
-                            f"{job.y_key} vs {job.sweep_key}",
+                            f"{job.y_key} vs {job.sweep_key}"
+                            + (f" ({job.zoom.file_suffix})" if job.zoom else ""),
                             path.suffix.lstrip(".").upper(),
                             f"{size_kb:.1f} kB",
                         )
@@ -2399,6 +2494,8 @@ def batch_plot(
         completed_flight_points=completed_flight_points,
         output_base=output_base,
     )
+    # Folds gather the full figures only; zooms are added after, beside theirs.
+    jobs = _expand_zoom_jobs(jobs)
     render_order = _merge_render_order(jobs, fold_jobs)
 
     if verbose:

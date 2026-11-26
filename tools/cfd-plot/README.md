@@ -37,6 +37,7 @@ Four things it gives you that plain Matplotlib does not:
 - [15. Batch plotting](#15-batch-plotting)
   - [Cleaning the output tree](#cleaning-the-output-tree)
   - [Folding: bonus sheets that gather siblings](#folding-bonus-sheets-that-gather-siblings)
+  - [Zooming on part of the x axis](#zooming-on-part-of-the-x-axis)
 - [16. Animations (GIF / MP4)](#16-animations-gif--mp4)
 - [17. Panel labels and palettes](#17-panel-labels-and-palettes)
 - [18. PDF reports and contact sheets](#18-pdf-reports-and-contact-sheets)
@@ -671,6 +672,9 @@ on the polars drawn against *another* sweep. It never touches the abscissa: the 
 draws this sweep always shows every point the table holds, which is the whole reason for
 calling a model finely.
 
+A sweep entry may also carry a **`zoom`** — an x range to magnify, as an extra figure or as an
+inset on the full one. See [Zooming on part of the x axis](#zooming-on-part-of-the-x-axis).
+
 **`flight_point_dict`** — the parameters that define a flight point. `values` says which
 levels to write, and can be left empty to take every value the data holds:
 
@@ -1061,6 +1065,107 @@ def on_before_save(fig, ax, context):
 
 Axis synchronisation happens **before** the hook, so a hook that pins its own limits still wins.
 
+### Zooming on part of the x axis
+
+A polar over −4…20° shows the whole story and none of the detail: the stall, where two
+turbulence models actually disagree, is ten pixels tall. Declare a **`zoom`** on the sweep
+entry and every figure drawn against that sweep gets a magnified view of the range — as an
+**extra figure** written beside it, as an **inset** drawn on it, or both.
+
+```python
+sweep_dict = {
+    "alpha": {
+        "col_name": "alpha", "symbol": r"$\alpha$", "unit": "°",
+        "zoom": [
+            {"xlim": (10, 16), "mode": "both", "name": "decrochage"},   # inset + extra figure
+            {"xlim": (-1, 1),  "mode": "inset"},                        # inset only
+        ],
+    },
+}
+```
+
+| Inset on the full figure (`mode="inset"`) | Extra figure (`mode="figure"`) |
+|:---:|:---:|
+| ![zoom inset](00_DOC/FIGURES/37_batch_zoom_inset.png) | ![zoom figure](00_DOC/FIGURES/38_batch_zoom_figure.png) |
+
+```
+ALPHA_POLAR/
+├── CN_vs_alpha.svg                    ← full view, with the insets
+└── CN_vs_alpha_ZOOM_decrochage.svg    ← the extra figure, right beside it
+```
+
+**Forms accepted.** A bare pair is one zoom with the defaults; a dict or a `ZoomSpec` sets
+options; a list holds several. `x_axis_dict` accepts the same key.
+
+```python
+"zoom": (10, 16)                                    # one zoom, mode="figure"
+"zoom": {"xlim": (10, 16), "mode": "inset"}
+"zoom": ZoomSpec(xlim=(10, 16), mode="both", label="Décrochage")
+"zoom": [(10, 16), {"xlim": (-1, 1), "mode": "inset"}]
+```
+
+| Option | Default | Meaning |
+|:---|:---|:---|
+| `xlim` | — | `(xmin, xmax)`, in data units. The only required key. |
+| `mode` | `"figure"` | `"figure"` (extra file), `"inset"` (on the full figure) or `"both"`. The default never changes the figures you already had. |
+| `ylim` | fitted | `(ymin, ymax)` to pin; by default fitted to every curve **inside** `xlim` — values interpolated at the bounds included, so a range between two samples still gets the right height. |
+| `margin` | `0.05` | fraction of the fitted y span added above and below. |
+| `name` | the bounds | file suffix: `<Y>_vs_<X>_ZOOM_<name>` (`ZOOM_10_16` by default). |
+| `label` | `"Zoom ×k"` | the annotation saying it is a zoom: the inset's title, and the bracketed end of the extra figure's title. *k* = data span / zoomed span. `""` writes nothing. |
+| `loc` | `"auto"` | inset position: `"auto"`, one of the eight Matplotlib names (`"upper left"`, `"lower center"`, …), or bounds `(x0, y0, w, h)` in axes fraction. |
+| `size` | `(0.4, 0.4)` | inset box, in axes fraction. |
+| `connectors` | `True` | lines from the magnified region to the inset (the rectangle around the region is always drawn). |
+
+**How `loc="auto"` places an inset.** It is measured, not guessed. The inset's *whole
+footprint* — box, tick labels and title — is tried on a 5 × 5 grid of positions inside the
+axes, and each position is charged for the samples of drawn data it would cover (lines are
+resampled finely, so a segment crossing the box counts even when no marker falls in it).
+Covering the region it magnifies, *another* inset's region, another inset, or a legend
+pinned at a fixed spot is forbidden while any free spot exists. Several insets are placed
+**jointly** rather than one after the other — a first inset greedily taking the best corner
+can leave the second nowhere but on top of the first one's region. When nothing is free at
+the declared size, 85 % and 70 % are tried before settling for the least-covered spot, with
+corners preferred on ties. The legend is then told where the insets are (an invisible
+rectangle on the axes, `gid="cfd_plot_zoom_reserve"`), so `loc="best"` steers around them.
+On a figure crowded edge to edge, no spot is free: pin `loc` yourself, or use
+`mode="figure"`.
+
+**What the inset shows.** Everything drawn on the axes in data coordinates when it is
+added — the batch curves, and whatever `on_before_save` drew (a dispersion band, a reference
+curve, a second line). Insets are added **after** the hook for exactly that reason, so they
+magnify the figure as it ships; the placement avoids the hook's artists too. Decorations in
+axes coordinates (`axhline`, text boxes) are not copied. The parent's limits are frozen once
+an inset is placed, since a later autoscale would slide the data out from under it.
+
+**What the extra figure is.** The same figure as its parent — same curves, legend, hook —
+with the x limits set to the range and the y limits fitted. The hook sees `context.zoom` (the
+`ZoomSpec`, `None` on every other figure), and the limits are already the zoom's when it runs,
+so a hook that pins its own still has the last word.
+
+**In the rest of the pipeline.** `dry_run` lists the extra files; `verbose=True` prints a
+`Zoom` line with the count of extra figures and insets; the file report names each zoom;
+`n_jobs` renders them in the pool (a `ZoomSpec` pickles); `pdf_report` puts each extra figure
+right after its parent. Folded sheets and `batch_compare_flight_points` ignore the key — a fold
+gathers full figures, never their zooms.
+
+A zoom whose range holds no point of a figure (a mistyped bound, a flight point the range does
+not reach) gets **no** extra file and no inset there, and is named in one `RuntimeWarning`
+rather than written as an empty frame. Errors in the declaration name the sweep they come
+from — `sweep_dict['alpha']['zoom'][1]: zoom xlim must be increasing, got (16.0, 10.0).` —
+and two zooms that would write the same file are refused.
+
+Outside `batch_plot`, the inset machinery works on any axes:
+
+```python
+from cfd_plot import ZoomSpec
+from cfd_plot.zoom import add_zoom_insets
+
+fig, ax = plt.subplots()
+ax.plot(alpha, cn_kw, "o-", label="KW")
+ax.legend()
+add_zoom_insets(ax, [ZoomSpec(xlim=(10, 16), mode="inset")])   # → [(inset_ax, footprint)]
+```
+
 ### Hooks
 
 Two escape hatches keep the batch generic while letting you special-case individual figures.
@@ -1088,6 +1193,7 @@ axes-level tweaks. `context` is a `BatchPlotContext` with:
 | `compare_name` | set only in `batch_compare_flight_points` |
 | `panel_index` | which panel this call is for, on compare figures and folded sheets |
 | `fold_kind`, `fold_layout`, `fold_label` | set only on a [folded sheet](#folding-bonus-sheets-that-gather-siblings) |
+| `zoom` | the `ZoomSpec`, set only on a [zoom's extra figure](#zooming-on-part-of-the-x-axis) |
 
 ```python
 def on_before_save(fig, ax, context):
@@ -2181,7 +2287,7 @@ fixed_sweeps)` is the analogue of `include_curve`.
 | **Legends** | `make_legend`, `make_figure_legend` |
 | **Data prep** | `reshape_structured2d`, `dataframe_to_grid`, `dataframe_to_masked_grid`, `mask_field`, `extract_slice2d` |
 | **Export** | `save_figure`, `print_file_report` |
-| **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `HookChain`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers |
+| **Batch** | `batch_plot`, `batch_compare_flight_points`, `BatchPlotContext`, `HookChain`, `ZoomSpec`, `DEFAULT_FLIGHT_POINT_KEYS`, + path/label helpers; `cfd_plot.zoom.add_zoom_insets` for a figure of your own |
 | **Animation** | `animate_sweep`, `animate`, `animate_frames`, `Animator`, `AnimationResult` |
 | **Animation → encoding** | `frames_to_gif`, `frames_to_mp4`, `ffmpeg_available`, `AnimPreset`, `PRESETS` |
 | **Figure assembly** | `panel_labels`, `set_palette`, `palette_context`, `palette_colors`, `PALETTES` |

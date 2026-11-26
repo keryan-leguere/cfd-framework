@@ -306,6 +306,14 @@ not part of the Bash framework's runtime:
   written on the flight-point entry; on a sweep they say where it is **pinned**, never what the
   abscissa shows. A declared value no row holds is named in a warning rather than costing a
   directory that silently never appears.
+  A sweep entry may carry **`zoom`** (`cfd_plot/zoom.py`, `ZoomSpec`): an x range shown as an
+  extra figure beside the full one (`<Y>_vs_<X>_ZOOM_<name>`, `mode="figure"`, the default), as an
+  inset on it (`"inset"`), or both; y fitted inside the range. Insets are added *after*
+  `on_before_save` and copy every data-coordinate line/fill, so they magnify what ships; `loc="auto"`
+  scores the inset's whole footprint (ticks + title) on a 5×5 grid against resampled data, places
+  several insets *jointly* (never on a magnified region or on each other), shrinks before giving up,
+  and leaves an invisible reserve rectangle so legend `loc="best"` avoids them. Folds and compare
+  figures ignore zooms.
   `batch_compare_flight_points` syncs its panels by default (`sync_axes="both"`, `None` to opt
   out) — only the panels carrying data, and *before* `on_before_save`, like a folded sheet, so a
   hook's own limits are the last word. `on_before_save` takes one callable **or a sequence**
