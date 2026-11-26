@@ -899,6 +899,21 @@ not part of the Bash framework's runtime:
       structured plans break under `exclure` (rank-deficient polynomial, reported); the
       kriging design beats LHS at ~70 % of the runs. `00_DOC/02_REMPLISSAGE.md` §11 reports
       these numbers; `generer_figures.py` regenerates figures 7–8 through the script.
+    - **CSV node coordinates** go through `data/format.nombre_csv` (rounded to
+      `DECIMALES_NOEUD` = 9 decimals, the same rounding as the node keys `_CLE`, written with
+      `repr`) in `doe.csv`, `ecrire_mesures` and `ecrire_tables`. The former `.10g` cut
+      non-round levels past 10 (`42,4264068712` → `42,42640687`), so a re-read point missed its
+      node and the table came out full of holes (`test_niveaux_non_ronds_relus_sur_leurs_noeuds`).
+    - **`02_PRESENTATION_FUSEE_3DOF/`** (outside `src/`, not package data): a student-rocket
+      deck (3DOF pitch, X fins with `DM = √2/4·(δ1 − δ2 − δ3 + δ4)`, 9 deflections, 344 runs,
+      **fictitious** values) built by the real chain — `generer_donnees.py` (DOE → invented
+      CFD → `lire_mesures`/`reconstruire` → `DONNEES/tables_carrees.csv` +
+      `increment_dzca.csv` ΔzCA(M, z) from cfd-atm), `tracer_base_aero.py` (model-agnostic:
+      two DataFrames, column names as parameters, every plot through cfd-plot `batch_plot`/
+      `batch_carto`/`ZoomSpec`/`FoldSpec` + one picklable `Habillage` hook; `Table3D` /
+      `lire_increment` are the simulator's read), `deck/deck.js` (pptxgenjs; numbers read from
+      the two JSON, never typed; `deck/theme.js` writes the colour scheme itself).
+      `bash construire.sh` rebuilds all; `SORTIE/` and `deck/node_modules/` are ignored.
     - The **orbit test** (`tests/test_reduction.py`) is the guarantee: every grid point's full
       orbit has exactly one image in the sub-domains (polar N = 1, 2, 3, 4, 6; Cartesian over all
       trajectories × geometries). The document's counts (45/78/144/265 §5.3, 63/33 §5.4, 4 200

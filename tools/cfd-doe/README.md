@@ -400,6 +400,9 @@ src/cfd_doe/
   01_EXEMPLE/        ETUDE_FUSEE.yaml, REMPLISSAGE_FUSEE.yaml, completer_table.py,
                      exemple_completion.py, reconstruire_tables.py, executer_exemples.py,
                      CAS/ (cinq études) — données de paquet
+02_PRESENTATION_FUSEE_3DOF/  diaporama fusée 3DOF (gouvernes en X, valeurs factices) bâti par la
+                     chaîne réelle ; tracer_base_aero.py : tous les tracés d'une table carrée
+                     + incrément avec cfd-plot (bash construire.sh) — voir son README
 tests/               pytest ; test_architecture.py vérifie la règle de couches
 ```
 

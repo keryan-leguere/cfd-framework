@@ -1,0 +1,7 @@
+{
+  "name": "presentation-fusee-3dof",
+  "private": true,
+  "description": "Construit Fusee_3DOF_base_aero.pptx à partir de PLANCHES/ et DONNEES/ (node deck.js)",
+  "scripts": { "construire": "node deck.js" },
+  "dependencies": { "pptxgenjs": "^4.0.1" }
+}

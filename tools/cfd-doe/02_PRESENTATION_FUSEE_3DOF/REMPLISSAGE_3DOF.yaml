@@ -1,0 +1,30 @@
+# DOE de la fusée étudiante : 4 Mach, α pas 5°, 9 braquages.
+#
+#   cfd-doe remplir REMPLISSAGE_3DOF.yaml --sortie SORTIE/DOE
+#
+# Braquages : 9 niveaux physiques δ = −30 … 30° par pas de 7,5°, convertis en DM = √2 · δ.
+
+nom: FUSEE_3DOF_REMPLISSAGE
+etude: ETUDE_FUSEE_3DOF.yaml
+
+mach: [0.6, 0.9, 1.2, 1.5]
+
+niveaux:
+  alpha: {pas: 5}
+  DM: [-42.42640687119285, -31.81980515339464, -21.213203435596427, -10.606601717798213, 0,
+       10.606601717798213, 21.213203435596427, 31.81980515339464, 42.42640687119285]
+
+plans:
+  complet: {type: factoriel}
+  ordre_1:
+    type: decomposition
+    ordre: 1
+    primaires: [alpha]
+    controle: {fraction: 0.15, minimum: 3, graine: 0}
+  composite: {type: composite_centre, test: 0.15}
+  lhs: {type: lhs, regle: 30, test: 0.15, graine: 1}
+  krigeage: {type: krigeage, regle: 20, portee: 0.3}
+
+retenu: complet
+
+sortie: {dossier: DOE, csv: doe.csv, figures: true, formats: [png]}

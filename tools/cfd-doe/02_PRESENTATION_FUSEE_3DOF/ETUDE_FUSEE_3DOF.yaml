@@ -1,0 +1,19 @@
+# Fusée étudiante, 4 gouvernes en X, vol plan de tangage.
+#
+#   cfd-doe domaine ETUDE_FUSEE_3DOF.yaml --verbose
+#
+# Gouvernes en X (vue de l'arrière : δ1 en bas à droite, puis sens horaire ; δi > 0 vers la
+# gouverne suivante). Braquage équivalent DM = √2/4 · (δ1 − δ2 − δ3 + δ4) : en tangage pur,
+# DM = √2 · δ. Butée physique ±30° → |DM| ≤ 30·√2 = 42,4264°.
+
+etude:
+  nom: FUSEE_ETUDIANTE_3DOF
+  description: Fusee etudiante, gouvernes en X, vol plan de tangage
+
+trajectoire: 3DOF_TANGAGE
+geometrie: cruciforme
+repere: auto
+
+variables:
+  alpha: [0, 45]
+  DM: [-42.42640687119285, 42.42640687119285]
